@@ -18,6 +18,8 @@ Follows: `docs/features/2026/11/14/003-agent-run-status-hint/plan.md`, section "
 | D8 | `finish_run` with status `waiting` is only recorded (on `agent.llm.completed` and the activity timeline). It does not wake the agent, schedule anything or connect to reminders. Any future link to reminders is separate work. |
 | D9 | The activity timeline summary for the LLM-completed event shows the `finish_run` status and reason (and the nudge count when above zero). It is in scope, not optional. See section 8. |
 
+Update (2026-11-17, after implementation): D6 is done. `long-running-task` was rewritten (see `CHANGELOG.md`, Unreleased, Changed), so the section 5 text no longer matches the skill: FINISH A CYCLE and ENDING A RUN are replaced by one EACH RUN procedure, whose last step calls `finish_run`, and the skill now uses `cancel_reminder` when the goal ends. `job-searcher` still does not have `system/long-running-task`.
+
 ## Problem
 
 Agents whose skill needs a long run stop early. The run ends when the model replies with no tool call, and the platform treats that as "done". Nothing asks the agent whether it is really done, and the agent has no way to say why it stopped.

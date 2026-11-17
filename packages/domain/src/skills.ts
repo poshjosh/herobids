@@ -446,7 +446,7 @@ When following a skill's instructions, prefer whichever browser automation optio
 };
 
 /**
- * `long-running-task` skill — continuity for goals that span many ticks.
+ * `long-running-task` skill — continuity for goals that span many runs (ticks).
  * Progress lives in durable tasks and memory so an agent can resume after a
  * restart. Workspace files are scratch only (they do not survive restarts); the
  * file tools below exist so dependency inference pulls in `file-management`.
@@ -456,72 +456,42 @@ export const LONG_RUNNING_TASK_SKILL: SkillDefinition = {
   slug: 'system/long-running-task',
   name: 'Long-Running Task',
   description: 'Make steady progress on goals that span many ticks/sessions: split the work into recorded units, keep progress in durable tasks and memory, and resume after a restart.',
-  instructions: `You can work on goals that cannot be finished in one tick/session: they have several steps, or they need ongoing monitoring/attention over an extended period. Your conversation memory may be incomplete or lost between ticks (a runtime restart clears it completely), so durable state is the only thing you can trust to carry your progress. Re-read durable state instead of relying on what you think you remember. Work in small, finished, recorded units.
+  instructions: `You can work on goals that cannot be finished in one run. Your conversation memory may be incomplete or lost between runs (a runtime restart clears it completely), so the saved state below is the only thing you can trust to carry your progress from one run to the next. Re-read it in every run instead of relying on what you think you remember.
 
-Pick a short campaign name (lowercase, no spaces) for the goal, unless the goal gives one, and use it in every key and task title below as <campaign>.
+TERMS
+- Goal: the whole long-running task. It ends when its work is done, when its end time has passed, or when the user asks to stop.
+- Unit: one portion of the goal's work, small enough to finish in one run. The goal is done as a series of units. If the goal is ongoing, you add units as more work becomes due.
+- Run: one tick/session, from when you are woken until you end it. Call \`finish_run\` to end each run.
 
-STORAGE (what survives)
-- Tasks and memory are durable. Workspace files are NOT durable across restarts: use them only as scratch or cache, and be ready to re-fetch.
-- Work-unit queue = tasks. Each unit is one task titled "[<campaign>] <NN> <short description>", where NN is a zero-padded order number.
-- Campaign state = memory key \`ltt/<campaign>/index\`. Keep it small: { cycle, phase, unitsTotal, unitsDone, currentUnit, lastSummary, updatedAt }.
-- Records (one per entity you track) = one memory key each: \`ltt/<campaign>/rec/<id>\`. Do not store all records under a single key.
-- Load all records into context only in the finish step.
-- Use \`set_memory\` to write and \`get_memory\` to read these keys.
-START OF EVERY TICK (orient before acting)
-Do steps 1 and 2 first on every tick, even if the tick message tells you what to do and even if you believe you remember the state.
-1. \`get_memory\` \`ltt/<campaign>/index\`.
-2. \`list_tasks\` (pending). Task ids come only from this result, never from memory or guesswork. Copy the id exactly.
-3. If no index exists, this is a new campaign: do PLAN once, then continue with step 5.
-4. If the index phase is \`finished\` and no tasks are pending, there is nothing to do. Do not message the user; end the run (see ENDING A RUN).
-5. If \`currentUnit\` is set and its task is still pending, a previous tick was interrupted. Check what was already persisted for that unit (\`get_memory\` on its record key), finish only the missing part, then close it.
-6. Otherwise take the lowest-numbered pending unit.
+SAVED STATE
+- Tasks and memory are durable. Workspace files are NOT durable across restarts: use them only as scratch or cache.
+- Campaign name: a short name for the goal (lowercase letters and digits only), unless the goal gives one. It is <campaign> below.
+- Index = memory key \`ltt/<campaign>/index\`, written with \`set_memory\` and read with \`get_memory\`. Keep it small: { goal, ongoing, endsAt, runBudget, storage, phase, lastSummary, updatedAt }.
+  - \`goal\`: one line describing the goal, so you can recognise its index.
+  - \`ongoing\`: true if the goal keeps producing new work until it ends (for example monitoring or repeated checks), false if it is a fixed set of units.
+  - \`endsAt\`: the goal's end time (ISO 8601 UTC), or null if it has none.
+  - \`runBudget\`: how much to do in one run. Decide it from the goal: how much must be done per run to meet it, how long the goal lasts, and how many runs fit in that period. It covers the whole run. Update it when a run shows it was wrong.
+  - \`storage\`: where you keep the goal's results, so a later run can find them; \`memory\` if they are in memory keys.
+  - \`phase\`: \`active\`, \`ending\` or \`ended\`. \`ending\` means the goal has ended but the work it requires at its end is not finished yet.
+  - \`lastSummary\`: one line on what the last run did.
+- Units = tasks titled "[<campaign>] <short description>", created with \`create_task\`. Only tasks with this title prefix belong to the goal. \`list_tasks\` returns them in the order they were created.
+- Reminders: give every reminder you schedule for this goal a key that starts with \`ltt-<campaign>-\`. The continuation reminder has exactly this shape:
+  \`schedule_reminder({ key: "ltt-<campaign>-continue", message: "<campaign>: resume from ltt/<campaign>/index and do the next pending unit", triggerAt: "<ISO 8601 UTC>" })\`
+  Scheduling again with the same key replaces the earlier reminder.
 
-PLAN (once per cycle)
-- Break the goal into units that each fit in one tick. Prefer many small units over a few large ones. If the goal already lists the units, use them exactly as listed.
-- Write the index first, with \`phase: "planning"\`, so an interrupted plan can be detected on the next tick.
-- Create one task per unit, in order. Put the finishing work (re-check, report) in the last unit or in the finish step.
-- Set \`phase: "running"\` in the index, then call \`send_message\` with a short plan (number of units, what the first ones are).
-- Planning does not count as a unit. After planning, go straight on to the first unit in the same tick, within the per-tick limit below.
-
-DO A UNIT
-- Work on one unit only. Stay inside its scope and tool-call budget. If you find something outside the scope, create a new task for it instead of doing it now. Follow the unit's instructions literally; do not substitute something else for a step you were told to do.
-- Follow this sequence for every unit:
-  1. Update the index: set \`currentUnit\` to the unit number.
-  2. Do the unit's work.
-  3. Persist each result the moment you have it; do not hold results in your head.
-  4. \`complete_task\` with the id from \`list_tasks\`.
-  5. Update the index: increment \`unitsDone\`, set \`lastSummary\` (one line), set \`currentUnit\` to null.
-  Do step 5 after step 4, and step 4 after step 3.
-- A unit is done when there is evidence: records written, or an explicit "nothing found" with the queries or sources you actually checked.
-- A unit is blocked if the first result cannot be opened (error, timeout, no access) or returns no readable content (empty text, video-only, or a login or error page). A blocked unit gets no rating.
-- If a unit is blocked, store the reason in memory under \`ltt/<campaign>/blocked/<NN>\`, then complete its task so the queue advances (steps 4 and 5). List blocked units in the final report.
-
-CONTINUE
-- Respect the per-tick unit limit given in the goal. If none is given, do up to 3 units per tick if each finishes cleanly; stop earlier if you have used most of your tick budget.
-- If pending units remain, call \`schedule_reminder\` before ending the tick, using exactly this shape (replace the placeholders, and use the delay given in the goal, otherwise a few minutes):
-  \`schedule_reminder({ key: "ltt-<campaign>-continue", message: "<campaign>: resume from ltt/<campaign>/index and do the next pending unit", triggerAt: "<now + delay, ISO 8601 UTC>" })\`
-- Use that key and no other. Scheduling again with the same key replaces the earlier reminder.
-- End every tick that leaves pending units with a continuation scheduled.
-- Once the per-tick limit is reached, stop instead of starting the next unit.
-
-FINISH A CYCLE
-- When no pending units remain, first read every stored record back with \`get_memory\`. Build the final report only from what you just read, not from memory of the conversation.
-- Send the report with \`send_message\`, and \`publish_artifact\` too if it is substantial.
-- Only after the report is sent, set the index phase to \`finished\`. If the phase is \`running\` on a later tick with no pending tasks, the report was not sent: send it.
-- The reminder that started this tick has already fired, so do not cancel anything.
-- For recurring goals, schedule the next cycle with \`schedule_reminder\` (stable key, \`repeatEveryMinutes\`). At the start of the next cycle, increment \`cycle\` in the index and create a new set of tasks. Keep existing records: update and re-verify them instead of rediscovering. For non-recurring goals, do not schedule anything further.
-- Tell the user the cycle is finished and, if recurring, when the next one starts.
-
-ENDING A RUN
-- If you have the \`finish_run\` tool, end every run by calling it. Use \`complete\` when the cycle is finished (the report is sent) or there was nothing to do. Use \`waiting\` when pending units remain and the continuation reminder is scheduled, or when you are waiting for the user. Use \`blocked\` when you cannot continue. Give one short sentence as the reason.
-- Before you call it, check your own state: the index phase, the pending tasks (\`list_tasks\`) and the continuation reminder. Do not use \`complete\` while units are pending.
+EACH RUN
+Do step 1 first in every run, even if the message that woke you says what to do and even if you believe you remember the state.
+1. Call \`list_tasks\` (pending) and read the index with \`get_memory\`. If you do not know the campaign name, look for it in the message that woke you and in the task titles; if it is not there, call \`list_memory_keys\`, read the \`ltt/<name>/index\` keys and use the one whose \`goal\` is this goal. Only tasks titled \`[<campaign>]\` are this goal's pending units; ignore the rest. Task ids come only from \`list_tasks\`, never from memory or guesswork; copy them exactly.
+2. If there is no index, plan: pick the campaign name, create one task per unit, in order, then write the index with phase \`active\`. Prefer many small units over a few large ones. If the goal lists its units, use them exactly as listed. If the goal is ongoing, create the units that are due now. If pending tasks for this goal already exist, an earlier plan was interrupted: reuse their campaign name and create only the units that are not already in the task list.
+3. Unless the phase is \`ended\`, schedule the continuation now for a time safely after this run should be over, so a run that stops early is picked up again. Step 7 replaces it.
+4. If the phase is \`active\` and \`endsAt\` has passed or the user has asked to stop, set the phase to \`ending\`. If the phase is \`ending\`, start no new units: do only the work the goal requires at its end, if any, saving results as you go. When that work is finished, set the phase to \`ended\`; if it is not, go to step 7 and continue it in the next run. If the phase is \`ended\`, call \`list_reminders\`, cancel each reminder whose key starts with \`ltt-<campaign>-\` with \`cancel_reminder\`, then go to step 7. Pending units stay pending once the phase is \`ending\` or \`ended\`; ignore them. Check this step again before each unit.
+5. Do units up to \`runBudget\`, starting with the first pending one. For each unit: check what is already saved for it (an earlier run may have stopped part-way), do only the missing work, save each result as soon as you have it, then call \`complete_task\` with its id. If a unit cannot be done, save a one-line reason with the goal's results, then complete its task so later runs do not retry it forever.
+6. If units are still pending, go to step 7. If none are pending and \`ongoing\` is false, the goal's work is done: set the phase to \`ending\` and go to step 4. If \`ongoing\` is true, create units for any work that is due now; if you created some and \`runBudget\` allows, go back to step 5, otherwise go on to step 7.
+7. Unless the phase is \`ended\`, update \`lastSummary\` and \`updatedAt\` in the index, and schedule the continuation for when the next work should start (while the phase is \`active\`, never later than \`endsAt\`). Check that the index and the pending tasks are up to date, and that the continuation is scheduled unless the goal has ended, then call \`finish_run\`. Use \`waiting\` while the goal has not ended, \`complete\` once it has ended, and \`blocked\` if you cannot continue.
 
 RULES
 - Do not redo a completed unit. After a restart or with an empty context, rebuild from the index and tasks instead of starting from scratch.
-- Do not mark progress you did not make, and do not report something as verified without evidence.
-- Keep every memory value compact (facts and short evidence excerpts, not page dumps).
-- If you are blocked on something only the user can provide, send a message saying exactly what you need, and keep working on the other units.
-- Send a brief progress message to the user every few units (done/total, notable findings), not on every tick. Do this except explicitly instructed otherwise.`,
+- Do not mark progress you did not make.`,
   requiredTools: ['write_file', 'append_file', 'edit_file', 'read_file', 'read_file_lines', 'search_files', 'list_files', 'delete_file', 'stat_file', 'finish_run'],
   capabilityFamilies: [],
   bindingRequirements: {},

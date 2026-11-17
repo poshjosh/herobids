@@ -322,7 +322,20 @@ describe('PROGRAMMING_SKILL', () => {
   });
 });
 
-// ── LONG_RUNNING_TASK_SKILL — continuity across ticks ───────────────────────
+// ── LONG_RUNNING_TASK_SKILL — continuity across runs ────────────────────────
+
+/** Text of one numbered EACH RUN step of LONG_RUNNING_TASK_SKILL, up to the next step or the RULES section. */
+function longRunningStep(step: number): string {
+  const { instructions } = LONG_RUNNING_TASK_SKILL;
+  const eachRun = instructions.indexOf('\nEACH RUN\n');
+  const rules = instructions.indexOf('\nRULES\n', eachRun);
+  const start = instructions.indexOf(`\n${step}. `, eachRun);
+  if (eachRun === -1 || rules === -1 || start === -1 || start > rules) {
+    throw new Error(`EACH RUN step ${step} not found`);
+  }
+  const nextStep = instructions.indexOf(`\n${step + 1}. `, start + 1);
+  return instructions.slice(start, nextStep !== -1 && nextStep < rules ? nextStep : rules);
+}
 
 describe('LONG_RUNNING_TASK_SKILL', () => {
   it('has slug "system/long-running-task" and is a registered system skill', () => {
@@ -337,21 +350,29 @@ describe('LONG_RUNNING_TASK_SKILL', () => {
   it.each([
     'get_memory',
     'set_memory',
+    'list_memory_keys',
+    'create_task',
     'list_tasks',
     'complete_task',
     'schedule_reminder',
-    'send_message',
+    'list_reminders',
+    'cancel_reminder',
   ])('instructions use the base tool %s, which BASE_SKILL provides', (toolName) => {
     expect(LONG_RUNNING_TASK_SKILL.instructions).toContain(toolName);
     expect(BASE_SKILL.requiredTools).toContain(toolName);
   });
 
-  it('does not instruct cancel_reminder (one-shot reminders are consumed when they fire)', () => {
-    expect(LONG_RUNNING_TASK_SKILL.instructions).not.toContain('cancel_reminder');
+  it('has two levels of work, the goal and its units, and no cycles', () => {
+    const { instructions } = LONG_RUNNING_TASK_SKILL;
+    expect(instructions).toContain('- Goal: the whole long-running task.');
+    expect(instructions).toContain('- Unit: one portion of the goal');
+    expect(instructions).not.toMatch(/cycle/i);
   });
 
-  it('gives the exact continuation key convention', () => {
-    expect(LONG_RUNNING_TASK_SKILL.instructions).toContain('key: "ltt-<campaign>-continue"');
+  it('speaks of runs, not ticks, apart from defining a run', () => {
+    const { instructions } = LONG_RUNNING_TASK_SKILL;
+    expect(instructions).toContain('- Run: one tick/session');
+    expect(instructions.replace('- Run: one tick/session', '')).not.toMatch(/tick/i);
   });
 
   it('keeps durable progress in tasks and memory, not workspace files', () => {
@@ -359,17 +380,102 @@ describe('LONG_RUNNING_TASK_SKILL', () => {
     expect(LONG_RUNNING_TASK_SKILL.instructions).toContain('Workspace files are NOT durable');
   });
 
+  it('saves the goal, whether it is ongoing, its end time, the run budget, where results are kept and the phase in the index', () => {
+    expect(LONG_RUNNING_TASK_SKILL.instructions).toContain('{ goal, ongoing, endsAt, runBudget, storage, phase, lastSummary, updatedAt }');
+    expect(LONG_RUNNING_TASK_SKILL.instructions).toContain('`phase`: `active`, `ending` or `ended`.');
+  });
+
+  it('lets the agent decide the run budget, saves it, and does units up to it across the whole run', () => {
+    const { instructions } = LONG_RUNNING_TASK_SKILL;
+    expect(instructions).toContain('`runBudget`: how much to do in one run. Decide it from the goal');
+    expect(instructions).toContain('It covers the whole run.');
+    expect(longRunningStep(5)).toContain('Do units up to `runBudget`');
+    expect(instructions).not.toMatch(/up to \d+ units/);
+  });
+
+  it('keeps campaign names free of hyphens, so one campaign\'s key prefix cannot match another campaign\'s keys', () => {
+    expect(LONG_RUNNING_TASK_SKILL.instructions).toContain('(lowercase letters and digits only)');
+  });
+
+  it('finds the campaign after a restart from the wake message, task titles or the index goal', () => {
+    const orient = longRunningStep(1);
+    expect(orient).toContain('look for it in the message that woke you and in the task titles');
+    expect(orient).toContain('read the `ltt/<name>/index` keys and use the one whose `goal` is this goal');
+  });
+
+  it('counts only this goal\'s tasks as its pending units', () => {
+    expect(longRunningStep(1)).toContain('Only tasks titled `[<campaign>]` are this goal\'s pending units; ignore the rest.');
+  });
+
+  it('creates the units before writing the index, so an interrupted plan cannot look like a finished goal', () => {
+    const plan = longRunningStep(2);
+    expect(plan.indexOf('create one task per unit')).toBeLessThan(plan.indexOf('then write the index'));
+    expect(plan).toContain('create only the units that are not already in the task list');
+  });
+
+  it('schedules a fallback continuation before any work, which the last step replaces', () => {
+    expect(longRunningStep(3)).toContain('Unless the phase is `ended`, schedule the continuation now');
+    expect(longRunningStep(3)).toContain('Step 7 replaces it.');
+  });
+
+  it('ends the goal when its work is done, its end time has passed, or the user asks to stop', () => {
+    expect(LONG_RUNNING_TASK_SKILL.instructions).toContain('It ends when its work is done, when its end time has passed, or when the user asks to stop.');
+    expect(longRunningStep(4)).toContain('If the phase is `active` and `endsAt` has passed or the user has asked to stop, set the phase to `ending`.');
+    expect(longRunningStep(6)).toContain('If none are pending and `ongoing` is false, the goal\'s work is done: set the phase to `ending`');
+  });
+
+  it('finishes the work the goal requires at its end before setting ended, continuing it in later runs if needed', () => {
+    const goalEnd = longRunningStep(4);
+    expect(goalEnd).toContain('If the phase is `ending`, start no new units: do only the work the goal requires at its end');
+    expect(goalEnd).toContain('When that work is finished, set the phase to `ended`; if it is not, go to step 7 and continue it in the next run.');
+    expect(goalEnd.indexOf('set the phase to `ended`')).toBeLessThan(goalEnd.indexOf('cancel_reminder'));
+  });
+
+  it('leaves the pending units of an ending or ended goal alone', () => {
+    expect(longRunningStep(4)).toContain('Pending units stay pending once the phase is `ending` or `ended`; ignore them.');
+  });
+
+  it('cancels reminders only when the goal has ended (one-shot reminders are consumed when they fire)', () => {
+    const goalEnd = longRunningStep(4);
+    expect(goalEnd).toContain('cancel each reminder whose key starts with `ltt-<campaign>-`');
+    expect(LONG_RUNNING_TASK_SKILL.instructions.replace(goalEnd, '')).not.toContain('cancel_reminder');
+  });
+
+  it('gives the exact continuation key convention, under the goal\'s reminder prefix', () => {
+    expect(LONG_RUNNING_TASK_SKILL.instructions).toContain('key: "ltt-<campaign>-continue"');
+    expect(LONG_RUNNING_TASK_SKILL.instructions).toContain('give every reminder you schedule for this goal a key that starts with `ltt-<campaign>-`.');
+  });
+
+  it('saves a reason before closing a unit that cannot be done, so later runs do not retry it forever', () => {
+    expect(longRunningStep(5)).toContain('If a unit cannot be done, save a one-line reason with the goal\'s results, then complete its task');
+  });
+
+  it('stops doing units when some are still pending after the run budget is used', () => {
+    expect(longRunningStep(6)).toContain('If units are still pending, go to step 7.');
+  });
+
+  it('does not update the index or schedule a continuation once the goal has ended', () => {
+    const lastStep = longRunningStep(7);
+    expect(lastStep).toContain('Unless the phase is `ended`, update `lastSummary` and `updatedAt` in the index, and schedule the continuation');
+    expect(lastStep).toContain('while the phase is `active`, never later than `endsAt`');
+  });
+
   it('lists finish_run as a required tool', () => {
     expect(LONG_RUNNING_TASK_SKILL.requiredTools).toContain('finish_run');
   });
 
-  it('tells the agent to end every run with finish_run', () => {
-    const { instructions } = LONG_RUNNING_TASK_SKILL;
-    expect(instructions).toContain('ENDING A RUN');
-    expect(instructions).toContain('end every run by calling it');
-    expect(instructions).toContain('end the run (see ENDING A RUN)');
-    expect(instructions.indexOf('FINISH A CYCLE')).toBeLessThan(instructions.indexOf('\nENDING A RUN\n'));
-    expect(instructions.indexOf('\nENDING A RUN\n')).toBeLessThan(instructions.indexOf('\nRULES'));
+  it('tells the agent to end every run with finish_run and which status to use', () => {
+    expect(LONG_RUNNING_TASK_SKILL.instructions).toContain('Call `finish_run` to end each run.');
+    expect(longRunningStep(7)).toContain('then call `finish_run`.');
+    expect(longRunningStep(7)).toContain('Use `waiting` while the goal has not ended, `complete` once it has ended, and `blocked` if you cannot continue.');
+  });
+
+  it('deals only with continuity between runs: no reports, user messages or rules about the quality of the work', () => {
+    expect(LONG_RUNNING_TASK_SKILL.instructions).not.toMatch(/report|send_message|publish_artifact|verified|evidence/i);
+  });
+
+  it('says nothing about skills that use it', () => {
+    expect(LONG_RUNNING_TASK_SKILL.instructions).not.toMatch(/\bhosting\b|\bjobs?\b/i);
   });
 
   it('keeps depending only on file-management after adding finish_run', () => {
