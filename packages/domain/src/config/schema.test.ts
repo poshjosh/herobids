@@ -546,6 +546,40 @@ describe('AgentRuntimePolicySchema', () => {
     expect(negative.success).toBe(false);
   });
 
+  it('defaults the continuation guard to two nudges when the key is missing', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      llm: {},
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.continuationGuard).toEqual({ maxNudges: 2 });
+    }
+  });
+
+  it('accepts a configured nudge cap including zero and rejects a negative one', () => {
+    const configured = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      llm: {},
+      continuationGuard: { maxNudges: 5 },
+    });
+    const zero = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      llm: {},
+      continuationGuard: { maxNudges: 0 },
+    });
+    const negative = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      llm: {},
+      continuationGuard: { maxNudges: -1 },
+    });
+
+    expect(configured.success && configured.data.continuationGuard.maxNudges).toBe(5);
+    expect(zero.success && zero.data.continuationGuard.maxNudges).toBe(0);
+    expect(negative.success).toBe(false);
+  });
+
   it('rejects reminders when minRepeatIntervalMs exceeds maxRepeatIntervalMs', () => {
     const result = AgentRuntimePolicySchema.safeParse({
       defaultBudgets: REQUIRED_RUNTIME_BUDGETS,

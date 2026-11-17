@@ -1663,6 +1663,14 @@ export const AgentRuntimeConfigSchema = z.object({
     enabled: z.boolean().default(false),
     minTurnsBeforeShown: z.number().int().min(0).default(1),
   }).default({}),
+  /**
+   * Continuation guard for the judge loop. `maxNudges` caps how many times a turn with no tool calls is
+   * answered with a nudge to continue before the run ends. 0 = no nudging (tool and stop hook only).
+   * The schema default applies when the key is missing, so workers and agent images of different ages agree.
+   */
+  continuationGuard: z.object({
+    maxNudges: z.number().int().min(0).default(2),
+  }).default({}),
 });
 
 export const AgentRuntimePolicySchema = AgentRuntimeConfigSchema.extend({

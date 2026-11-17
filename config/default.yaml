@@ -736,6 +736,9 @@ agentRuntime:
   runStatusHint:
     enabled: true                      # send "Current time is (UTC) ...; this run has been in progress for ..." as a final user message on each judge model call
     minTurnsBeforeShown: 1             # first judge turn that gets the line (0 = every turn; turn 0 already has the tick-start time in the system prompt)
+  # Continuation guard for the judge loop.
+  continuationGuard:
+    maxNudges: 2                       # max nudges to continue after a turn with no tool calls (0 = no nudging)
 # Market intelligence — always-on discovery coordinator and monitor.
 # Controls the background market intelligence subsystem that wakes agents
 # when market conditions match their registered watches.
