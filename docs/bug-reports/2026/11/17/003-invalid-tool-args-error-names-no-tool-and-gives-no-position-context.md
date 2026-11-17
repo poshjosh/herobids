@@ -143,3 +143,15 @@ No open questions.
 - A tool call dropped for having no usable name, or for not being an object, produces one warning line naming its position and the reason, and the returned calls are the same as before.
 - The error code, `retryable`, the retry loop and the tick failure behaviour are unchanged. Existing classification and retry tests pass.
 - `pnpm lint`, `pnpm test`, `pnpm build` pass.
+
+## Implementation Task List
+
+- Task 1 (Fix sections 1-3): improved `provider.invalid_tool_args` message (tool, call id, index, position, length, offending chars, finish_reason, cap, non-object case) in `packages/llm/src/llm-provider.ts` with tests - DONE
+- Task 2 (Silent drops): warn once per dropped tool call in `normalizeOpenAiToolCalls`, behavior unchanged, with tests - PENDING
+- Task 3 (Fix section 4): documentation (report 001 link, CHANGELOG, agent-runtime docs entry) - PENDING
+
+Out of scope: any behavior change after the error, skill guidance, model switch, call-signature changes (verdict: do nothing).
+
+## Outstanding Issues
+
+- Task 1: (low) Cap truncation can cut diagnostic sentences when a model-supplied tool name or call id is very long. The sanitizer keeps only the leading `Unexpected token 'X'` of V8 messages with an input excerpt. Cut-off hint does not include configured max tokens.

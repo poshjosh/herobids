@@ -343,6 +343,7 @@ async function callOpenAiCompatibleProvider(
     const data = await response.json() as {
       id?: string;
       choices?: Array<{
+        finish_reason?: string | null;
         message?: {
           content?: string | null;
           tool_calls?: Array<{
@@ -362,7 +363,11 @@ async function callOpenAiCompatibleProvider(
     const content = stripReasoningContent(typeof message?.content === 'string' ? message.content : '');
     let toolCalls: LlmToolCall[];
     try {
-      toolCalls = normalizeOpenAiToolCalls(message?.tool_calls);
+      const finishReason = data.choices?.[0]?.finish_reason;
+      toolCalls = normalizeOpenAiToolCalls(
+        message?.tool_calls,
+        typeof finishReason === 'string' ? finishReason : undefined,
+      );
     } catch (error) {
       return invalidToolArgsError(error);
     }
@@ -749,7 +754,7 @@ function appendAnthropicUserBlock(messages: Array<Record<string, unknown>>, bloc
   messages.push({ role: 'user', content: [block] });
 }
 
-function normalizeOpenAiToolCalls(toolCalls: unknown): LlmToolCall[] {
+function normalizeOpenAiToolCalls(toolCalls: unknown, finishReason?: string): LlmToolCall[] {
   if (!Array.isArray(toolCalls)) {
     return [];
   }
@@ -768,10 +773,17 @@ function normalizeOpenAiToolCalls(toolCalls: unknown): LlmToolCall[] {
       return [];
     }
 
+    const id = candidate.id ?? `tool_call_${index + 1}`;
     return [{
-      id: candidate.id ?? `tool_call_${index + 1}`,
+      id,
       name: candidate.function.name,
-      args: parseToolArgs(candidate.function.arguments),
+      args: parseToolArgs(candidate.function.arguments, {
+        name: candidate.function.name,
+        id,
+        index,
+        total: toolCalls.length,
+        finishReason,
+      }),
     }];
   });
 }
@@ -779,30 +791,119 @@ function normalizeOpenAiToolCalls(toolCalls: unknown): LlmToolCall[] {
 function normalizeAnthropicToolCalls(
   contentBlocks: Array<{ type: string; text?: string; id?: string; name?: string; input?: unknown }>,
 ): LlmToolCall[] {
+  const toolUseTotal = contentBlocks.filter(
+    block => block.type === 'tool_use' && typeof block.name === 'string',
+  ).length;
+  let callIndex = -1;
   return contentBlocks.flatMap((block, index) => {
     if (block.type !== 'tool_use' || typeof block.name !== 'string') {
       return [];
     }
+    callIndex += 1;
+    const id = block.id ?? `tool_call_${index + 1}`;
 
     return [{
-      id: block.id ?? `tool_call_${index + 1}`,
+      id,
       name: block.name,
-      args: asToolArgs(block.input),
+      args: asToolArgs(block.input, { name: block.name, id, index: callIndex, total: toolUseTotal }),
     }];
   });
 }
 
-function parseToolArgs(rawArguments: string | undefined): Record<string, unknown> {
+// Diagnostic limit on the stored error message, not an operator setting.
+const MAX_INVALID_TOOL_ARGS_MESSAGE_LENGTH = 600;
+
+interface ToolCallContext {
+  name: string;
+  id: string;
+  index: number;
+  total: number;
+  finishReason?: string;
+}
+
+function describeToolCall(context: ToolCallContext): string {
+  return `"${context.name}" (call ${context.id}, call ${context.index + 1} of ${context.total})`;
+}
+
+function capMessage(message: string): string {
+  const singleLine = message.replace(/\s+/g, ' ');
+  return singleLine.length <= MAX_INVALID_TOOL_ARGS_MESSAGE_LENGTH
+    ? singleLine
+    : `${singleLine.slice(0, MAX_INVALID_TOOL_ARGS_MESSAGE_LENGTH - 3)}...`;
+}
+
+// Newer V8 quotes an excerpt of the input ("Unexpected token 'x', "..." is not valid
+// JSON", `"undefined" is not valid JSON`, truncated `"..."` forms). Keep at most the
+// leading `Unexpected token 'X'` and drop the rest so no argument text reaches the message.
+function sanitizeEngineMessage(engineMessage: string): string {
+  if (!/is not valid JSON/.test(engineMessage)) {
+    return engineMessage.endsWith('.') ? engineMessage : `${engineMessage}.`;
+  }
+  const leadingToken = /^Unexpected token '.'/su.exec(engineMessage)?.[0];
+  return `${leadingToken ? `${leadingToken} ` : ''}(input excerpt omitted).`;
+}
+
+function describeJsonFailure(
+  engineMessage: string,
+  rawArguments: string,
+  context: ToolCallContext,
+): string {
+  const parts = [`Invalid tool arguments for ${describeToolCall(context)}: not valid JSON.`];
+  // The position text is V8-specific; fall back to the raw message when absent.
+  const positionMatch = /position (\d+)/.exec(engineMessage);
+  const position = positionMatch?.[1] !== undefined ? Number(positionMatch[1]) : undefined;
+  parts.push(sanitizeEngineMessage(engineMessage));
+  parts.push(`The arguments are ${rawArguments.length} characters long.`);
+  if (position !== undefined) {
+    const current = rawArguments[position];
+    const previous = position > 0 ? rawArguments[position - 1] : undefined;
+    if (current !== undefined) {
+      parts.push(`The character at position ${position} is ${JSON.stringify(current)}.`);
+    }
+    if (previous !== undefined) {
+      parts.push(`The character before it is ${JSON.stringify(previous)}.`);
+    }
+  }
+  const cutOff = context.finishReason === 'length'
+    || /unterminated string|unexpected end of json/i.test(engineMessage);
+  if (cutOff) {
+    parts.push('The output was probably cut off (token limit); the call was too large for one response.');
+  }
+  if (context.finishReason) {
+    parts.push(`The model finished with reason ${JSON.stringify(context.finishReason.slice(0, 40))}.`);
+  }
+  return capMessage(parts.join(' '));
+}
+
+function parseToolArgs(
+  rawArguments: string | undefined,
+  context: ToolCallContext,
+): Record<string, unknown> {
   if (!rawArguments) {
     return {};
   }
 
-  return asToolArgs(JSON.parse(rawArguments));
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawArguments);
+  } catch (error) {
+    const engineMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(describeJsonFailure(engineMessage, rawArguments, context));
+  }
+  return asToolArgs(parsed, context);
 }
 
-function asToolArgs(value: unknown): Record<string, unknown> {
+function describeReceived(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'an array';
+  return `a ${typeof value}`;
+}
+
+function asToolArgs(value: unknown, context: ToolCallContext): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('Tool arguments must be a JSON object');
+    throw new Error(capMessage(
+      `Tool arguments must be a JSON object. Invalid tool arguments for ${describeToolCall(context)}: received ${describeReceived(value)}.`,
+    ));
   }
   return value as Record<string, unknown>;
 }

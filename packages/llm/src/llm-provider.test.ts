@@ -394,10 +394,166 @@ describe('callLlmProvider thinking controls', () => {
       ok: false,
       error: {
         code: 'provider.invalid_tool_args',
-        message: 'Tool arguments must be a JSON object',
+        message: 'Tool arguments must be a JSON object. Invalid tool arguments for "list_positions" (call toolu_1, call 1 of 1): received null.',
         retryable: false,
       },
     });
+  });
+});
+
+describe('callLlmProvider invalid tool arguments message', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    process.env['LLM_API_KEY_OPENAI'] = 'test-key';
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.restoreAllMocks();
+  });
+
+  async function callWithToolCalls(
+    toolCalls: Array<{ id: string; name: string; arguments: string }>,
+    finishReason?: string,
+  ) {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{
+        ...(finishReason ? { finish_reason: finishReason } : {}),
+        message: {
+          content: '',
+          tool_calls: toolCalls.map(call => ({
+            id: call.id,
+            function: { name: call.name, arguments: call.arguments },
+          })),
+        },
+      }],
+      usage: { total_tokens: 20 },
+      model: 'gpt-4o-mini',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+
+    const result = await callLlmProvider(
+      { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 512, timeoutMs: 1_000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 512 },
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected failure');
+    expect(result.error.code).toBe('provider.invalid_tool_args');
+    expect(result.error.retryable).toBe(false);
+    return result.error.message;
+  }
+
+  it('names the tool and call in the invalid arguments error', async () => {
+    const message = await callWithToolCalls([{ id: 'call_1', name: 'write_file', arguments: '{not-json' }]);
+    expect(message).toContain('"write_file"');
+    expect(message).toContain('call call_1');
+    expect(message).toContain('call 1 of 1');
+  });
+
+  it('reports the position, length and the characters around the failure for an unescaped quote in a string value', async () => {
+    const args = '{"path":"a.json","content":"{"name":"x"}"}';
+    const message = await callWithToolCalls([{ id: 'call_1', name: 'write_file', arguments: args }], 'stop');
+    const position = Number(/position (\d+)/.exec(message)?.[1]);
+    expect(Number.isNaN(position)).toBe(false);
+    expect(message).toContain(`The arguments are ${args.length} characters long.`);
+    expect(message).toContain(`The character at position ${position} is ${JSON.stringify(args[position])}.`);
+    expect(message).toContain(`The character before it is ${JSON.stringify(args[position - 1])}.`);
+    expect(message).toContain('finished with reason "stop"');
+    expect(message).not.toContain('cut off');
+  });
+
+  it('says the output was cut off when the finish reason is length', async () => {
+    const message = await callWithToolCalls(
+      [{ id: 'call_1', name: 'write_file', arguments: '{"path":"a","content":"abc' }],
+      'length',
+    );
+    expect(message).toContain('cut off');
+    expect(message).toContain('finished with reason "length"');
+  });
+
+  it('says which of several tool calls was invalid', async () => {
+    const message = await callWithToolCalls([
+      { id: 'call_a', name: 'read_file', arguments: '{"path":"a"}' },
+      { id: 'call_b', name: 'write_file', arguments: '{"path":' },
+      { id: 'call_c', name: 'read_file', arguments: '{"path":"c"}' },
+    ]);
+    expect(message).toContain('"write_file"');
+    expect(message).toContain('call 2 of 3');
+  });
+
+  it('keeps the raw JSON error message when no position can be read from it', async () => {
+    const originalParse = JSON.parse.bind(JSON);
+    const parseSpy = vi.spyOn(JSON, 'parse').mockImplementation((text: string, reviver?: Parameters<typeof JSON.parse>[1]) => {
+      if (text === '{bad') throw new SyntaxError('weird engine failure');
+      return originalParse(text, reviver) as unknown;
+    });
+    let message: string;
+    try {
+      message = await callWithToolCalls([{ id: 'call_1', name: 'write_file', arguments: '{bad' }]);
+    } finally {
+      parseSpy.mockRestore();
+    }
+    expect(message).toContain('"write_file"');
+    expect(message).toContain('weird engine failure');
+    expect(message).not.toContain('The character at position');
+  });
+
+  it('does not include argument text in the message beyond the offending character', async () => {
+    const secret = 'SECRET-CV-TEXT-1234567890';
+    const args = `{"content":"${secret}" "x":1}`;
+    const message = await callWithToolCalls([{ id: 'call_1', name: 'write_file', arguments: args }]);
+    expect(message).not.toContain(secret);
+    expect(message).not.toContain('SECRET');
+  });
+
+  it.each([
+    ['SECRETWORD{', "Unexpected token 'S'"],
+    ['{"k":SECRET, "z":"y"}', "Unexpected token 'S'"],
+    ['undefined', undefined],
+    ['[object Object]', undefined],
+    [`{"k":SECRET${'x'.repeat(100)}, "z":"y"}`, "Unexpected token 'S'"],
+  ])('omits the quoted input excerpt for arguments %j', async (args, leading) => {
+    const message = await callWithToolCalls([{ id: 'call_1', name: 'write_file', arguments: args }]);
+    expect(message).not.toContain('SECRET');
+    expect(message).not.toContain('"z"');
+    expect(message).not.toContain('object Object');
+    expect(message).not.toContain('"undefined"');
+    expect(message).toContain('(input excerpt omitted)');
+    if (leading) expect(message).toContain(leading);
+  });
+
+  it('counts only named tool_use blocks in the Anthropic call total', async () => {
+    process.env['LLM_API_KEY_ANTHROPIC'] = 'test-key';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      content: [
+        { type: 'tool_use', id: 'toolu_1', input: {} },
+        { type: 'tool_use', id: 'toolu_2', name: 'write_file', input: 'bad' },
+      ],
+      usage: { input_tokens: 1, output_tokens: 1 },
+      model: 'claude-sonnet-5',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    const result = await callLlmProvider(
+      { provider: 'anthropic', model: 'claude-sonnet-5', maxTokens: 512, timeoutMs: 1_000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 512 },
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected failure');
+    expect(result.error.message).toContain('call 1 of 1');
+  });
+
+  it('keeps the message under the length cap for very long tool names and arguments', async () => {
+    const message = await callWithToolCalls([
+      { id: 'call_1', name: 'tool_'.repeat(500), arguments: `{"a":"${'x'.repeat(5_000)}" "b":1}` },
+    ]);
+    expect(message.length).toBeLessThanOrEqual(600);
+  });
+
+  it('names what it received when the arguments are not a JSON object', async () => {
+    const message = await callWithToolCalls([{ id: 'call_1', name: 'write_file', arguments: '[1,2]' }]);
+    expect(message.startsWith('Tool arguments must be a JSON object')).toBe(true);
+    expect(message).toContain('received an array');
+    expect(message).toContain('"write_file"');
   });
 });
 
