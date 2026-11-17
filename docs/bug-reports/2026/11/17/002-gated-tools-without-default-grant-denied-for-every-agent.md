@@ -147,3 +147,15 @@ None open. The one remaining detail is whether the new rows should also carry a 
 - A test fails if any literal capability name passed to `checkAccess` has no enabled default grant, and fails if `checkAccess` is called with a non-literal.
 - No `maxResponseBytes` on either new row (config limits still apply). Both tools still obey the SSRF checks and the operator switch.
 - A staging agent can complete a real `make_http_request` call after the image release.
+
+## Implementation Task List
+
+- Task 1 (Section A): add default grants for `make_http_request` and `read_document`, and set `maxPerMinute` 30 on `search_web` and `browse_url` - DONE
+- Task 2 (Section B): add the drift-guard test and the capability-policy default-grant tests - PENDING
+- Task 3 (Section C): documentation and bookkeeping (plan task 1.2, CHANGELOG, tool-access doc, lesson) - PENDING
+
+Section D (rollout) and staging verification are operational and not part of this implementation.
+
+## Outstanding Issues
+
+- Task 1: (low) `read_document` row comment wording could mirror the `make_http_request` one; confirm config default of `tools.httpClient.maxResponseBytes` is 51200 (code fallback is 256 KiB, pre-existing).

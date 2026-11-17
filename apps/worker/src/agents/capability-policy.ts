@@ -116,7 +116,7 @@ export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
     capability: 'search_web',
     tier: 'direct',
     enabled: true,
-    limits: { maxPerMinute: 10, maxConcurrent: 3, timeoutMs: 20_000, maxResponseBytes: 256 * 1024 },
+    limits: { maxPerMinute: 30, maxConcurrent: 3, timeoutMs: 20_000, maxResponseBytes: 256 * 1024 },
   },
   {
     capability: 'browse_url',
@@ -124,7 +124,22 @@ export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
     enabled: true,
     // No maxResponseBytes: a grant beats config, so the fetch cap comes from
     // tools.webAccess.browseUrl.maxResponseBytes (a per-agent tool_policy can still set one).
-    limits: { maxPerMinute: 10, maxConcurrent: 3, timeoutMs: 20_000 },
+    limits: { maxPerMinute: 30, maxConcurrent: 3, timeoutMs: 20_000 },
+  },
+  {
+    // No timeoutMs/maxResponseBytes: a grant beats config, so the caller's timeoutMs and
+    // tools.httpClient.maxResponseBytes apply (a per-agent tool_policy can still set them).
+    capability: 'make_http_request',
+    tier: 'direct',
+    enabled: true,
+    limits: { maxPerMinute: 30, maxConcurrent: 3 },
+  },
+  {
+    // No timeoutMs/maxResponseBytes: limits come from tools.webAccess.browseUrl config.
+    capability: 'read_document',
+    tier: 'direct',
+    enabled: true,
+    limits: { maxPerMinute: 30, maxConcurrent: 3 },
   },
   {
     // execute_code runs locally inside the agent container (network-sandboxed by sandbox-exec.sh).
