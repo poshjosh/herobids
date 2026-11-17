@@ -10,6 +10,13 @@ import {
 } from './tools.js';
 import { BASE_SKILL } from './skills.js';
 
+describe('finish_run catalog entry', () => {
+  it('is a known tool in a non-read-only category', () => {
+    expect(isKnownAgentToolName('finish_run')).toBe(true);
+    expect(getToolCatalogEntry('finish_run')?.category).toBe('write-messaging');
+  });
+});
+
 describe('TOOL_CATALOG', () => {
   it('has exactly KNOWN_AGENT_TOOL_NAMES length entries', () => {
     const catalogKeys = Object.keys(TOOL_CATALOG);

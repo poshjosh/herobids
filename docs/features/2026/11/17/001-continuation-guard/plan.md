@@ -312,7 +312,7 @@ Live verification, baseline capture, image release and `results.md` (Verificatio
 
 - Task 1 (WP1): pure module `apps/worker/src/continuation-guard.ts` (nudge text constant, decision function) and tests - DONE
 - Task 2 (WP2): loop options `onNoToolCalls`, `shouldStopAfterToolResults`, `continues`, `nudgesUsed`, `endedBy`, last non-empty assistant text, and tests incl. stop-hook tests - DONE
-- Task 3 (WP3): `finish_run` tool, registration checklist (section 2 steps 1-4, 6-8) and tests - PENDING
+- Task 3 (WP3): `finish_run` tool, registration checklist (section 2 steps 1-4, 6-8) and tests - DONE
 - Task 4 (WP4): config schema `continuationGuard.maxNudges` (no `enabled`), `config/default.yaml`, schema tests - PENDING
 - Task 5 (WP6): `agent.llm.completed` fields (`nudgeCount`, `finishRunStatus`, `finishRunReason`) and activity timeline summary with tests - PENDING
 - Task 6 (WP7): `long-running-task` skill `requiredTools`, ENDING A RUN section, changed sentence, `skills.test.ts` cases - PENDING
@@ -322,3 +322,4 @@ Live verification, baseline capture, image release and `results.md` (Verificatio
 ## Outstanding Issues
 - Task 1 (: (low) test regex for time/budget wording includes 'left'/'limit'; WP2 must pass zero-based turnIndex.
 - Task 2 (: (low) nudgesUsed/endedBy only present when a continuation option is given (judge wiring must default them); empty replies are never nudged (decision, avoids empty assistant message rejection).
+- Task 3 (: (low) category write-messaging chosen (plan left open); finish_run not yet in any skill until Task 6; no test for the validation error text; web and build-docs-index checked, no change needed yet.

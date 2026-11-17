@@ -1,6 +1,7 @@
 import { BASE_SKILL, KNOWN_AGENT_TOOL_NAMES, SYSTEM_SKILLS, TOOL_CATALOG, findUnknownSkillTools } from '@herobids/domain';
 import { ToolRegistry } from './registry.js';
 import { messagingTools } from './messaging.js';
+import { finishRunTool } from './finish-run.js';
 import { conversationReadTools } from './conversation-read.js';
 import { memoryTools } from './memory.js';
 import { tradingTools } from './trading.js';
@@ -104,6 +105,7 @@ export function createToolRegistry(deps?: ToolRegistryDeps): ToolRegistry {
 
   const allTools = [
     ...messagingTools,
+    finishRunTool,
     ...conversationReadTools,
     ...memoryTools,
     ...tradingTools,

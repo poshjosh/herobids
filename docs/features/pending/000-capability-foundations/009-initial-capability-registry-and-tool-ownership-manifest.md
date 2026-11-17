@@ -164,6 +164,7 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 | `execute_code` | `general` | Reusable sandboxed programming expertise. |
 | `execute_shell` | `core` | Agent workspace operation. |
 | `find_instrument` | `external:trading` | Tradable-instrument resolution. |
+| `finish_run` | `core` | Ends a run with a status and reason; records only, no grant needed. |
 | `get_account_summary` | `external:trading` | Trading account state. |
 | `get_analytics` | `external:trading` | Trading analytics. |
 | `get_bot_status` | `external:trading` | Trading bot state. |

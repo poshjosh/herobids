@@ -112,6 +112,11 @@ export interface ToolContext extends TradingToolContext {
 export interface AgentTool<Ctx extends TradingToolContext = ToolContext>
   extends TradingContractAgentTool<Ctx> {}
 
+export const FINISH_RUN_STATUSES = ['complete', 'waiting', 'blocked'] as const;
+export type FinishRunStatus = typeof FINISH_RUN_STATUSES[number];
+/** Maximum length of the stored finish_run reason. */
+export const FINISH_RUN_REASON_MAX_LENGTH = 300;
+
 export const KNOWN_AGENT_TOOL_NAMES = [
   'add_skills',
   'adjust_bot_config',
@@ -133,6 +138,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'execute_code',
   'execute_shell',
   'find_instrument',
+  'finish_run',
   'get_account_summary',
   'delete_child_agent',
   'get_child_agent_status',
@@ -301,6 +307,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   send_message:        { category: 'write-messaging',     description: 'Send a message to the user via the platform messaging system. For user-directed communication only — use send_email for email delivery.' },
   send_email:          { category: 'write-messaging',     description: 'Send an email via a connected email account. Supports cc, bcc, and optional fromConnectionId.' },
   publish_artifact:    { category: 'write-messaging',     description: 'Publish an artifact (analysis result, chart, report) for user review.' },
+  finish_run:          { category: 'write-messaging',     description: `End the current run with a status (${FINISH_RUN_STATUSES.join(', ')}) and a short reason (up to ${FINISH_RUN_REASON_MAX_LENGTH} characters). Only records why the run ended; it does not wake or schedule anything.` },
 
   // read-filesystem
   read_file:           { category: 'read-filesystem',     description: 'Read a page of text from a file in the agent workspace (up to 10 MiB files, paged by characters).' },
