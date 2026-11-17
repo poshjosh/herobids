@@ -99,7 +99,7 @@ import { getWorkspacePaths } from './tools/workspace.js';
 import { installExternalSkillsAtStart, type InstallableExternalSkill } from './external-skill-startup.js';
 import { npxSkillsCliInstaller } from './tools/skills.js';
 import { runStructuredToolLoop } from './structured-tool-loop.js';
-import { buildContinuationCompletionFields, decideContinuationNudge, recordFinishRun, type FinishRunRecord } from './continuation-guard.js';
+import { buildContinuationCompletionFields, decideContinuationNudge, decideFinalTextPersistence, recordFinishRun, type FinishRunRecord } from './continuation-guard.js';
 import { describeCutResult } from './stale-result-hints.js';
 import { resolveEffectiveLlmSelection, type UserModelDefaults, type OperatorModelDefaults } from './llm-selection.js';
 import { getWakeRescheduleDelay, resolveNextTickDelay } from './agent-wake-scheduler.js';
@@ -4282,6 +4282,8 @@ async function runActiveTick(): Promise<void> {
     // outcome of the tick, which depends only on whether a message was sent (activeTick.replied).
     let judgeFinishRun: FinishRunRecord | undefined;
     let judgeNudgesSent = 0;
+    // Text of the latest turn that called finish_run; stored after the loop if that turn ended the run.
+    let judgeFinishTurnText: string | undefined;
     // Stores a closing reply (no tool calls, not nudged) in history, the judge response history and the timeline.
     const persistJudgeFinalText = (assistantResponse: string): void => {
       addToHistory('assistant', assistantResponse);
@@ -4388,8 +4390,17 @@ async function runActiveTick(): Promise<void> {
         logger.info({ tokensUsed: result.data.tokensUsed, thinkingTokens: result.data.thinkingTokens ?? 0, latencyMs: result.data.latencyMs, toolCalls: toolCalls.length }, 'LLM response received');
         logger.debug({ response: assistantResponse.slice(0, 500) }, 'LLM response preview');
         // A nudged turn is not the end of the run, so its reply must not reach history or the timeline.
-        if (toolCalls.length === 0 && !continues) {
-          persistJudgeFinalText(assistantResponse);
+        const finalText = decideFinalTextPersistence({
+          continues,
+          toolCallNames: toolCalls.map((call) => call.name),
+          assistantResponse,
+        });
+        if (finalText?.when === 'now') {
+          persistJudgeFinalText(finalText.text);
+        }
+        // Reset on every finish_run turn (not only text-bearing ones) so a retried bare call drops the earlier text.
+        if (toolCalls.some((call) => call.name === 'finish_run')) {
+          judgeFinishTurnText = finalText?.when === 'if_terminal' ? finalText.text : undefined;
         }
       },
       onToolResult: ({ toolCall, toolResult }) => {
@@ -4460,8 +4471,9 @@ async function runActiveTick(): Promise<void> {
     });
 
     // A run ended by finish_run has no closing no-tool turn, so store its final text the way that turn would be.
-    if (judgeLoopResult.ok && judgeLoopResult.endedBy === 'terminal_tool' && judgeLoopResult.assistantResponse.trim() !== '') {
-      persistJudgeFinalText(judgeLoopResult.assistantResponse);
+    // Only the finish_run turn's own text counts, never an earlier (nudged) turn's text from the loop's fallback.
+    if (judgeLoopResult.ok && judgeLoopResult.endedBy === 'terminal_tool' && judgeFinishTurnText !== undefined) {
+      persistJudgeFinalText(judgeFinishTurnText);
     }
 
     // Deliver the judge's plain-text reply when it never called send_message. No extra LLM call.

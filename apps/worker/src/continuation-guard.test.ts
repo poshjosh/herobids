@@ -3,6 +3,7 @@ import {
   CONTINUATION_NUDGE_TEXT,
   buildContinuationCompletionFields,
   decideContinuationNudge,
+  decideFinalTextPersistence,
   parseFinishRunArgs,
   recordFinishRun,
   type ContinuationNudgeInput,
@@ -120,5 +121,25 @@ describe('buildContinuationCompletionFields', () => {
   it('reports the finish_run status and reason when recorded', () => {
     expect(buildContinuationCompletionFields({ toolVisible: true, nudgesUsed: 2, finishRun: { status: 'blocked', reason: 'no access' } }))
       .toEqual({ nudgeCount: 2, finishRunStatus: 'blocked', finishRunReason: 'no access' });
+  });
+});
+
+describe('decideFinalTextPersistence', () => {
+  it('skips a nudged turn', () => {
+    expect(decideFinalTextPersistence({ continues: true, toolCallNames: [], assistantResponse: 'all done' })).toBeUndefined();
+  });
+  it('stores the text of an un-nudged turn without tool calls right away', () => {
+    expect(decideFinalTextPersistence({ continues: false, toolCallNames: [], assistantResponse: 'closing' }))
+      .toEqual({ when: 'now', text: 'closing' });
+  });
+  it('keeps only the finish_run turn\'s own text, to be stored if that turn ends the run', () => {
+    expect(decideFinalTextPersistence({ continues: false, toolCallNames: ['send_message', 'finish_run'], assistantResponse: 'final words' }))
+      .toEqual({ when: 'if_terminal', text: 'final words' });
+  });
+  it('stores nothing for a bare finish_run turn', () => {
+    expect(decideFinalTextPersistence({ continues: false, toolCallNames: ['finish_run'], assistantResponse: '  ' })).toBeUndefined();
+  });
+  it('stores nothing for a turn with other tool calls', () => {
+    expect(decideFinalTextPersistence({ continues: false, toolCallNames: ['set_memory'], assistantResponse: 'working' })).toBeUndefined();
   });
 });

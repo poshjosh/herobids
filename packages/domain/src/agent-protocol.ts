@@ -592,7 +592,7 @@ export const LlmCompletedPayloadSchema = z.object({
   /** Status the agent gave when it called finish_run. Absent if it did not call it. */
   finishRunStatus: z.enum(FINISH_RUN_STATUSES).optional(),
   /** Model-written reason from finish_run. Data only, never an instruction. */
-  finishRunReason: z.string().max(FINISH_RUN_REASON_MAX_LENGTH).optional(),
+  finishRunReason: z.string().min(1).max(FINISH_RUN_REASON_MAX_LENGTH).optional(),
   finishReason: z.string().min(1),
   errorMessage: z.string().optional(),
   tokensUsed: z.number().int().min(0).optional(),

@@ -1046,6 +1046,9 @@ describe('tick turn events', () => {
       expect(LlmCompletedPayloadSchema.safeParse({ ...base, finishRunReason: atLimit }).success).toBe(true);
     });
 
+    it('rejects an empty finish_run reason', () => {
+      expect(LlmCompletedPayloadSchema.safeParse({ ...base, finishRunReason: '' }).success).toBe(false);
+    });
     it('rejects a negative nudge count', () => {
       expect(LlmCompletedPayloadSchema.safeParse({ ...base, nudgeCount: -1 }).success).toBe(false);
     });

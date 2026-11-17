@@ -164,7 +164,7 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 | `execute_code` | `general` | Reusable sandboxed programming expertise. |
 | `execute_shell` | `core` | Agent workspace operation. |
 | `find_instrument` | `external:trading` | Tradable-instrument resolution. |
-| `finish_run` | `core` | Ends a run with a status and reason; records only, no grant needed. |
+| `finish_run` | `core` | Platform-owned run-ending tool; records only, no grant needed. Delivered to agents through the `system/long-running-task` skill (listed in its `requiredTools`), not the base skill. |
 | `get_account_summary` | `external:trading` | Trading account state. |
 | `get_analytics` | `external:trading` | Trading analytics. |
 | `get_bot_status` | `external:trading` | Trading bot state. |

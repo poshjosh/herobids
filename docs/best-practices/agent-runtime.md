@@ -139,8 +139,8 @@ Cost Review Checklist outcome (2026-11-17):
 - New repeating failure mode: no. Nudges are capped per run by `maxNudges`, so no session circuit breaker
   wiring is needed. A failed `finish_run` counts in the tool circuit breaker like any tool, and hiding the
   tool only ends nudging.
-- `pnpm test` including the `SessionCircuitBreaker` tests: see the plan's task log for the run at
-  implementation time; re-run before release.
+- `SessionCircuitBreaker` tests: `apps/worker/src/runtime-resilience.test.ts` passes (42 tests) with this
+  change, run on 2026-11-17 together with `continuation-guard.test.ts`. Re-run the full suite before release.
 
 Rollout and verification (baseline, staging stage B, results) are in
 `docs/features/2026/11/17/001-continuation-guard/plan.md`.

@@ -312,12 +312,13 @@ const MESSAGE_CLASSIFICATIONS: Record<string, ActivityClassification> = {
       const turns = typeof p['turnsUsed'] === 'number' ? p['turnsUsed'] : '?';
       const finish = typeof p['finishReason'] === 'string' ? p['finishReason'] : 'unknown';
       let summary = `${phase} LLM completed — model: ${model}, turns: ${turns}, finish: ${finish}.`;
-      const endedStatus = p['finishRunStatus'];
+      // finish_run and nudges exist only in the judge loop; ignore them on any other phase.
+      const endedStatus = phase === 'judge' ? p['finishRunStatus'] : undefined;
       if (typeof endedStatus === 'string') {
         const endedReason = typeof p['finishRunReason'] === 'string' ? p['finishRunReason'] : '';
         summary += endedReason ? ` Ended: ${endedStatus} — ${endedReason}.` : ` Ended: ${endedStatus}.`;
       }
-      const nudges = p['nudgeCount'];
+      const nudges = phase === 'judge' ? p['nudgeCount'] : undefined;
       if (typeof nudges === 'number' && nudges > 0) summary += ` Nudged ${nudges}x.`;
       return summary;
     },

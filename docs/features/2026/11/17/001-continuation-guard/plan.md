@@ -86,6 +86,7 @@ Today the loop ends in three ways: a turn with no tool calls, an LLM failure, or
 - A nudge consumes one turn of `maxTurns`, and counts in `turnsUsed`.
 - `onAssistantTurn` info gains `continues: boolean` (true when a nudge follows), so the agent can skip the final-turn side effects (see 4).
 - `StructuredToolLoopSuccess` gains `nudgesUsed: number` and `endedBy: 'no_tool_calls' | 'terminal_tool' | 'turn_limit'` (optional, defaulted, to limit churn in test fixtures).
+- **Empty replies are never nudged (decision).** A reply with no text and no tool calls ends the run: the loop would otherwise append an empty assistant message, which providers reject. Only a non-empty reply can be nudged.
 - `assistantResponse` in the result is the last non-empty assistant text, so a nudged turn's reply is not lost when the final turn is empty (matters for the reply fallback in 4).
 - When neither option is given the loop is byte-for-byte as today. There is a test pattern for this ("behaves exactly as before when not provided", as used for `getTurnContext`).
 
@@ -327,3 +328,4 @@ Live verification, baseline capture, image release and `results.md` (Verificatio
 - Task 5 (: (medium) finishRunReason schema accepts empty string (tool requires min 1); mapper does not restrict to judge phase; empty-reason fallback untested.
 - Task 6 (: (low) skill instruction 'waiting' wording should be rechecked against D8 (records only) when skills are reconciled; apps/web tool-name lists not re-checked.
 - Task 7 (: (low) judge wiring in agent.ts has no direct test (only pure helpers); post-loop persistence of the stop-hook final text uses the loop's last non-empty text, which may come from an earlier turn; continuation-guard.ts imports ./tools/finish-run.js (consider moving FinishRunParamsSchema to domain).
+- Final review: the Task 5 (empty reason, judge-phase only) and Task 7 (terminal-turn persistence) items above are fixed in the final commit. Remaining low: judge wiring in `agent.ts` has no direct test (pure helpers are tested); `continuation-guard.ts` imports `FinishRunParamsSchema` from the tool file; older-image behaviour for the new `maxNudges` key is by Zod default stripping and is not tested; skill `waiting` wording to recheck against D8 at skill reconciliation.

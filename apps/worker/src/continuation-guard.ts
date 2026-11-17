@@ -93,3 +93,31 @@ export function buildContinuationCompletionFields(input: ContinuationCompletionI
     ...(input.finishRun ? { finishRunStatus: input.finishRun.status, finishRunReason: input.finishRun.reason } : {}),
   };
 }
+export interface FinalTextTurnInput {
+  /** True when a nudge follows this turn, so it is not the end of the run. */
+  continues: boolean;
+  toolCallNames: readonly string[];
+  assistantResponse: string;
+}
+export type FinalTextPersistence =
+  /** Store now: a closing reply with no tool calls. */
+  | { when: 'now'; text: string }
+  /** Store after the loop, and only if the run ended because of this turn's `finish_run`. */
+  | { when: 'if_terminal'; text: string };
+/**
+ * Decides whether a judge turn's text is the run's closing text.
+ * A nudged turn is never stored. A `finish_run` turn stores only its own text (a bare call stores nothing),
+ * never an earlier turn's text.
+ */
+export function decideFinalTextPersistence(input: FinalTextTurnInput): FinalTextPersistence | undefined {
+  if (input.continues) {
+    return undefined;
+  }
+  if (input.toolCallNames.length === 0) {
+    return { when: 'now', text: input.assistantResponse };
+  }
+  if (input.toolCallNames.includes('finish_run') && input.assistantResponse.trim() !== '') {
+    return { when: 'if_terminal', text: input.assistantResponse };
+  }
+  return undefined;
+}

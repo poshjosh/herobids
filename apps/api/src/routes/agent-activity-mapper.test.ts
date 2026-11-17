@@ -406,6 +406,28 @@ describe('mapProtocolMessage — runtime activity event families', () => {
     expect(entry.severity).toBe('info');
   });
 
+  it('does not show finish_run or nudge fields on a scout-phase event', () => {
+    const entry = mapProtocolMessage({
+      ...base,
+      type: 'agent.llm.completed',
+      payload: {
+        tickId: 't-5', phase: 'scout', model: 'claude-sonnet', turnsUsed: 2, finishReason: 'stop',
+        finishRunStatus: 'waiting', finishRunReason: 'x', nudgeCount: 2,
+      },
+    });
+    expect(entry.summary).toBe('scout LLM completed — model: claude-sonnet, turns: 2, finish: stop.');
+  });
+  it('shows the status alone when the finish_run reason is empty', () => {
+    const entry = mapProtocolMessage({
+      ...base,
+      type: 'agent.llm.completed',
+      payload: {
+        tickId: 't-5', phase: 'judge', model: 'claude-sonnet', turnsUsed: 2, finishReason: 'stop',
+        finishRunStatus: 'complete', finishRunReason: '',
+      },
+    });
+    expect(entry.summary).toBe('judge LLM completed — model: claude-sonnet, turns: 2, finish: stop. Ended: complete.');
+  });
   it('elevates llm.completed with finishReason=error to warn severity', () => {
     const entry = mapProtocolMessage({
       ...base,
