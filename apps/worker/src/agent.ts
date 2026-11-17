@@ -100,6 +100,7 @@ import { installExternalSkillsAtStart, type InstallableExternalSkill } from './e
 import { npxSkillsCliInstaller } from './tools/skills.js';
 import { runStructuredToolLoop } from './structured-tool-loop.js';
 import { UnresolvedToolFailureTracker, buildContinuationCompletionFields, decideContinuationNudge, decideFinalTextPersistence, recordFinishRun, type FinishRunRecord } from './continuation-guard.js';
+import { resolveJudgeMaxTokens } from './judge-max-tokens.js';
 import { describeCutResult } from './stale-result-hints.js';
 import { resolveEffectiveLlmSelection, type UserModelDefaults, type OperatorModelDefaults } from './llm-selection.js';
 import { getWakeRescheduleDelay, resolveNextTickDelay } from './agent-wake-scheduler.js';
@@ -124,6 +125,8 @@ const AGENT_RUNTIME_CONFIG_RAW = process.env['AGENT_RUNTIME_CONFIG_JSON'];
 const LLM_PROVIDER = process.env['LLM_PROVIDER'];
 const LLM_BASE_URL = process.env['LLM_BASE_URL'];
 const LLM_MAX_TOKENS = parseInt(process.env['LLM_MAX_TOKENS'] ?? '4096', 10);
+// Output-token limit of each judge call. The agent's own `judgeMaxTokens` replaces the operator default once the policy is resolved (below).
+let judgeMaxTokens = LLM_MAX_TOKENS;
 const LLM_TIMEOUT_MS = parseInt(process.env['LLM_TIMEOUT_MS'] ?? '60000', 10);
 const OPENROUTER_PROVIDER_CONTROLS: OpenRouterProviderControls | undefined = (() => {
   const raw = process.env['OPENROUTER_PROVIDER_CONTROLS'];
@@ -564,6 +567,7 @@ if (agentConfig.resolvedRuntimePolicy) {
   agentRuntimePolicy.llm.scout.maxTurns = rp.scoutMaxTurns;
   agentRuntimePolicy.llm.scout.maxTokens = rp.scoutMaxTokens;
   agentRuntimePolicy.llm.judge.maxTurns = rp.judgeMaxTurns;
+  judgeMaxTokens = resolveJudgeMaxTokens(LLM_MAX_TOKENS, rp);
   agentRuntimePolicy.llm.thinking.lightBudgetTokens = rp.lightThinkingTokens;
   agentRuntimePolicy.llm.thinking.deepBudgetTokens = rp.deepThinkingTokens;
   if (rp.maxHoldDurationMs !== undefined) {
@@ -4316,7 +4320,7 @@ async function runActiveTick(): Promise<void> {
       providerConfig: {
         provider: provider,
         model: costProfile.heavyModel,
-        maxTokens: LLM_MAX_TOKENS,
+        maxTokens: judgeMaxTokens,
         timeoutMs: LLM_TIMEOUT_MS,
         baseUrl: resolvedBaseUrl,
         providersBaseUrlMap,
@@ -4324,7 +4328,7 @@ async function runActiveTick(): Promise<void> {
         openRouterProviderControls: OPENROUTER_PROVIDER_CONTROLS,
       },
       requestBase: {
-        maxTokens: LLM_MAX_TOKENS,
+        maxTokens: judgeMaxTokens,
         temperature: judgeLoopConfig.temperature,
         reasoning: resolveReasoningParams(
           toReasoningLevel(cappedThinking),
@@ -4476,7 +4480,7 @@ async function runActiveTick(): Promise<void> {
           usageBillingService?.recordFailedLlmCall({
             provider,
             model: costProfile.heavyModel,
-            maxTokens: LLM_MAX_TOKENS,
+            maxTokens: judgeMaxTokens,
             phase: 'judge',
             turnIndex,
             attemptIndex: attempt,

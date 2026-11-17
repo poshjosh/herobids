@@ -67,6 +67,20 @@ balanced.
 
 A missing or invalid style falls back to **balanced**.
 
+### Output token limits: `scoutMaxTokens`, `judgeMaxTokens` and the operator `llm.maxTokens`
+
+`scoutMaxTokens` and `judgeMaxTokens` are the output-token limit of each scout and judge model call.
+At agent startup `apps/worker/src/agent.ts` replaces the operator default (`llm.maxTokens`, passed to
+the container as `LLM_MAX_TOKENS`) with the agent's resolved value for the scout and, through
+`resolveJudgeMaxTokens` (`apps/worker/src/judge-max-tokens.ts`), for the judge. The operator value
+still applies to the hybrid evaluator and to an agent that has no resolved policy. (Before bug
+2026-11-17/005 the judge ignored `judgeMaxTokens` and always used the operator value.)
+
+The limit is shared with reasoning. On OpenRouter, reasoning tokens count against it, and at effort
+`high` (the judge's `deep` level) about 80% of it can go to reasoning, so the room left for text and
+tool calls is a fraction of the figure shown. A response that spends the whole limit ends with
+`finish_reason: "length"`, and any tool call in it is cut off.
+
 ### Note on `scoutMaxTurns` / `judgeMaxTurns` and the operator `llm.*` turn config
 
 There is a **second home** for the scout/judge turn caps: the operator config

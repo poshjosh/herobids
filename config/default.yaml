@@ -308,7 +308,7 @@ llm:
   provider: ollama              # LLM provider: openrouter | openai | anthropic | ollama
   model: qwen3.6:35b-a3b-q4_K_M # Model for non-agent API calls (e.g. /ai/generate-config). Agent model is set in agent config or user AI settings.
   baseUrl: http://host.docker.internal:11434/v1  # Ollama: use host.docker.internal, NOT localhost inside Docker
-  maxTokens: 4096               # Max tokens per LLM call
+  maxTokens: 4096               # Output-token limit per LLM call for non-agent calls, the hybrid evaluator and agents without a resolved runtime policy. The judge uses the agent's judgeMaxTokens and the scout its scoutMaxTokens (shared with reasoning)
   # We increased this from 60 secs to 180 secs because of vision handling
   # We have a plan in the backlog to introduce different timeouts for: llm.timeoutMs, browserPool.actionTimeouts etc
   timeoutMs: 180000             # LLM call timeout in ms

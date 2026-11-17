@@ -359,11 +359,16 @@ async function callOpenAiCompatibleProvider(
           }>;
         };
       }>;
-      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; output_tokens_details?: { reasoning_tokens?: number }; prompt_tokens_details?: { cached_tokens?: number } };
+      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number }; output_tokens_details?: { reasoning_tokens?: number }; prompt_tokens_details?: { cached_tokens?: number } };
       model?: string;
     };
 
     const message = data.choices?.[0]?.message;
+    // Chat Completions reports reasoning under `completion_tokens_details`; `output_tokens_details` is the
+    // Responses-style name, kept as a fallback. `completion_tokens` already includes the reasoning tokens.
+    const reasoningTokens = data.usage?.completion_tokens_details?.reasoning_tokens
+      ?? data.usage?.output_tokens_details?.reasoning_tokens
+      ?? 0;
     const rawContent = typeof message?.content === 'string' ? message.content : '';
     const content = stripReasoningContent(rawContent);
     let toolCalls: LlmToolCall[];
@@ -387,7 +392,7 @@ async function callOpenAiCompatibleProvider(
         tokensUsed: data.usage?.total_tokens ?? 0,
         latencyMs: Date.now() - startMs,
         cached: (data.usage?.prompt_tokens_details?.cached_tokens ?? 0) > 0,
-        thinkingTokens: data.usage?.output_tokens_details?.reasoning_tokens ?? 0,
+        thinkingTokens: reasoningTokens,
         // Normalise to non-cached count so the billing contract is unambiguous:
         // inputTokens always means prompt tokens that were NOT served from cache.
         // For the Anthropic path, input_tokens is already non-cached; the OpenAI
@@ -395,7 +400,10 @@ async function callOpenAiCompatibleProvider(
         inputTokens: data.usage?.prompt_tokens != null
           ? data.usage.prompt_tokens - (data.usage.prompt_tokens_details?.cached_tokens ?? 0)
           : undefined,
-        outputTokens: data.usage?.completion_tokens,
+        // Visible output only: billing records reasoning separately, so output plus reasoning equals completion_tokens.
+        outputTokens: data.usage?.completion_tokens != null
+          ? Math.max(data.usage.completion_tokens - reasoningTokens, 0)
+          : undefined,
         cachedInputTokens: data.usage?.prompt_tokens_details?.cached_tokens,
         finishReason: typeof data.choices?.[0]?.finish_reason === 'string' ? data.choices[0].finish_reason : undefined,
         contentCharsBeforeStrip: rawContent.length,

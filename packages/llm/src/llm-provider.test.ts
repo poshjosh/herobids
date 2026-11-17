@@ -1931,3 +1931,73 @@ describe('callLlmProvider diagnostics for an empty reply', () => {
     expect(result.data.contentCharsBeforeStrip).toBe('<thinking>x</thinking>'.length);
   });
 });
+
+describe('callLlmProvider reasoning tokens on the OpenAI-compatible path', () => {
+  const originalEnv = { ...process.env };
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    process.env['LLM_API_KEY_OPENROUTER'] = 'test-key';
+  });
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.restoreAllMocks();
+  });
+
+  async function callWithUsage(usage: Record<string, unknown>) {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: 'ok' } }],
+      usage,
+      model: 'anthropic/claude-haiku-5.5',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    return callLlmProvider(
+      { provider: 'openrouter', model: 'anthropic/claude-haiku-5.5', maxTokens: 4096, timeoutMs: 1_000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 4096 },
+    );
+  }
+
+  it('reads reasoning tokens from completion_tokens_details, where Chat Completions reports them', async () => {
+    const result = await callWithUsage({ prompt_tokens: 100, completion_tokens: 900, total_tokens: 1000, completion_tokens_details: { reasoning_tokens: 700 } });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.thinkingTokens).toBe(700);
+  });
+
+  it('counts only visible output as output tokens, so output plus reasoning is not billed twice', async () => {
+    const result = await callWithUsage({ prompt_tokens: 100, completion_tokens: 900, total_tokens: 1000, completion_tokens_details: { reasoning_tokens: 700 } });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.outputTokens).toBe(200);
+    expect((result.data.outputTokens ?? 0) + (result.data.thinkingTokens ?? 0)).toBe(900);
+    expect(result.data.tokensUsed).toBe(1000);
+  });
+
+  it('keeps output tokens equal to completion tokens when the provider reports no reasoning', async () => {
+    const result = await callWithUsage({ prompt_tokens: 100, completion_tokens: 300, total_tokens: 400 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.thinkingTokens).toBe(0);
+    expect(result.data.outputTokens).toBe(300);
+  });
+
+  it('falls back to output_tokens_details when that is the name the provider uses', async () => {
+    const result = await callWithUsage({ prompt_tokens: 100, completion_tokens: 300, total_tokens: 400, output_tokens_details: { reasoning_tokens: 120 } });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.thinkingTokens).toBe(120);
+    expect(result.data.outputTokens).toBe(180);
+  });
+
+  it('never reports negative output tokens if the provider reports more reasoning than completion tokens', async () => {
+    const result = await callWithUsage({ prompt_tokens: 100, completion_tokens: 50, total_tokens: 150, completion_tokens_details: { reasoning_tokens: 80 } });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.outputTokens).toBe(0);
+  });
+
+  it('leaves output tokens unset when the provider gives no completion token count', async () => {
+    const result = await callWithUsage({ total_tokens: 400 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.outputTokens).toBeUndefined();
+  });
+});
