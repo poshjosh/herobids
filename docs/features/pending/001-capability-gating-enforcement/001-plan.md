@@ -188,8 +188,7 @@ These tools publish to the broker via `publishToInbound` and parse the reply. Th
 
 **Decision:** Add entries to `DEFAULT_CAPABILITY_GRANTS` for both capabilities.
 
-- `read_document`: Same defaults as `browse_url` (`maxPerMinute: 10, maxConcurrent: 3, timeoutMs: 20_000, maxResponseBytes: 512 * 1024`).
-- `make_http_request`: New grant — `tier: 'direct', enabled: true, limits: { maxPerMinute: 20, maxConcurrent: 3, timeoutMs: 20_000, maxResponseBytes: 256 * 1024 }`.
+- `read_document` and `make_http_request`: `tier: 'direct', enabled: true, limits: { maxPerMinute: 30, maxConcurrent: 3 }`. No grant-level `timeoutMs` or `maxResponseBytes`, so the tools' own config limits apply. Shipped values; see `docs/bug-reports/2026/11/17/002-gated-tools-without-default-grant-denied-for-every-agent.md`.
 
 Without this fix, both tools return `unknown_capability` denials, which is a bug.
 

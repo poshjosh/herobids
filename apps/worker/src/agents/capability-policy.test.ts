@@ -7,6 +7,7 @@ import {
   buildCapabilityPolicyEngine,
   DEFAULT_CAPABILITY_GRANTS,
 } from './capability-policy.js';
+import { CAPABILITY_BY_MESSAGE_TYPE } from './agent-message-broker.js';
 
 describe('buildCapabilityPolicyEngine', () => {
   it('merges per-runtime overrides onto the default capability policy', () => {
@@ -328,6 +329,13 @@ describe('DEFAULT_CAPABILITY_GRANTS — web-access tools', () => {
     },
   );
 
+  it.each(['make_http_request', 'read_document'])('defaults %s to the direct tier with no per-grant byte or time limits', (capability) => {
+    const grant = buildCapabilityPolicyEngine().getGrant(capability);
+    expect(grant?.tier).toBe('direct');
+    expect(grant?.limits?.maxResponseBytes).toBeUndefined();
+    expect(grant?.limits?.timeoutMs).toBeUndefined();
+  });
+
   it.each(['make_http_request', 'read_document'])('defaults %s to 3 concurrent calls', (capability) => {
     expect(buildCapabilityPolicyEngine().getGrant(capability)?.limits?.maxConcurrent).toBe(3);
   });
@@ -400,6 +408,12 @@ describe('capability gate names', () => {
     const missing = [...gated]
       .filter(([name]) => !DEFAULT_CAPABILITY_GRANTS.some((g) => g.capability === name && g.enabled))
       .map(([name, file]) => `${name} (gated in ${file}): add an enabled row to DEFAULT_CAPABILITY_GRANTS`);
+    expect(missing).toEqual([]);
+  });
+
+  it('every brokered message capability has a default grant row (enabled not required)', () => {
+    const missing = Object.values(CAPABILITY_BY_MESSAGE_TYPE)
+      .filter((name) => !DEFAULT_CAPABILITY_GRANTS.some((g) => g.capability === name));
     expect(missing).toEqual([]);
   });
 });

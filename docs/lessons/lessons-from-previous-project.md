@@ -48,10 +48,10 @@ The old bot couldn't persist state in standalone mode because the FK chain (plan
 
 The old project had to infer whether an action happened after a crash because the durable record lagged behind the real-world side effect. That turns recovery into guesswork. **Rule:** Persist the execution intent before any venue-side effect, then reconcile incomplete intents against external state on restart. Recovery should determine whether the side effect happened, not speculate.
 
----
-
-**Meta-principle:** Most of these bugs share a root cause — *something failed silently and the system continued in a broken state rather than failing visibly or recovering gracefully.* Prefer loud failure (log + alert + stop trading) over quiet degradation. A trading system that doesn't know it's broken is more dangerous than one that crashes.
-
 ### 13. A capability gate name and its grant name must agree
 
 The capability engine fails closed on names it does not know. `make_http_request` and `read_document` called `checkAccess` with names that had no row in `DEFAULT_CAPABILITY_GRANTS`, so every agent was denied with `Unknown capability`, and it read like policy, not a bug. Unit tests with a fake engine never saw it. **Rule:** when a tool gates on a capability, add the default grant in the same change. The drift-guard test in `capability-policy.test.ts` enforces it. See `docs/tech/agents/tool-access-and-sandboxing.md` and `docs/bug-reports/2026/11/17/002-gated-tools-without-default-grant-denied-for-every-agent.md`.
+
+---
+
+**Meta-principle:** Most of these bugs share a root cause — *something failed silently and the system continued in a broken state rather than failing visibly or recovering gracefully.* Prefer loud failure (log + alert + stop trading) over quiet degradation. A trading system that doesn't know it's broken is more dangerous than one that crashes.

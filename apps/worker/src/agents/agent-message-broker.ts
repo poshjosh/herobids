@@ -72,6 +72,19 @@ export interface AgentMessageNotifier {
   dispatch(event: NotificationDispatchEvent): Promise<Result<NotificationDispatchOutcome, DomainError>>;
 }
 
+/** Brokered message type -> capability gated by the policy engine. */
+export const CAPABILITY_BY_MESSAGE_TYPE: Record<string, string> = {
+  [AGENT_MESSAGE_TYPES.DECISION_SUBMIT]: 'submit_decision',
+  [AGENT_MESSAGE_TYPES.PUBLISH_ARTIFACT]: 'publish_artifact',
+  [AGENT_MESSAGE_TYPES.SEND_MESSAGE]: 'send_message',
+  [AGENT_MESSAGE_TYPES.MANAGE_BOT]: 'manage_bot',
+  [AGENT_MESSAGE_TYPES.BOT_QUERY]: 'bot_query',
+  [AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS]: 'manage_agent_skills',
+  [AGENT_MESSAGE_TYPES.REQUEST_CONNECTION]: 'request_connection',
+  [AGENT_MESSAGE_TYPES.UPDATE_PROMPT]: 'update_my_prompt',
+  [AGENT_MESSAGE_TYPES.PEER_SEND]: 'message_peer_agent',
+};
+
 /**
  * AgentMessageBroker — validates envelopes, enforces capability grants,
  * handles dedupe and correlation, and routes messages to the appropriate handler.
@@ -218,18 +231,7 @@ export class AgentMessageBroker {
     }
 
     // 5. Enforce capability policy for brokered tool calls
-    const capabilityByType: Record<string, string> = {
-      [AGENT_MESSAGE_TYPES.DECISION_SUBMIT]: 'submit_decision',
-      [AGENT_MESSAGE_TYPES.PUBLISH_ARTIFACT]: 'publish_artifact',
-      [AGENT_MESSAGE_TYPES.SEND_MESSAGE]: 'send_message',
-      [AGENT_MESSAGE_TYPES.MANAGE_BOT]: 'manage_bot',
-      [AGENT_MESSAGE_TYPES.BOT_QUERY]: 'bot_query',
-      [AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS]: 'manage_agent_skills',
-      [AGENT_MESSAGE_TYPES.REQUEST_CONNECTION]: 'request_connection',
-      [AGENT_MESSAGE_TYPES.UPDATE_PROMPT]: 'update_my_prompt',
-      [AGENT_MESSAGE_TYPES.PEER_SEND]: 'message_peer_agent',
-    };
-    const capabilityName = capabilityByType[envelope.type];
+    const capabilityName = CAPABILITY_BY_MESSAGE_TYPE[envelope.type];
     // Saved so recordEnd can be called in the finally block on every exit path.
     let policyEngine: CapabilityPolicyEngine | undefined;
     let policySessionId: string | undefined;

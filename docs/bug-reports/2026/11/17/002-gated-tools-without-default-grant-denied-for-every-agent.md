@@ -163,3 +163,4 @@ Section D (rollout) and staging verification are operational and not part of thi
 - Task 2: (medium) New message types added to the broker table are not covered by the guard. Suggested follow-up: export `capabilityByType` and test that every value has a grant row (enabled or not).
 - Task 2: (low) The scan can match `.checkAccess(` in comments, and misses aliased calls.
 - Task 3: (low) Lesson 13 sits after the "Meta-principle" paragraph in `docs/lessons/lessons-from-previous-project.md`; consider moving it above the separator. The optional `requiredTools` test was deliberately omitted (duplicates the drift guard).
+- Final review: (low) `CAPABILITY_BY_MESSAGE_TYPE` is a plain record (inherited-key lookup, pre-existing); `capability-policy.test.ts` imports the broker module; scan can match comments and misses aliased calls; no operator-switch (`tools.httpClient.enabled`) test added here.
