@@ -151,7 +151,7 @@ None open. The one remaining detail is whether the new rows should also carry a 
 ## Implementation Task List
 
 - Task 1 (Section A): add default grants for `make_http_request` and `read_document`, and set `maxPerMinute` 30 on `search_web` and `browse_url` - DONE
-- Task 2 (Section B): add the drift-guard test and the capability-policy default-grant tests - PENDING
+- Task 2 (Section B): add the drift-guard test and the capability-policy default-grant tests - DONE
 - Task 3 (Section C): documentation and bookkeeping (plan task 1.2, CHANGELOG, tool-access doc, lesson) - PENDING
 
 Section D (rollout) and staging verification are operational and not part of this implementation.
@@ -159,3 +159,6 @@ Section D (rollout) and staging verification are operational and not part of thi
 ## Outstanding Issues
 
 - Task 1: (low) `read_document` row comment wording could mirror the `make_http_request` one; confirm config default of `tools.httpClient.maxResponseBytes` is 51200 (code fallback is 256 KiB, pre-existing).
+- Task 2: (medium) Deviation from acceptance criterion: the drift guard exempts `apps/worker/src/agents/agent-message-broker.ts` from the non-literal rule, because it resolves the capability from a `capabilityByType` table that includes `manage_bot`, which is disabled by default. All table values were checked by hand and have grant rows.
+- Task 2: (medium) New message types added to the broker table are not covered by the guard. Suggested follow-up: export `capabilityByType` and test that every value has a grant row (enabled or not).
+- Task 2: (low) The scan can match `.checkAccess(` in comments, and misses aliased calls.
