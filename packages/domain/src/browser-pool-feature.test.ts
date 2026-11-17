@@ -163,7 +163,7 @@ describe('HttpClientConfigSchema', () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.enabled).toBe(true);
-      expect(result.data.maxResponseBytes).toBe(51_200);
+      expect(result.data.maxResponseBytes).toBe(10_485_760);
       expect(result.data.denyList).toEqual([
         '10.*',
         '172.16.*', '172.17.*', '172.18.*', '172.19.*',
@@ -267,7 +267,7 @@ describe('AppConfigSchema — browserPool and httpClient wiring', () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.enabled).toBe(true);
-      expect(result.data.maxResponseBytes).toBe(51_200);
+      expect(result.data.maxResponseBytes).toBe(10_485_760);
       expect(result.data.denyList).toEqual([
         '10.*',
         '172.16.*', '172.17.*', '172.18.*', '172.19.*',

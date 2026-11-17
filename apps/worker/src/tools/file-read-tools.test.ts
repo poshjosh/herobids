@@ -9,7 +9,7 @@ const readTool = filesystemTools.find((t) => t.name === 'read_file')!;
 const linesTool = filesystemTools.find((t) => t.name === 'read_file_lines')!;
 const listTool = filesystemTools.find((t) => t.name === 'list_files')!;
 
-const MAX_FILE_BYTES = 10_485_760;
+const MAX_FILE_BYTES = 16_777_216;
 
 function makeCtx(): ToolContext {
   return {
@@ -169,7 +169,7 @@ describe('read-side file tools', () => {
       expect(serialized.indexOf('"hint"')).toBeLessThan(serialized.indexOf('"content"'));
     });
 
-    it('pages a 10 MiB file within a generous time bound', async () => {
+    it('pages a 16 MiB file within a generous time bound', async () => {
       await put('max.txt', Buffer.alloc(MAX_FILE_BYTES, 0x61));
       const started = Date.now();
       data(await readTool.execute({ path: 'max.txt', offset: 5_000_000, limit: 1000 }, ctx));

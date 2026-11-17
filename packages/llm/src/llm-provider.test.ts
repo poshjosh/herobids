@@ -1865,3 +1865,69 @@ describe('OpenRouter provider controls emission', () => {
     });
   });
 });
+
+describe('callLlmProvider diagnostics for an empty reply', () => {
+  const originalEnv = { ...process.env };
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    process.env['LLM_API_KEY_OPENAI'] = 'test-key';
+    process.env['LLM_API_KEY_ANTHROPIC'] = 'test-key';
+  });
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.restoreAllMocks();
+  });
+
+  it('reports the finish reason and the text length before thinking was removed (OpenAI-compatible)', async () => {
+    const raw = '<thinking>planning the next step</thinking>';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ finish_reason: 'length', message: { content: raw } }],
+      usage: { total_tokens: 20, completion_tokens: 8 },
+      model: 'gpt-4o-mini',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    const result = await callLlmProvider(
+      { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 512, timeoutMs: 1_000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 512 },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.content).toBe('');
+    expect(result.data.finishReason).toBe('length');
+    expect(result.data.contentCharsBeforeStrip).toBe(raw.length);
+  });
+
+  it('reports zero text and no finish reason when the model sent nothing and the provider named none', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: '' } }],
+      usage: { total_tokens: 20 },
+      model: 'gpt-4o-mini',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    const result = await callLlmProvider(
+      { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 512, timeoutMs: 1_000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 512 },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.finishReason).toBeUndefined();
+    expect(result.data.contentCharsBeforeStrip).toBe(0);
+  });
+
+  it('reports the stop reason and text length on the Anthropic path', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      id: 'msg_1',
+      content: [{ type: 'text', text: '<thinking>x</thinking>' }],
+      stop_reason: 'max_tokens',
+      usage: { input_tokens: 10, output_tokens: 4 },
+      model: 'claude-test',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    const result = await callLlmProvider(
+      { provider: 'anthropic', model: 'claude-test', maxTokens: 512, timeoutMs: 1_000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 512 },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.content).toBe('');
+    expect(result.data.finishReason).toBe('max_tokens');
+    expect(result.data.contentCharsBeforeStrip).toBe('<thinking>x</thinking>'.length);
+  });
+});

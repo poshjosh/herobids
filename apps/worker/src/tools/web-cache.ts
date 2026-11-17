@@ -24,8 +24,10 @@ export type WebCacheSave =
 /**
  * `<host-slug>-<sha256(url)[0..12]>.txt`. Derived from the final URL only, so the model
  * and the page cannot choose a path, and the same URL always maps to the same file.
+ * `variant` is for requests where the URL alone does not identify the response (a POST
+ * with a body): it is hashed in with the URL and is never used as a path.
  */
-export function webCacheFileName(finalUrl: string): string {
+export function webCacheFileName(finalUrl: string, variant?: string): string {
   let host = '';
   try {
     host = new URL(finalUrl).hostname.toLowerCase();
@@ -33,7 +35,7 @@ export function webCacheFileName(finalUrl: string): string {
     // An unparsable URL cannot reach here (the fetch succeeded); fall back to the hash alone.
   }
   const slug = host.replace(/[^a-z0-9.-]/g, '-').replace(/^[.-]+/, '').slice(0, MAX_HOST_SLUG_CHARS);
-  const hash = createHash('sha256').update(finalUrl).digest('hex').slice(0, HASH_CHARS);
+  const hash = createHash('sha256').update(variant === undefined ? finalUrl : `${finalUrl}\n${variant}`).digest('hex').slice(0, HASH_CHARS);
   return slug === '' ? `${hash}.txt` : `${slug}-${hash}.txt`;
 }
 
@@ -75,14 +77,14 @@ async function existingFileBytes(absolutePath: string): Promise<number> {
  * deleted here: a same-URL repeat visit replaces only its own file, and a full cache or
  * workspace just means "not saved" with a text telling the agent to free space.
  */
-export async function saveToWebCache(agentId: string, finalUrl: string, text: string): Promise<WebCacheSave> {
+export async function saveToWebCache(agentId: string, finalUrl: string, text: string, variant?: string): Promise<WebCacheSave> {
   const { sizeMb, dir } = getWebCacheConfig();
   if (sizeMb === 0) return { status: 'disabled' };
 
   try {
     const paths = getWorkspacePaths(agentId);
     await ensureWorkspaceDirs(paths);
-    const relativePath = `${dir}/${webCacheFileName(finalUrl)}`;
+    const relativePath = `${dir}/${webCacheFileName(finalUrl, variant)}`;
     const resolved = await resolveWorkspacePath(paths.root, relativePath);
     if (!resolved.ok) {
       logger.warn({ agentId, relativePath }, 'web cache path rejected; page not saved');

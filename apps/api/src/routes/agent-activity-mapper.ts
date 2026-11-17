@@ -320,6 +320,10 @@ const MESSAGE_CLASSIFICATIONS: Record<string, ActivityClassification> = {
       }
       const nudges = phase === 'judge' ? p['nudgeCount'] : undefined;
       if (typeof nudges === 'number' && nudges > 0) summary += ` Nudged ${nudges}x.`;
+      const failedTools = phase === 'judge' ? p['unresolvedToolFailures'] : undefined;
+      if (Array.isArray(failedTools) && failedTools.length > 0) {
+        summary += ` Unresolved tool failures: ${failedTools.filter((t): t is string => typeof t === 'string').join(', ')}.`;
+      }
       return summary;
     },
   },

@@ -109,6 +109,10 @@ export interface LlmResponse {
   outputTokens?: number;
   /** Prompt-cache read tokens (charged at a fraction of the normal input rate) */
   cachedInputTokens?: number;
+  /** Why the provider stopped generating (`stop`, `length`, `tool_calls`, `end_turn`, ...), when it says. For diagnostics only. */
+  finishReason?: string;
+  /** Length of the text content before thinking blocks were stripped. Zero with `content` empty means the model sent nothing. For diagnostics only. */
+  contentCharsBeforeStrip?: number;
 }
 
 export interface LlmProviderError {
@@ -360,7 +364,8 @@ async function callOpenAiCompatibleProvider(
     };
 
     const message = data.choices?.[0]?.message;
-    const content = stripReasoningContent(typeof message?.content === 'string' ? message.content : '');
+    const rawContent = typeof message?.content === 'string' ? message.content : '';
+    const content = stripReasoningContent(rawContent);
     let toolCalls: LlmToolCall[];
     try {
       const finishReason = data.choices?.[0]?.finish_reason;
@@ -392,6 +397,8 @@ async function callOpenAiCompatibleProvider(
           : undefined,
         outputTokens: data.usage?.completion_tokens,
         cachedInputTokens: data.usage?.prompt_tokens_details?.cached_tokens,
+        finishReason: typeof data.choices?.[0]?.finish_reason === 'string' ? data.choices[0].finish_reason : undefined,
+        contentCharsBeforeStrip: rawContent.length,
       },
     };
   } catch (err) {
@@ -513,15 +520,15 @@ async function callAnthropicProvider(
       content?: Array<{ type: string; text?: string; id?: string; name?: string; input?: unknown }>;
       usage?: { input_tokens?: number; output_tokens?: number; thinking_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
       model?: string;
+      stop_reason?: string | null;
     };
 
     const contentBlocks = data.content ?? [];
-    const content = stripReasoningContent(
-      contentBlocks
-        .filter((block) => block.type === 'text' && typeof block.text === 'string')
-        .map((block) => block.text)
-        .join('\n'),
-    );
+    const rawContent = contentBlocks
+      .filter((block) => block.type === 'text' && typeof block.text === 'string')
+      .map((block) => block.text)
+      .join('\n');
+    const content = stripReasoningContent(rawContent);
     const inputTokens = data.usage?.input_tokens ?? 0;
     const outputTokens = data.usage?.output_tokens ?? 0;
     let toolCalls: LlmToolCall[];
@@ -546,6 +553,8 @@ async function callAnthropicProvider(
         inputTokens,
         outputTokens,
         cachedInputTokens: data.usage?.cache_read_input_tokens,
+        finishReason: typeof data.stop_reason === 'string' ? data.stop_reason : undefined,
+        contentCharsBeforeStrip: rawContent.length,
       },
     };
   } catch (err) {

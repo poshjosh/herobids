@@ -99,7 +99,7 @@ import { getWorkspacePaths } from './tools/workspace.js';
 import { installExternalSkillsAtStart, type InstallableExternalSkill } from './external-skill-startup.js';
 import { npxSkillsCliInstaller } from './tools/skills.js';
 import { runStructuredToolLoop } from './structured-tool-loop.js';
-import { buildContinuationCompletionFields, decideContinuationNudge, decideFinalTextPersistence, recordFinishRun, type FinishRunRecord } from './continuation-guard.js';
+import { UnresolvedToolFailureTracker, buildContinuationCompletionFields, decideContinuationNudge, decideFinalTextPersistence, recordFinishRun, type FinishRunRecord } from './continuation-guard.js';
 import { describeCutResult } from './stale-result-hints.js';
 import { resolveEffectiveLlmSelection, type UserModelDefaults, type OperatorModelDefaults } from './llm-selection.js';
 import { getWakeRescheduleDelay, resolveNextTickDelay } from './agent-wake-scheduler.js';
@@ -4088,7 +4088,7 @@ async function runActiveTick(): Promise<void> {
           });
         },
         onRetry: ({ attempt, delayMs, classification }) => {
-          logger.warn({ phase: 'scout', attempt, delayMs, reasonCode: classification.reasonCode }, 'Retrying scout tool turn after backoff');
+          logger.warn({ phase: 'scout', attempt, delayMs, reasonCode: classification.reasonCode, message: classification.message }, 'Retrying scout tool turn after backoff');
         },
         // Surfaces the previously-silent stale-result truncation (bug 002) and
         // gives per-tick visibility into context pressure (lesson #9).
@@ -4282,6 +4282,7 @@ async function runActiveTick(): Promise<void> {
     // outcome of the tick, which depends only on whether a message was sent (activeTick.replied).
     let judgeFinishRun: FinishRunRecord | undefined;
     let judgeNudgesSent = 0;
+    const judgeToolFailures = new UnresolvedToolFailureTracker();
     // Text of the latest turn that called finish_run; stored after the loop if that turn ended the run.
     let judgeFinishTurnText: string | undefined;
     // Stores a closing reply (no tool calls, not nudged) in history, the judge response history and the timeline.
@@ -4389,6 +4390,19 @@ async function runActiveTick(): Promise<void> {
         });
         logger.info({ tokensUsed: result.data.tokensUsed, thinkingTokens: result.data.thinkingTokens ?? 0, latencyMs: result.data.latencyMs, toolCalls: toolCalls.length }, 'LLM response received');
         logger.debug({ response: assistantResponse.slice(0, 500) }, 'LLM response preview');
+        // A reply with no tool call and no visible text ends the run without a status and is never nudged.
+        // Say why it was empty (finish reason, tokens spent, text removed as thinking) so it can be diagnosed.
+        if (toolCalls.length === 0 && assistantResponse.trim() === '') {
+          logger.warn({
+            turnIndex,
+            finishReason: result.data.finishReason,
+            outputTokens: result.data.outputTokens,
+            thinkingTokens: result.data.thinkingTokens ?? 0,
+            contentCharsBeforeStrip: result.data.contentCharsBeforeStrip,
+            latencyMs: result.data.latencyMs,
+            finishRunCalled: judgeFinishRun !== undefined,
+          }, 'Judge model returned an empty reply with no tool call');
+        }
         // A nudged turn is not the end of the run, so its reply must not reach history or the timeline.
         const finalText = decideFinalTextPersistence({
           continues,
@@ -4405,6 +4419,7 @@ async function runActiveTick(): Promise<void> {
       },
       onToolResult: ({ toolCall, toolResult }) => {
         judgeToolCallsUsed += 1;
+        judgeToolFailures.record(toolCall.name, toolCall.args, toolResult);
         if (toolResult) {
           if (toolCall.name === 'finish_run' && judgeFinishRun === undefined) {
             judgeFinishRun = recordFinishRun(toolResult, toolCall.args);
@@ -4449,7 +4464,7 @@ async function runActiveTick(): Promise<void> {
         }
       },
       onRetry: ({ attempt, delayMs, classification }) => {
-        logger.warn({ phase: 'judge', attempt, delayMs, reasonCode: classification.reasonCode }, 'Retrying judge LLM call after backoff');
+        logger.warn({ phase: 'judge', attempt, delayMs, reasonCode: classification.reasonCode, message: classification.message }, 'Retrying judge LLM call after backoff');
       },
       // Surfaces the previously-silent stale-result truncation (bug 002) and
       // gives per-tick visibility into context pressure (lesson #9).
@@ -4525,6 +4540,7 @@ async function runActiveTick(): Promise<void> {
         nudgesUsed: judgeNudgesSent,
         finishRun: judgeFinishRun,
       }),
+      ...judgeToolFailures.summary(),
       errorMessage: !judgeLoopResult.ok ? judgeLoopResult.error.message : undefined,
     });
 

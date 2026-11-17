@@ -201,7 +201,7 @@ When `browserPool.enabled` is true, the worker:
 ```yaml
 httpClient:
   enabled: true                       # on by default
-  maxResponseBytes: 51200             # 50 KB response body cap
+  maxResponseBytes: 10485760          # 10 MiB response body cap; a body longer than one page is saved under web-cache/
   denyList:                           # blocked URL patterns
     - "10.*"
     - "172.16.*"

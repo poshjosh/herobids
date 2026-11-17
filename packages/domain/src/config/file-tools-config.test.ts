@@ -8,7 +8,7 @@ import {
 describe('FileToolsConfigSchema', () => {
   it('applies the documented defaults when nothing is configured', () => {
     const config = FileToolsConfigSchema.parse(undefined);
-    expect(config.maxFileBytes).toBe(10_485_760);
+    expect(config.maxFileBytes).toBe(16_777_216);
     expect(config.readDefaultChars).toBe(50_000);
     expect(config.readMaxChars).toBe(500_000);
     expect(config.writeMaxChars).toBe(16_000);
@@ -46,8 +46,8 @@ describe('FileToolsConfigSchema', () => {
 });
 
 describe('WebCacheConfigSchema', () => {
-  it('defaults to a 50 MiB cache in web-cache', () => {
-    expect(WebCacheConfigSchema.parse(undefined)).toEqual({ sizeMb: 50, dir: 'web-cache' });
+  it('defaults to a 200 MiB cache in web-cache', () => {
+    expect(WebCacheConfigSchema.parse(undefined)).toEqual({ sizeMb: 200, dir: 'web-cache' });
   });
 
   it('accepts 0 to turn saving off', () => {
@@ -61,9 +61,9 @@ describe('WebCacheConfigSchema', () => {
 });
 
 describe('WebAccessToolsConfigSchema', () => {
-  it('raises the browse_url fetch cap default to 1 MiB and adds the web cache', () => {
+  it('sets the browse_url fetch cap default to 2 MiB and adds the web cache', () => {
     const config = WebAccessToolsConfigSchema.parse({});
-    expect(config.browseUrl.maxResponseBytes).toBe(1024 * 1024);
-    expect(config.webCache.sizeMb).toBe(50);
+    expect(config.browseUrl.maxResponseBytes).toBe(2 * 1024 * 1024);
+    expect(config.webCache.sizeMb).toBe(200);
   });
 });

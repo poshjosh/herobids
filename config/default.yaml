@@ -658,7 +658,7 @@ agentRuntime:
       defaultTimeoutMs: 60000      # execute_code timeout when no capability grant present
       defaultMaxOutputBytes: 51200  # execute_code max output when no capability grant present
     files:
-      maxFileBytes: 10485760     # largest file the file tools open or grow to (10 MiB)
+      maxFileBytes: 16777216     # largest file the file tools open or grow to (16 MiB). Must stay above tools.httpClient.maxResponseBytes: a saved JSON body is indented, so it can be larger than the body received
       readDefaultChars: 50000    # default page for read_file, read_file_lines and the browse_url inline page
       readMaxChars: 500000       # largest `limit` (read_file, browse_url) or `maxChars` (read_file_lines) an agent may ask for (about 125k tokens)
       writeMaxChars: 16000       # per-call text cap for write_file, append_file and edit_file
@@ -689,14 +689,14 @@ agentRuntime:
         maxResults: 5
         timeoutMs: 15000
       browseUrl:
-        maxResponseBytes: 1048576  # 1 MiB fetch cap, shared by browse_url and read_document (was 524288); the default browse_url grant no longer overrides it
+        maxResponseBytes: 2097152  # 2 MiB fetch cap, shared by browse_url and read_document (was 1 MiB); the default browse_url grant no longer overrides it
         timeoutMs: 15000
       webCache:
-        sizeMb: 50               # tool-enforced cap on the web-cache folder (MiB); 0 turns saving off. Nothing is deleted automatically
+        sizeMb: 200              # tool-enforced cap on the web-cache folder (MiB); 0 turns saving off. Nothing is deleted automatically. Shared by browse_url and make_http_request. The workspace quota (workspaceDiskMb) still applies on top
         dir: web-cache           # folder under the workspace root
     httpClient:
       enabled: true
-      maxResponseBytes: 51200
+      maxResponseBytes: 10485760  # 10 MiB response body cap (the sandbox single-response cap). A body longer than one page (tools.files.readDefaultChars) is saved under web-cache/ and only the first page is returned
       denyList:
         - "10.*"
         - "172.16.*"

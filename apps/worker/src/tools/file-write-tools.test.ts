@@ -304,11 +304,11 @@ describe('write-side file tools', () => {
       expect((await readFile(join(root, 'bin.dat'))).equals(bytes)).toBe(true);
     });
 
-    it('edits a file of exactly 10 MiB', async () => {
-      await put('ten.txt', `${'a'.repeat(10 * MIB - 4)}ZZZZ`);
-      const out = data(await editTool.execute({ path: 'ten.txt', oldText: 'ZZZZ', newText: 'YYYY' }, ctx));
-      expect(out).toMatchObject({ replacements: 1, sizeBytes: 10 * MIB, bytesDelta: 0 });
-      expect((await text('ten.txt')).endsWith('aYYYY')).toBe(true);
+    it('edits a file of exactly the 16 MiB maximum', async () => {
+      await put('max.txt', `${'a'.repeat(16 * MIB - 4)}ZZZZ`);
+      const out = data(await editTool.execute({ path: 'max.txt', oldText: 'ZZZZ', newText: 'YYYY' }, ctx));
+      expect(out).toMatchObject({ replacements: 1, sizeBytes: 16 * MIB, bytesDelta: 0 });
+      expect((await text('max.txt')).endsWith('aYYYY')).toBe(true);
     }, 30_000);
   });
 

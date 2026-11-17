@@ -23,7 +23,7 @@ describe('file limits reader', () => {
 
   it('falls back to schema defaults when the runtime config has no tools.files', () => {
     process.env['AGENT_RUNTIME_CONFIG_JSON'] = JSON.stringify({ tools: { codeExecute: {} } });
-    expect(getFileToolLimits().maxFileBytes).toBe(10_485_760);
+    expect(getFileToolLimits().maxFileBytes).toBe(16_777_216);
     expect(getFileToolLimits().readDefaultChars).toBe(50_000);
   });
 
@@ -41,7 +41,7 @@ describe('file limits reader', () => {
   });
 
   it('reads the web cache settings with defaults', () => {
-    expect(getWebCacheConfig()).toEqual({ sizeMb: 50, dir: 'web-cache' });
+    expect(getWebCacheConfig()).toEqual({ sizeMb: 200, dir: 'web-cache' });
     process.env['AGENT_RUNTIME_CONFIG_JSON'] = JSON.stringify({ tools: { webAccess: { webCache: { sizeMb: 5 } } } });
     expect(getWebCacheConfig()).toEqual({ sizeMb: 5, dir: 'web-cache' });
   });

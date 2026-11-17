@@ -1035,6 +1035,11 @@ describe('tick turn events', () => {
       expect(parsed.finishRunReason).toBe('waiting for the user');
     });
 
+    it('keeps the unresolved tool failure count and names so they reach the stored event', () => {
+      const parsed = LlmCompletedPayloadSchema.parse({ ...base, unresolvedToolFailureCount: 2, unresolvedToolFailures: ['set_memory'] });
+      expect(parsed.unresolvedToolFailureCount).toBe(2);
+      expect(parsed.unresolvedToolFailures).toEqual(['set_memory']);
+    });
     it('rejects an unknown finish_run status', () => {
       expect(LlmCompletedPayloadSchema.safeParse({ ...base, finishRunStatus: 'done' }).success).toBe(false);
     });

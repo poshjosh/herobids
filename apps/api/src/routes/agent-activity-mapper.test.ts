@@ -385,6 +385,14 @@ describe('mapProtocolMessage — runtime activity event families', () => {
     expect(notNudged.summary).not.toContain('Nudged');
   });
 
+  it('lists unresolved tool failures in the LLM-completed summary', () => {
+    const entry = mapProtocolMessage({
+      ...base,
+      type: 'agent.llm.completed',
+      payload: { tickId: 't-5', phase: 'judge', model: 'claude-sonnet', turnsUsed: 8, finishReason: 'stop', unresolvedToolFailureCount: 1, unresolvedToolFailures: ['set_memory'] },
+    });
+    expect(entry.summary).toBe('judge LLM completed — model: claude-sonnet, turns: 8, finish: stop. Unresolved tool failures: set_memory.');
+  });
   it('leaves the summary unchanged when the finish_run fields are absent', () => {
     const entry = mapProtocolMessage({
       ...base,

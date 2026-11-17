@@ -117,3 +117,52 @@ export function decideFinalTextPersistence(input: FinalTextTurnInput): FinalText
   }
   return undefined;
 }
+
+/** Tool arguments that say which thing a call acts on, so a later success can be matched to an earlier failure. */
+const TARGET_ARG_NAMES = ['key', 'path', 'id', 'url', 'query', 'ref'] as const;
+/** Most tool names reported on the event. */
+export const MAX_REPORTED_UNRESOLVED_TOOLS = 10;
+
+function failureTarget(args: Record<string, unknown>): string {
+  for (const name of TARGET_ARG_NAMES) {
+    const value = args[name];
+    if (typeof value === 'string' && value !== '') return `${name}=${value}`;
+  }
+  return '';
+}
+
+/**
+ * Notes tool calls that failed and were not followed by a success of the same tool on the same target.
+ * Observability only: it changes nothing in the run.
+ * A failure with no target (for example `set_memory` without `key`) is never matched by a later call that has one,
+ * so a model that simply corrected its arguments is also listed. Treat the list as "worth a look".
+ * Counts every `ok: false` result, including `fault: false` ones such as parameter validation errors.
+ */
+export class UnresolvedToolFailureTracker {
+  private readonly open = new Map<string, string>();
+
+  record(toolName: string, args: Record<string, unknown>, toolResult: string | null): void {
+    if (!toolResult) return;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(toolResult);
+    } catch {
+      return;
+    }
+    if (typeof parsed !== 'object' || parsed === null) return;
+    const ok = (parsed as { ok?: unknown }).ok;
+    const slot = `${toolName}\u0000${failureTarget(args)}`;
+    if (ok === false) {
+      this.open.set(slot, toolName);
+    } else if (ok === true) {
+      this.open.delete(slot);
+    }
+  }
+
+  /** Counts every open failure; names are unique, sorted and capped. Empty when there are none. */
+  summary(): { unresolvedToolFailureCount?: number; unresolvedToolFailures?: string[] } {
+    if (this.open.size === 0) return {};
+    const names = [...new Set(this.open.values())].sort().slice(0, MAX_REPORTED_UNRESOLVED_TOOLS);
+    return { unresolvedToolFailureCount: this.open.size, unresolvedToolFailures: names };
+  }
+}

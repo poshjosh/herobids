@@ -196,13 +196,24 @@ export function ModelSelectionFields({
         <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
           {loadingLabel}
         </div>
-      ) : providerOptions.length === 0 ? (
-        <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
-          {emptyLabel}
-        </div>
-      ) : providerModels.length === 0 ? (
-        <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
-          {emptyLabel}
+      ) : providerOptions.length === 0 || providerModels.length === 0 ? (
+        <div
+          role="alert"
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '8px',
+            padding: '10px 14px',
+            borderRadius: '6px',
+            background: 'var(--color-warning-subtle)',
+            border: '1px solid var(--color-warning)',
+            color: 'var(--color-warning)',
+            fontSize: '0.8125rem',
+            lineHeight: '1.5',
+          }}
+        >
+          <span aria-hidden="true">⚠</span>
+          <span>{emptyLabel}</span>
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>

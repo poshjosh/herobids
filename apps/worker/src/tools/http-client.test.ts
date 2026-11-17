@@ -8,6 +8,9 @@ vi.mock('node:dns/promises', () => ({
 }));
 
 import { resolve4, resolve6 } from 'node:dns/promises';
+// Saving to the workspace is covered in web-cache tests; here it is only observed.
+vi.mock('./web-cache.js', () => ({ saveToWebCache: vi.fn() }));
+import { saveToWebCache } from './web-cache.js';
 import { httpClientTools, matchesDenyPattern, isHostDenied } from './http-client.js';
 
 const httpRequestTool = httpClientTools.find((t) => t.name === 'make_http_request')!;
@@ -44,6 +47,7 @@ beforeEach(() => {
   // Default: public IPs so SSRF checks pass unless overridden
   vi.mocked(resolve4).mockResolvedValue(['93.184.216.34']);
   vi.mocked(resolve6).mockResolvedValue([]);
+  vi.mocked(saveToWebCache).mockResolvedValue({ status: 'saved', savedTo: 'web-cache/api.example.com-0123456789ab.txt' });
 });
 
 afterEach(() => {
@@ -69,7 +73,7 @@ describe('make_http_request tool — registration', () => {
     expect(httpRequestTool.description).toContain('HTTP');
   });
 
-  it('schema includes method, url, headers, body, and timeoutMs', () => {
+  it('schema includes method, url, headers, body, timeoutMs and limit', () => {
     const params = httpRequestTool.parameters as Record<string, unknown>;
     const properties = params['properties'] as Record<string, unknown>;
     expect(properties).toHaveProperty('method');
@@ -77,6 +81,7 @@ describe('make_http_request tool — registration', () => {
     expect(properties).toHaveProperty('headers');
     expect(properties).toHaveProperty('body');
     expect(properties).toHaveProperty('timeoutMs');
+    expect(properties).toHaveProperty('limit');
   });
 
   it('method enum includes GET, POST, PUT, PATCH, DELETE, HEAD', () => {
@@ -575,9 +580,8 @@ describe('make_http_request tool — request execution', () => {
 // ── Response truncation ─────────────────────────────────────────────────────
 
 describe('make_http_request tool — response truncation', () => {
-  it('truncates response body exceeding maxResponseBytes', async () => {
+  it('caps the body at maxResponseBytes and reports the source as truncated', async () => {
     const bigBody = 'a'.repeat(500_000);
-
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -585,17 +589,16 @@ describe('make_http_request tool — response truncation', () => {
       headers: new Headers(),
       text: async () => bigBody,
     }));
-
-    // Default maxResponseBytes is 256KB (256 * 1024)
+    // No operator config: the fallback cap is 256 KiB.
     const result = await httpRequestTool.execute(
       { method: 'GET', url: 'https://api.example.com/big' },
       makeContext(),
     );
-
     expect(result.success).toBe(true);
-    const data = result.data as { body: string; truncated: boolean };
-    expect(data.truncated).toBe(true);
-    expect(Buffer.byteLength(data.body, 'utf8')).toBeLessThanOrEqual(256 * 1024);
+    const data = result.data as { sourceTruncated: boolean; totalChars: number };
+    expect(data.sourceTruncated).toBe(true);
+    expect(data.totalChars).toBe(256 * 1024);
+    expect(vi.mocked(saveToWebCache).mock.calls[0]![2]).toHaveLength(256 * 1024);
   });
 
   it('does not truncate when response fits within maxResponseBytes', async () => {
@@ -606,16 +609,130 @@ describe('make_http_request tool — response truncation', () => {
       headers: new Headers(),
       text: async () => 'short response',
     }));
-
     const result = await httpRequestTool.execute(
       { method: 'GET', url: 'https://api.example.com/small' },
       makeContext(),
     );
-
     expect(result.success).toBe(true);
-    const data = result.data as { body: string; truncated: boolean };
+    const data = result.data as { body: string; truncated: boolean; sourceTruncated: boolean };
     expect(data.truncated).toBe(false);
+    expect(data.sourceTruncated).toBe(false);
     expect(data.body).toBe('short response');
+  });
+});
+
+describe('make_http_request tool — long bodies are saved and paged', () => {
+  function stubBody(body: string, contentType = 'text/plain'): void {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: new Headers({ 'content-type': contentType }),
+      text: async () => body,
+    }));
+  }
+
+  it('returns a body that fits one page whole and does not save it', async () => {
+    stubBody('x'.repeat(50_000));
+    const result = await httpRequestTool.execute({ method: 'GET', url: 'https://api.example.com/page' }, makeContext());
+    const data = result.data as { body: string; truncated: boolean; nextOffset: number | null; savedTo?: string };
+    expect(data.body).toHaveLength(50_000);
+    expect(data.truncated).toBe(false);
+    expect(data.nextOffset).toBeNull();
+    expect(data.savedTo).toBeUndefined();
+    expect(saveToWebCache).not.toHaveBeenCalled();
+  });
+
+  it('saves a longer body in full and returns only the first page with a pointer to the saved file', async () => {
+    stubBody('y'.repeat(120_000));
+    const result = await httpRequestTool.execute({ method: 'GET', url: 'https://api.example.com/long' }, makeContext());
+    const data = result.data as {
+      body: string; truncated: boolean; sourceTruncated: boolean; totalChars: number;
+      returnedChars: number; nextOffset: number | null; savedTo: string; hint: string;
+    };
+    expect(data.body).toHaveLength(50_000);
+    expect(data.truncated).toBe(true);
+    expect(data.sourceTruncated).toBe(false);
+    expect(data.totalChars).toBe(120_000);
+    expect(data.returnedChars).toBe(50_000);
+    expect(data.nextOffset).toBe(50_000);
+    expect(data.savedTo).toBe('web-cache/api.example.com-0123456789ab.txt');
+    expect(data.hint).toContain('read_file');
+    expect(saveToWebCache).toHaveBeenCalledWith('agent-http-test', 'https://api.example.com/long', 'y'.repeat(120_000), undefined);
+  });
+
+  it('saves JSON indented so line-based tools can read it, and pages the indented text', async () => {
+    const items = Array.from({ length: 3000 }, (_, i) => ({ id: i, title: `Job ${i}` }));
+    stubBody(JSON.stringify({ jobs: items }), 'application/json; charset=utf-8');
+    const result = await httpRequestTool.execute({ method: 'GET', url: 'https://api.example.com/jobs' }, makeContext());
+    const saved = vi.mocked(saveToWebCache).mock.calls[0]![2];
+    expect(saved).toBe(JSON.stringify({ jobs: items }, null, 2));
+    const data = result.data as { body: string; totalChars: number };
+    expect(data.totalChars).toBe(saved.length);
+    expect(data.body).toBe(saved.slice(0, 50_000));
+  });
+
+  it('saves a body that is not valid JSON as received even when it claims to be JSON', async () => {
+    const broken = '{"jobs": [' + '1,'.repeat(40_000);
+    stubBody(broken, 'application/json');
+    await httpRequestTool.execute({ method: 'GET', url: 'https://api.example.com/broken' }, makeContext());
+    expect(vi.mocked(saveToWebCache).mock.calls[0]![2]).toBe(broken);
+  });
+
+  it('keeps POST responses for the same URL apart by passing a body-derived variant', async () => {
+    stubBody('z'.repeat(60_000));
+    await httpRequestTool.execute({ method: 'POST', url: 'https://api.example.com/search', body: '{"q":"a"}' }, makeContext());
+    await httpRequestTool.execute({ method: 'POST', url: 'https://api.example.com/search', body: '{"q":"b"}' }, makeContext());
+    const [first, second] = vi.mocked(saveToWebCache).mock.calls.map((call) => call[3]);
+    expect(first).toMatch(/^POST [0-9a-f]{12}$/);
+    expect(second).toMatch(/^POST [0-9a-f]{12}$/);
+    expect(first).not.toBe(second);
+  });
+
+  it('returns the first page with saveError and no nextOffset when the body cannot be saved', async () => {
+    vi.mocked(saveToWebCache).mockResolvedValue({ status: 'not_saved', saveError: 'Cache is full. Free space with delete_file.' });
+    stubBody('w'.repeat(80_000));
+    const result = await httpRequestTool.execute({ method: 'GET', url: 'https://api.example.com/full' }, makeContext());
+    expect(result.success).toBe(true);
+    const data = result.data as { body: string; nextOffset: number | null; saveError: string; savedTo?: string };
+    expect(data.body).toHaveLength(50_000);
+    expect(data.nextOffset).toBeNull();
+    expect(data.saveError).toContain('delete_file');
+    expect(data.savedTo).toBeUndefined();
+  });
+
+  it('returns the first page without saveError or savedTo when saving is switched off', async () => {
+    vi.mocked(saveToWebCache).mockResolvedValue({ status: 'disabled' });
+    stubBody('v'.repeat(80_000));
+    const result = await httpRequestTool.execute({ method: 'GET', url: 'https://api.example.com/off' }, makeContext());
+    const data = result.data as { body: string; nextOffset: number | null; saveError?: string; savedTo?: string };
+    expect(data.body).toHaveLength(50_000);
+    expect(data.nextOffset).toBeNull();
+    expect(data.saveError).toBeUndefined();
+    expect(data.savedTo).toBeUndefined();
+  });
+
+  it('uses limit as the page size', async () => {
+    stubBody('u'.repeat(20_000));
+    const result = await httpRequestTool.execute({ method: 'GET', url: 'https://api.example.com/limit', limit: 1_000 }, makeContext());
+    const data = result.data as { body: string; returnedChars: number; nextOffset: number | null };
+    expect(data.body).toHaveLength(1_000);
+    expect(data.returnedChars).toBe(1_000);
+    expect(data.nextOffset).toBe(1_000);
+  });
+
+  it('rejects a limit above the operator maximum without making a request', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const capabilityEngine = makeCapabilityEngine();
+    const result = await httpRequestTool.execute(
+      { method: 'GET', url: 'https://api.example.com/limit', limit: 500_001 },
+      makeContext({ capabilityEngine }),
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('limit 500001 is above the maximum 500000');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(capabilityEngine!.recordStart).not.toHaveBeenCalled();
   });
 });
 

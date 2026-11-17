@@ -6,6 +6,7 @@ import {
   decideFinalTextPersistence,
   parseFinishRunArgs,
   recordFinishRun,
+  UnresolvedToolFailureTracker,
   type ContinuationNudgeInput,
 } from './continuation-guard.js';
 
@@ -148,5 +149,48 @@ describe('decideFinalTextPersistence', () => {
   });
   it('stores nothing for a turn with other tool calls', () => {
     expect(decideFinalTextPersistence({ continues: false, toolCallNames: ['set_memory'], assistantResponse: 'working' })).toBeUndefined();
+  });
+});
+
+describe('UnresolvedToolFailureTracker', () => {
+  const fail = JSON.stringify({ ok: false, error: 'invalid parameters: key: Required', fault: false });
+  const pass = JSON.stringify({ ok: true });
+
+  it('reports nothing when every call succeeded', () => {
+    const tracker = new UnresolvedToolFailureTracker();
+    tracker.record('set_memory', { key: 'a' }, pass);
+    expect(tracker.summary()).toEqual({});
+  });
+  it('reports a failure that has no later success, even when it is a fault:false validation error', () => {
+    const tracker = new UnresolvedToolFailureTracker();
+    tracker.record('set_memory', {}, fail);
+    tracker.record('set_memory', { key: 'index' }, pass);
+    expect(tracker.summary()).toEqual({ unresolvedToolFailureCount: 1, unresolvedToolFailures: ['set_memory'] });
+  });
+  it('drops a failure when the same tool later succeeds on the same target', () => {
+    const tracker = new UnresolvedToolFailureTracker();
+    tracker.record('set_memory', { key: 'index' }, fail);
+    tracker.record('set_memory', { key: 'index' }, pass);
+    expect(tracker.summary()).toEqual({});
+  });
+  it('keeps a failure when a different tool or target succeeds', () => {
+    const tracker = new UnresolvedToolFailureTracker();
+    tracker.record('set_memory', { key: 'index' }, fail);
+    tracker.record('set_memory', { key: 'other' }, pass);
+    tracker.record('get_memory', { key: 'index' }, pass);
+    expect(tracker.summary().unresolvedToolFailureCount).toBe(1);
+  });
+  it('counts every open failure and lists each tool name once', () => {
+    const tracker = new UnresolvedToolFailureTracker();
+    tracker.record('set_memory', { key: 'a' }, fail);
+    tracker.record('set_memory', { key: 'b' }, fail);
+    tracker.record('browse_url', { url: 'https://x.test' }, fail);
+    expect(tracker.summary()).toEqual({ unresolvedToolFailureCount: 3, unresolvedToolFailures: ['browse_url', 'set_memory'] });
+  });
+  it('ignores empty and unparseable results', () => {
+    const tracker = new UnresolvedToolFailureTracker();
+    tracker.record('set_memory', {}, null);
+    tracker.record('set_memory', {}, 'not json');
+    expect(tracker.summary()).toEqual({});
   });
 });

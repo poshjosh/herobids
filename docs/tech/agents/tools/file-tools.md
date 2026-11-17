@@ -1,6 +1,6 @@
 # File Tools
 
-Tools that let an agent work with files in its own workspace (`/workspace`), including files up to 10 MiB, without loading them whole into the model context. Code: [filesystem.ts](../../../../apps/worker/src/tools/filesystem.ts) and the modules beside it (`read-file-lines.ts`, `search-files.ts`, `append-file.ts`, `edit-file.ts`, `delete-file.ts`, `web-cache.ts`, `file-messages.ts`, `workspace-quota.ts`). Browse tool: [web-access.ts](../../../../apps/worker/src/tools/web-access.ts). Design and results: [plan](../../../features/2026/11/15/001-agent-file-tools/plan.md), [results](../../../features/2026/11/15/001-agent-file-tools/results.md). Conventions for tool docs: [README](./README.md).
+Tools that let an agent work with files in its own workspace (`/workspace`), including files up to 16 MiB, without loading them whole into the model context. Code: [filesystem.ts](../../../../apps/worker/src/tools/filesystem.ts) and the modules beside it (`read-file-lines.ts`, `search-files.ts`, `append-file.ts`, `edit-file.ts`, `delete-file.ts`, `web-cache.ts`, `file-messages.ts`, `workspace-quota.ts`). Browse tool: [web-access.ts](../../../../apps/worker/src/tools/web-access.ts). Design and results: [plan](../../../features/2026/11/15/001-agent-file-tools/plan.md), [results](../../../features/2026/11/15/001-agent-file-tools/results.md). Conventions for tool docs: [README](./README.md).
 
 ## Visibility
 
@@ -26,6 +26,7 @@ All paths are relative to the workspace root. Counts of characters are Unicode c
 | `delete_file` | `path`, optional `recursive` (default false) | Deletes a file. With `recursive: true` it deletes a folder and everything in it, up to `maxDeleteFiles` files per call. |
 | `stat_file` | `path` | Reports whether a path exists, its type, size and mtime. |
 | `browse_url` | `url`, optional `limit` (inline page size, default 50,000, max 500,000) | Fetches a page. Returns the first page inline. A longer page is saved in full under `web-cache/`. |
+| `make_http_request` | `method`, `url`, optional `headers`, `body`, `timeoutMs`, `limit` (inline page size, default 50,000, max 500,000) | Calls an API. Returns the first page of the body inline. A longer body is saved in full under `web-cache/` (JSON is saved indented). |
 
 ## Results and paging
 
@@ -38,6 +39,7 @@ Metadata keys come first and the big text key (`content`, `matches`) comes last,
 | `search_files` | `path, query, regex, returnedMatches, filesScanned, bytesScanned, skippedBinary, skippedLarge, skippedLongLines, incomplete, incompleteReason?, stoppedAt?, hint?, matches` | Each match has `file`, `line` (1-based) and `offset` (characters, for `read_file`). No paging: narrow `path` or `query`. |
 | `list_files` | entries plus `totalEntries, nextOffset, truncated, hint?` | `nextOffset` is the next `offset`. |
 | `browse_url` | `url, title, truncated, sourceTruncated, totalChars, returnedChars, nextOffset, savedTo?, saveError?, hint?, content` | See "Web cache". |
+| `make_http_request` | `status, statusText, headers, truncated, sourceTruncated, totalChars, returnedChars, nextOffset, savedTo?, saveError?, hint?, body` | Same as `browse_url`, with `body` in place of `content`. See "Web cache". |
 
 `search_files` details:
 
@@ -60,7 +62,7 @@ All values are operator config in `config/default.yaml` under `agentRuntime.tool
 
 | Limit | Config key | Default |
 |---|---|---|
-| Largest file the tools open or grow to | `files.maxFileBytes` | 10,485,760 (10 MiB) |
+| Largest file the tools open or grow to | `files.maxFileBytes` | 16,777,216 (16 MiB) |
 | Default page (read tools, `browse_url`) | `files.readDefaultChars` | 50,000 |
 | Largest page an agent may ask for | `files.readMaxChars` | 500,000 |
 | Text per `write_file`, `append_file`, `edit_file` call | `files.writeMaxChars` | 16,000 |
@@ -73,8 +75,9 @@ All values are operator config in `config/default.yaml` under `agentRuntime.tool
 | Context lines around a match | `files.search.contextMaxLines` | 3 |
 | Search files, bytes, time, depth | `files.search.maxFiles`, `maxScanMb`, `deadlineMs`, `maxDepth` | 500, 50 MiB, 3,000 ms, 8 |
 | Query and regex length, regex line length | `files.search.maxQueryChars`, `maxRegexChars`, `regexLineMaxChars` | 200, 100, 2,000 |
-| Fetch cap for `browse_url` and `read_document` (shared) | `webAccess.browseUrl.maxResponseBytes` | 1,048,576 (1 MiB) |
-| Web cache size | `webAccess.webCache.sizeMb`, `dir` | 50 MiB, `web-cache` |
+| Fetch cap for `browse_url` and `read_document` (shared) | `webAccess.browseUrl.maxResponseBytes` | 2,097,152 (2 MiB) |
+| Body cap for `make_http_request` | `httpClient.maxResponseBytes` | 10,485,760 (10 MiB) |
+| Web cache size (shared by `browse_url` and `make_http_request`) | `webAccess.webCache.sizeMb`, `dir` | 200 MiB, `web-cache` |
 | Workspace quota per tier | `sandboxDefaults.workspaceDiskMb`, `resourceProfiles.<tier>.workspaceDiskMb` | 100 (free, starter), 500 (pro) MiB |
 
 The `browse_url` default capability grant no longer sets `maxResponseBytes`, so the config value governs. A per-agent `tool_policy` still wins.
@@ -117,13 +120,15 @@ The walk counts regular files, including `web-cache/`. It skips `platformDirs` a
 
 ## Web cache
 
-`browse_url` returns the first page inline. When the page is longer, the full text is saved to `web-cache/<host>-<hash>.txt`, a plain folder in the workspace. Nothing is deleted automatically, by any tool. The agent frees space with `delete_file`.
+`browse_url` and `make_http_request` return the first page inline. When the page or body is longer, the full text is saved to `web-cache/<host>-<hash>.txt`, a plain folder in the workspace. For `make_http_request` the hash also covers the method and request body of a non-GET call, so two POSTs to one URL get different files, and a JSON body is saved indented so `read_file_lines` and `search_files` work on it. Nothing is deleted automatically, by any tool. The agent frees space with `delete_file`.
 
 Save order: `webCache.sizeMb: 0` skips saving; then the cache cap; then the workspace quota; then an atomic write. If the cap or quota is full, nothing is saved or deleted. The call still succeeds with the first page and a `saveError` that tells the agent to free space and call again. There is no in-memory fallback. When saving is skipped or fails, `nextOffset` is `null`, since it is an offset into the saved file. Other save failures (for example permissions) are logged and returned as `saveError` too.
 
 The cache is part of the ephemeral workspace: cached pages are lost when the runtime restarts.
 
-`read_document` shares the fetch cap. A PDF up to 1 MiB is now fetched. Memory used to extract text near that size is untested; check it in the staging soak.
+The workspace quota still applies on top of `webCache.sizeMb`: with the free and starter quota of 100 MiB, the cache cannot grow past what the quota leaves free, whatever `sizeMb` says.
+
+`read_document` shares the fetch cap. A PDF up to 2 MiB is now fetched. Memory used to extract text near that size is untested; check it in the staging soak.
 
 ## Security notes
 

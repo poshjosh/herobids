@@ -1262,7 +1262,7 @@ export const WorkerConfigSchema = z.object({
 
 /** Operator limits for the agent file tools (read, search, write, list, delete). */
 export const FileToolsConfigSchema = z.object({
-  maxFileBytes: z.number().int().min(1024).max(104_857_600).default(10_485_760),
+  maxFileBytes: z.number().int().min(1024).max(104_857_600).default(16_777_216),
   readDefaultChars: z.number().int().min(1).default(50_000),
   readMaxChars: z.number().int().min(1).default(500_000),
   writeMaxChars: z.number().int().min(1).default(16_000),
@@ -1298,7 +1298,7 @@ export const FileToolsConfigSchema = z.object({
 
 /** Web page cache: a plain folder in the agent workspace. Nothing is deleted automatically. */
 export const WebCacheConfigSchema = z.object({
-  sizeMb: z.number().int().min(0).default(50),
+  sizeMb: z.number().int().min(0).default(200),
   dir: z.string().min(1).regex(/^[A-Za-z0-9._-]+$/).default('web-cache'),
 }).default({});
 
@@ -1311,7 +1311,7 @@ export const WebAccessToolsConfigSchema = z.object({
   }).default({}),
   browseUrl: z.object({
     // Shared by browse_url and read_document (fetch cap).
-    maxResponseBytes: z.number().int().min(1024).default(1024 * 1024),
+    maxResponseBytes: z.number().int().min(1024).default(2 * 1024 * 1024),
     timeoutMs: z.number().int().min(1000).default(15_000),
     maxRedirects: z.number().int().min(0).max(10).default(3),
   }).default({}),
@@ -1358,7 +1358,7 @@ export const BrowserPoolConfigSchema = z.object({
 
 export const HttpClientConfigSchema = z.object({
   enabled: z.boolean().default(true),
-  maxResponseBytes: z.number().int().positive().default(51_200),
+  maxResponseBytes: z.number().int().positive().default(10_485_760),
   denyList: z.array(z.string()).default([
     '10.*',
     '172.16.*', '172.17.*', '172.18.*', '172.19.*',

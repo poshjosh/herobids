@@ -1801,7 +1801,7 @@ Instructions:
 - You can remove files with delete_file(path, recursive?).
 - You can check a path with stat_file(path).
 - Long web pages that browse_url cuts are saved in web-cache/; read them with read_file.
-- Files up to 10 MiB can be opened; reads and searches return pieces, never the whole file at once. See the file tools reference (docs/tech/agents/tools/file-tools.md).
+- Files up to 16 MiB can be opened; reads and searches return pieces, never the whole file at once. See the file tools reference (docs/tech/agents/tools/file-tools.md).
 
 Workspace rules:
 - Files persist across ticks in the same runtime.

@@ -314,7 +314,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   finish_run:          { category: 'write-messaging',     description: `End the current run with a status (${FINISH_RUN_STATUSES.join(', ')}) and an optional short reason (up to ${FINISH_RUN_REASON_MAX_LENGTH} characters). With no arguments it records \`${FINISH_RUN_DEFAULT_STATUS}\` and "${FINISH_RUN_DEFAULT_REASON}". Only records why the run ended; it does not wake or schedule anything.` },
 
   // read-filesystem
-  read_file:           { category: 'read-filesystem',     description: 'Read a page of text from a file in the agent workspace (up to 10 MiB files, paged by characters).' },
+  read_file:           { category: 'read-filesystem',     description: 'Read a page of text from a file in the agent workspace (up to 16 MiB files, paged by characters).' },
   read_file_lines:     { category: 'read-filesystem',     description: 'Read whole lines of a file in the agent workspace starting at a line number, with a character cap per call.' },
   search_files:        { category: 'read-filesystem',     description: 'Search text in a workspace file or folder. Returns pointers (file, line, character offset, the matching line), not whole files. Literal by default; regex is opt-in.' },
   list_files:          { category: 'read-filesystem',     description: 'List files and directories in the agent workspace.' },

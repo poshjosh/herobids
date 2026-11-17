@@ -508,7 +508,7 @@ describe('read_document', () => {
         status: 200,
         headers: {
           'Content-Type': 'application/pdf',
-          'Content-Length': String(2 * 1024 * 1024), // 2MB > 512KB default
+          'Content-Length': String(3 * 1024 * 1024), // 3 MiB > 2 MiB default
         },
       }),
     );

@@ -385,14 +385,23 @@ describe('LONG_RUNNING_TASK_SKILL', () => {
     expect(LONG_RUNNING_TASK_SKILL.instructions).toContain('`phase`: `active`, `ending` or `ended`.');
   });
 
-  it('lets the agent decide the run budget, saves it, and does units up to it across the whole run', () => {
+  it('saves the run budget as a stopping rule, never as a number of units', () => {
     const { instructions } = LONG_RUNNING_TASK_SKILL;
-    expect(instructions).toContain('`runBudget`: how much to do in one run. Decide it from the goal');
-    expect(instructions).toContain('It covers the whole run.');
-    expect(longRunningStep(5)).toContain('Do units up to `runBudget`');
+    expect(instructions).toContain('`runBudget`: when a run must stop, written as a stopping rule and never as a number of units.');
+    expect(instructions).toContain('stop when no unit is pending or due, or you cannot progress');
     expect(instructions).not.toMatch(/up to \d+ units/);
   });
-
+  it('does as many units as it can until a stop condition is met, and re-reads the pending units after each one', () => {
+    const step = longRunningStep(5);
+    expect(step).toContain('Do as many units as you can until a stop condition is met: no pending unit remains, the time allowance in `runBudget` (if the goal states one) is used up, or you cannot progress.');
+    expect(step).toContain('After each unit, call `list_tasks` again and continue with the next pending unit; do not end the run because one unit is done.');
+    expect(step).not.toContain('up to `runBudget`');
+  });
+  it('does not size units to fill or fit a run', () => {
+    const plan = longRunningStep(2);
+    expect(plan).toContain('Make each unit small enough to resume after a restart. Do as many units as you can until a stop condition is met.');
+    expect(plan).not.toContain('Prefer many small units');
+  });
   it('keeps campaign names free of hyphens, so one campaign\'s key prefix cannot match another campaign\'s keys', () => {
     expect(LONG_RUNNING_TASK_SKILL.instructions).toContain('(lowercase letters and digits only)');
   });
@@ -450,8 +459,12 @@ describe('LONG_RUNNING_TASK_SKILL', () => {
     expect(longRunningStep(5)).toContain('If a unit cannot be done, save a one-line reason with the goal\'s results, then complete its task');
   });
 
-  it('stops doing units when some are still pending after the run budget is used', () => {
-    expect(longRunningStep(6)).toContain('If units are still pending, go to step 7.');
+  it('goes back to the units while some are pending and no stop condition is met, and to step 7 once one is', () => {
+    expect(longRunningStep(6)).toContain('If units are still pending, go back to step 5, unless a stop condition is met: then go to step 7.');
+    expect(longRunningStep(6)).toContain('if you created some and no stop condition is met, go back to step 5, otherwise go on to step 7.');
+  });
+  it('calls finish_run only when a stop condition is met or the goal has ended', () => {
+    expect(longRunningStep(7)).toContain('Call it only when a stop condition is met or the goal has ended: do not use `waiting` while units are pending and none is met.');
   });
 
   it('does not update the index or schedule a continuation once the goal has ended', () => {
