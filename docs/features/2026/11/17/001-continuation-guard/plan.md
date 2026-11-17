@@ -311,7 +311,7 @@ Reviewer note (not a question): the instruction wording in section 5 is a draft 
 Live verification, baseline capture, image release and `results.md` (Verification and Rollout sections) are operational and not part of this implementation.
 
 - Task 1 (WP1): pure module `apps/worker/src/continuation-guard.ts` (nudge text constant, decision function) and tests - DONE
-- Task 2 (WP2): loop options `onNoToolCalls`, `shouldStopAfterToolResults`, `continues`, `nudgesUsed`, `endedBy`, last non-empty assistant text, and tests incl. stop-hook tests - PENDING
+- Task 2 (WP2): loop options `onNoToolCalls`, `shouldStopAfterToolResults`, `continues`, `nudgesUsed`, `endedBy`, last non-empty assistant text, and tests incl. stop-hook tests - DONE
 - Task 3 (WP3): `finish_run` tool, registration checklist (section 2 steps 1-4, 6-8) and tests - PENDING
 - Task 4 (WP4): config schema `continuationGuard.maxNudges` (no `enabled`), `config/default.yaml`, schema tests - PENDING
 - Task 5 (WP6): `agent.llm.completed` fields (`nudgeCount`, `finishRunStatus`, `finishRunReason`) and activity timeline summary with tests - PENDING
@@ -321,3 +321,4 @@ Live verification, baseline capture, image release and `results.md` (Verificatio
 
 ## Outstanding Issues
 - Task 1 (: (low) test regex for time/budget wording includes 'left'/'limit'; WP2 must pass zero-based turnIndex.
+- Task 2 (: (low) nudgesUsed/endedBy only present when a continuation option is given (judge wiring must default them); empty replies are never nudged (decision, avoids empty assistant message rejection).

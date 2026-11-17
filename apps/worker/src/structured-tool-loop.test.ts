@@ -745,6 +745,274 @@ describe('runStructuredToolLoop', () => {
     });
   });
 
+  describe('continuation options', () => {
+    type Seen = Array<Array<{ role: string; content: string }>>;
+    type Turn = { content: string; tools?: string[] };
+
+    /** Scripted model: returns each turn in order and records what it was sent. */
+    function scriptModel(turns: Turn[]): Seen {
+      const seen: Seen = [];
+      vi.mocked(callLlmWithRetry).mockImplementation(async (_config, request) => {
+        const index = seen.length;
+        seen.push(request.messages.map((message) => ({ role: message.role, content: message.content })));
+        const turn = turns[Math.min(index, turns.length - 1)]!;
+        const toolCalls = (turn.tools ?? []).map((name, i) => ({ id: `call_${index}_${i}`, name, args: {} }));
+        return {
+          result: {
+            ok: true,
+            data: { content: turn.content, toolCalls, model: 'test-model', provider: 'openai', tokensUsed: 1, latencyMs: 1, cached: false },
+          },
+          attempts: 1,
+          delaysMs: [],
+        };
+      });
+      return seen;
+    }
+
+    const baseOptions = {
+      providerConfig: { provider: 'openai' as const, model: 'test-model', maxTokens: 128, timeoutMs: 1_000 },
+      requestBase: { maxTokens: 128, temperature: 0 },
+      initialMessages: [{ role: 'user' as const, content: 'hello' }],
+      tools: [{ name: 'a_tool', description: 'x', inputSchema: { type: 'object' as const } }],
+    };
+
+    it('asks the model to continue once when it stops without finishing, then returns its next answer', async () => {
+      scriptModel([{ content: 'done?' }, { content: 'really done' }]);
+      const onNoToolCalls = vi.fn().mockReturnValueOnce({ nudge: 'check' }).mockReturnValue(undefined);
+
+      const result = await runStructuredToolLoop({ ...baseOptions, maxTurns: 5, executeTool: async () => '{}', onNoToolCalls });
+
+      expect(result).toMatchObject({ ok: true, assistantResponse: 'really done', turnsUsed: 2, nudgesUsed: 1, endedBy: 'no_tool_calls', terminatedByLimit: false });
+      expect(onNoToolCalls).toHaveBeenNthCalledWith(1, { turnIndex: 0, assistantResponse: 'done?', nudgesUsed: 0 });
+      expect(onNoToolCalls).toHaveBeenNthCalledWith(2, { turnIndex: 1, assistantResponse: 'really done', nudgesUsed: 1 });
+    });
+
+    it("puts the model's reply before the nudge in the messages it sends next", async () => {
+      const seen = scriptModel([{ content: 'done?' }, { content: 'ok' }]);
+
+      await runStructuredToolLoop({
+        ...baseOptions,
+        maxTurns: 5,
+        executeTool: async () => '{}',
+        onNoToolCalls: ({ nudgesUsed }) => (nudgesUsed === 0 ? { nudge: 'check' } : undefined),
+      });
+
+      expect(seen[1]).toEqual([
+        { role: 'user', content: 'hello' },
+        { role: 'assistant', content: 'done?' },
+        { role: 'user', content: 'check' },
+      ]);
+    });
+
+    it('stops asking after the nudge cap and returns as it did before', async () => {
+      scriptModel([{ content: 'stop' }]);
+      let nudges = 0;
+
+      const result = await runStructuredToolLoop({
+        ...baseOptions,
+        maxTurns: 10,
+        executeTool: async () => '{}',
+        onNoToolCalls: ({ nudgesUsed }) => (nudgesUsed < 2 ? { nudge: `n${++nudges}` } : undefined),
+      });
+
+      expect(result).toMatchObject({ ok: true, turnsUsed: 3, nudgesUsed: 2, terminatedByLimit: false, endedBy: 'no_tool_calls' });
+    });
+
+    it('never nudges on the last allowed turn', async () => {
+      scriptModel([{ content: 'stop' }]);
+      const onNoToolCalls = vi.fn().mockReturnValue({ nudge: 'check' });
+      const onAssistantTurn = vi.fn();
+
+      const result = await runStructuredToolLoop({ ...baseOptions, maxTurns: 2, executeTool: async () => '{}', onNoToolCalls, onAssistantTurn });
+
+      expect(onNoToolCalls).toHaveBeenCalledTimes(1);
+      expect(onNoToolCalls).toHaveBeenCalledWith(expect.objectContaining({ turnIndex: 0 }));
+      expect(result).toMatchObject({ ok: true, turnsUsed: 2, nudgesUsed: 1, terminatedByLimit: false, endedBy: 'no_tool_calls' });
+      expect(onAssistantTurn.mock.calls.map(([info]) => info.continues)).toEqual([true, false]);
+    });
+
+    it('does not nudge when the model reply is empty', async () => {
+      scriptModel([{ content: '   \n' }]);
+      const onNoToolCalls = vi.fn().mockReturnValue({ nudge: 'check' });
+
+      const result = await runStructuredToolLoop({ ...baseOptions, maxTurns: 5, executeTool: async () => '{}', onNoToolCalls });
+
+      expect(onNoToolCalls).not.toHaveBeenCalled();
+      expect(vi.mocked(callLlmWithRetry)).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({ ok: true, turnsUsed: 1, nudgesUsed: 0, endedBy: 'no_tool_calls', terminatedByLimit: false });
+    });
+
+    it('never nudges when only one turn is allowed', async () => {
+      scriptModel([{ content: 'stop' }]);
+      const onNoToolCalls = vi.fn().mockReturnValue({ nudge: 'check' });
+
+      const result = await runStructuredToolLoop({ ...baseOptions, maxTurns: 1, executeTool: async () => '{}', onNoToolCalls });
+
+      expect(onNoToolCalls).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ ok: true, turnsUsed: 1, nudgesUsed: 0 });
+    });
+
+    it('counts a nudge as a turn against the turn limit', async () => {
+      scriptModel([{ content: 'a' }, { content: 'b', tools: ['a_tool'] }, { content: 'c', tools: ['a_tool'] }]);
+
+      const result = await runStructuredToolLoop({
+        ...baseOptions,
+        maxTurns: 3,
+        executeTool: async () => '{}',
+        onNoToolCalls: ({ nudgesUsed }) => (nudgesUsed === 0 ? { nudge: 'check' } : undefined),
+      });
+
+      expect(vi.mocked(callLlmWithRetry)).toHaveBeenCalledTimes(3);
+      expect(result).toMatchObject({ ok: true, turnsUsed: 3, terminatedByLimit: true, endedBy: 'turn_limit', nudgesUsed: 1 });
+    });
+
+    it('reports continues true only on the turn a nudge follows', async () => {
+      scriptModel([{ content: 'a' }, { content: 'b' }]);
+      const onAssistantTurn = vi.fn();
+
+      await runStructuredToolLoop({
+        ...baseOptions,
+        maxTurns: 5,
+        executeTool: async () => '{}',
+        onNoToolCalls: ({ nudgesUsed }) => (nudgesUsed === 0 ? { nudge: 'check' } : undefined),
+        onAssistantTurn,
+      });
+
+      expect(onAssistantTurn.mock.calls.map(([info]) => info.continues)).toEqual([true, false]);
+    });
+
+    it('keeps the last non-empty assistant text when the final turn is empty', async () => {
+      scriptModel([{ content: 'my real answer' }, { content: '' }]);
+
+      const result = await runStructuredToolLoop({
+        ...baseOptions,
+        maxTurns: 5,
+        executeTool: async () => '{}',
+        onNoToolCalls: ({ nudgesUsed }) => (nudgesUsed === 0 ? { nudge: 'check' } : undefined),
+      });
+
+      expect(result).toMatchObject({ ok: true, assistantResponse: 'my real answer', nudgesUsed: 1 });
+    });
+
+    it('returns right after the tool results of a turn when the stop check says so, without another model call', async () => {
+      scriptModel([{ content: 'bye', tools: ['finish'] }, { content: 'extra' }]);
+
+      const result = await runStructuredToolLoop({
+        ...baseOptions,
+        maxTurns: 5,
+        executeTool: async () => '{"ok":true}',
+        shouldStopAfterToolResults: () => true,
+      });
+
+      expect(vi.mocked(callLlmWithRetry)).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({ ok: true, assistantResponse: 'bye', terminatedByLimit: false });
+    });
+
+    it('still runs every tool call of the reply before stopping', async () => {
+      scriptModel([{ content: 'bye', tools: ['send_message', 'finish'] }]);
+      const executed: string[] = [];
+      const stopCheck = vi.fn(() => executed.length === 2);
+
+      await runStructuredToolLoop({
+        ...baseOptions,
+        maxTurns: 5,
+        executeTool: async (call) => {
+          executed.push(call.name);
+          return '{}';
+        },
+        shouldStopAfterToolResults: stopCheck,
+      });
+
+      expect(executed).toEqual(['send_message', 'finish']);
+      expect(stopCheck).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not stop when the check says no and the reply had tool calls', async () => {
+      scriptModel([{ content: 'a', tools: ['a_tool'] }, { content: 'done' }]);
+
+      const result = await runStructuredToolLoop({
+        ...baseOptions,
+        maxTurns: 5,
+        executeTool: async () => '{}',
+        shouldStopAfterToolResults: () => false,
+      });
+
+      expect(vi.mocked(callLlmWithRetry)).toHaveBeenCalledTimes(2);
+      expect(result).toMatchObject({ ok: true, endedBy: 'no_tool_calls', turnsUsed: 2 });
+    });
+
+    it('reports endedBy terminal_tool and counts the turn that called the tool', async () => {
+      scriptModel([{ content: 'a', tools: ['a_tool'] }, { content: 'b', tools: ['finish'] }]);
+      let finished = false;
+
+      const result = await runStructuredToolLoop({
+        ...baseOptions,
+        maxTurns: 5,
+        executeTool: async (call) => {
+          if (call.name === 'finish') finished = true;
+          return '{}';
+        },
+        shouldStopAfterToolResults: () => finished,
+      });
+
+      expect(result).toMatchObject({ ok: true, endedBy: 'terminal_tool', turnsUsed: 2, nudgesUsed: 0, terminatedByLimit: false });
+      expect(result.ok && result.toolCalls.map((c) => c.name)).toEqual(['finish']);
+    });
+
+    it('ends cleanly when the stopping tool is called on the last allowed turn', async () => {
+      scriptModel([{ content: 'last', tools: ['finish'] }]);
+
+      const result = await runStructuredToolLoop({
+        ...baseOptions,
+        maxTurns: 1,
+        executeTool: async () => '{}',
+        shouldStopAfterToolResults: () => true,
+      });
+
+      expect(result).toMatchObject({ ok: true, terminatedByLimit: false, endedBy: 'terminal_tool', turnsUsed: 1 });
+    });
+
+    it('uses the last non-empty text when the turn that stops has none', async () => {
+      scriptModel([{ content: 'earlier text' }, { content: '', tools: ['finish'] }]);
+
+      const result = await runStructuredToolLoop({
+        ...baseOptions,
+        maxTurns: 5,
+        executeTool: async () => '{}',
+        onNoToolCalls: ({ nudgesUsed }) => (nudgesUsed === 0 ? { nudge: 'check' } : undefined),
+        shouldStopAfterToolResults: () => true,
+      });
+
+      expect(result).toMatchObject({ ok: true, assistantResponse: 'earlier text', endedBy: 'terminal_tool' });
+    });
+
+    it('behaves exactly as before when no continuation option is given', async () => {
+      const seen = scriptModel([{ content: 'a', tools: ['a_tool'] }, { content: '' }]);
+      const onAssistantTurn = vi.fn();
+
+      const result = await runStructuredToolLoop({ ...baseOptions, maxTurns: 5, executeTool: async () => '{}', onAssistantTurn });
+
+      expect(seen).toHaveLength(2);
+      expect(result).toMatchObject({ ok: true, assistantResponse: '', turnsUsed: 2, terminatedByLimit: false });
+      expect(result).not.toHaveProperty('endedBy');
+      expect(result).not.toHaveProperty('nudgesUsed');
+      expect(onAssistantTurn.mock.calls.map(([info]) => info.continues)).toEqual([false, false]);
+    });
+
+    it('reports how many nudges were used', async () => {
+      scriptModel([{ content: 'stop' }]);
+
+      const result = await runStructuredToolLoop({
+        ...baseOptions,
+        maxTurns: 10,
+        executeTool: async () => '{}',
+        onNoToolCalls: ({ nudgesUsed }) => (nudgesUsed < 2 ? { nudge: 'check' } : undefined),
+      });
+
+      expect(result.ok && result.nudgesUsed).toBe(2);
+    });
+  });
+
   describe('stale tool result truncation', () => {
     it('truncates tool results only after the full retention window (age > retentionTurns)', async () => {
       // retentionTurns=3: ages 0-3 keep full results; age 4+ truncates.

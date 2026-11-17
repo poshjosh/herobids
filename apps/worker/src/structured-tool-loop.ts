@@ -39,7 +39,24 @@ export interface StructuredToolLoopOptions {
     result: { ok: true; data: LlmResponse };
     assistantResponse: string;
     toolCalls: LlmToolCall[];
+    /** True when a nudge follows this turn, so the run is not over. */
+    continues: boolean;
   }) => Promise<void> | void;
+  /**
+   * Called when a turn has no tool calls, before the loop ends. Returning a nudge keeps the run going:
+   * the loop adds the model's reply and then the nudge as a user message, and calls the model again.
+   * Never called on the last allowed turn, and a nudge uses up a turn.
+   */
+  onNoToolCalls?: (info: {
+    turnIndex: number;
+    assistantResponse: string;
+    nudgesUsed: number;
+  }) => { nudge: string } | undefined;
+  /**
+   * Checked once after all tool calls of a turn have run and their results are stored.
+   * Returning true ends the run right away, with no further model call.
+   */
+  shouldStopAfterToolResults?: () => boolean;
   onToolResult?: (info: {
     turnIndex: number;
     toolCall: LlmToolCall;
@@ -105,6 +122,10 @@ export interface StructuredToolLoopSuccess {
   toolCalls: LlmToolCall[];
   turnsUsed: number;
   terminatedByLimit: boolean;
+  /** Number of nudges sent. Absent means 0. */
+  nudgesUsed?: number;
+  /** Why the loop ended. Absent means the model ended it with no tool calls. */
+  endedBy?: 'no_tool_calls' | 'terminal_tool' | 'turn_limit';
 }
 
 export interface StructuredToolLoopFailure {
@@ -120,6 +141,14 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
   let lastAssistantResponse = '';
   let lastToolCalls: LlmToolCall[] = [];
   let turnsUsed = 0;
+  let nudgesUsed = 0;
+  let lastNonEmptyResponse = '';
+  const continuationOptionsGiven = options.onNoToolCalls !== undefined || options.shouldStopAfterToolResults !== undefined;
+  // Without continuation options the result keeps its old meaning (the final turn's text, even if empty).
+  // Reported only when a continuation option is given, so results are unchanged for other callers.
+  const continuationFields = (endedBy: NonNullable<StructuredToolLoopSuccess['endedBy']>) =>
+    continuationOptionsGiven ? { nudgesUsed, endedBy } : {};
+  const finalText = (text: string): string => (text === '' && continuationOptionsGiven ? lastNonEmptyResponse : text);
 
   // Tracks tool messages that have already been stale-truncated so each is
   // truncated (and reported via onToolResultTruncated) AT MOST ONCE. Without
@@ -222,21 +251,41 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
     const toolCalls = turnResultWithRetry.result.data.toolCalls;
     lastAssistantResponse = assistantResponse;
     lastToolCalls = toolCalls;
+    if (assistantResponse !== '') {
+      lastNonEmptyResponse = assistantResponse;
+    }
+
+    // A nudge on the last allowed turn would leave no turn to answer it and end the run as a turn-limit overrun.
+    // An empty/whitespace reply is never nudged: the nudge path stores the reply as an assistant message,
+    // and providers (e.g. Anthropic via toAnthropicMessages) can reject an empty assistant message.
+    const nudge =
+      toolCalls.length === 0 && assistantResponse.trim() !== '' && turnIndex < options.maxTurns - 1
+        ? options.onNoToolCalls?.({ turnIndex, assistantResponse, nudgesUsed })
+        : undefined;
 
     await options.onAssistantTurn?.({
       turnIndex,
       result: turnResultWithRetry.result,
       assistantResponse,
       toolCalls,
+      continues: nudge !== undefined,
     });
 
     if (toolCalls.length === 0) {
+      if (nudge) {
+        // The reply goes first: providers can reject two user messages in a row.
+        messages.push({ role: 'assistant', content: assistantResponse });
+        messages.push({ role: 'user', content: nudge.nudge });
+        nudgesUsed++;
+        continue;
+      }
       return {
         ok: true,
-        assistantResponse,
+        assistantResponse: finalText(assistantResponse),
         toolCalls,
         turnsUsed,
         terminatedByLimit: false,
+        ...continuationFields('no_tool_calls'),
       };
     }
 
@@ -266,13 +315,25 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
         pinned: DURABLE_TOOL_NAMES.has(toolCall.name),
       });
     }
+
+    if (options.shouldStopAfterToolResults?.()) {
+      return {
+        ok: true,
+        assistantResponse: finalText(assistantResponse),
+        toolCalls,
+        turnsUsed,
+        terminatedByLimit: false,
+        ...continuationFields('terminal_tool'),
+      };
+    }
   }
 
   return {
     ok: true,
-    assistantResponse: lastAssistantResponse,
+    assistantResponse: finalText(lastAssistantResponse),
     toolCalls: lastToolCalls,
     turnsUsed,
     terminatedByLimit: true,
+    ...continuationFields('turn_limit'),
   };
 }
