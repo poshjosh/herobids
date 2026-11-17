@@ -147,7 +147,7 @@ No open questions.
 ## Implementation Task List
 
 - Task 1 (Fix sections 1-3): improved `provider.invalid_tool_args` message (tool, call id, index, position, length, offending chars, finish_reason, cap, non-object case) in `packages/llm/src/llm-provider.ts` with tests - DONE
-- Task 2 (Silent drops): warn once per dropped tool call in `normalizeOpenAiToolCalls`, behavior unchanged, with tests - PENDING
+- Task 2 (Silent drops): warn once per dropped tool call in `normalizeOpenAiToolCalls`, behavior unchanged, with tests - DONE
 - Task 3 (Fix section 4): documentation (report 001 link, CHANGELOG, agent-runtime docs entry) - PENDING
 
 Out of scope: any behavior change after the error, skill guidance, model switch, call-signature changes (verdict: do nothing).
@@ -155,3 +155,4 @@ Out of scope: any behavior change after the error, skill guidance, model switch,
 ## Outstanding Issues
 
 - Task 1: (low) Cap truncation can cut diagnostic sentences when a model-supplied tool name or call id is very long. The sanitizer keeps only the leading `Unexpected token 'X'` of V8 messages with an input excerpt. Cut-off hint does not include configured max tokens.
+- Task 2: (low) Array entries are reported as "no function name"; tests for drops sit in the invalid-args describe block; forged `[llm-provider]` text can still appear inside a sanitized id (single line, 64 chars).

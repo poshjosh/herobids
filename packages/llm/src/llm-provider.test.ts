@@ -523,6 +523,73 @@ describe('callLlmProvider invalid tool arguments message', () => {
     if (leading) expect(message).toContain(leading);
   });
 
+  async function callWithRawToolCalls(toolCalls: unknown[]) {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: '', tool_calls: toolCalls } }],
+      usage: { total_tokens: 20 },
+      model: 'gpt-4o-mini',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    return callLlmProvider(
+      { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 512, timeoutMs: 1_000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 512 },
+    );
+  }
+
+  it('warns once per dropped tool call and still returns the valid ones', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const result = await callWithRawToolCalls([
+      { id: 'call_a', function: { name: 'read_file', arguments: '{"path":"a"}' } },
+      { id: 'call_b', function: { arguments: '{}' } },
+      'not-an-object',
+      { id: 'call_d', function: { name: 'read_file', arguments: '{"path":"d"}' } },
+    ]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('expected success');
+    expect(result.data.toolCalls?.map(call => call.id)).toEqual(['call_a', 'call_d']);
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenNthCalledWith(1, '[llm-provider] dropped tool call 2 of 4: no function name (id call_b)');
+    expect(warn).toHaveBeenNthCalledWith(2, '[llm-provider] dropped tool call 3 of 4: entry is not an object');
+  });
+
+  it('keeps the warning single-line and bounded for hostile model-supplied ids', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await callWithRawToolCalls([
+      { id: 'x\nFAKE\r\n[llm-provider] forged\u2028line\u0007', function: { arguments: '{}' } },
+      { id: 'a'.repeat(5000), function: { arguments: '{}' } },
+    ]);
+    expect(warn).toHaveBeenCalledTimes(2);
+    for (const [message] of warn.mock.calls) {
+      expect(typeof message).toBe('string');
+      expect(message as string).not.toMatch(/[\r\n\u2028\u2029\p{Cc}]/u);
+      expect((message as string).length).toBeLessThan(200);
+    }
+    expect(warn.mock.calls[0]?.[0]).toBe(
+      '[llm-provider] dropped tool call 1 of 2: no function name (id x FAKE [llm-provider] forged line)',
+    );
+    expect(warn.mock.calls[1]?.[0]).toBe(
+      `[llm-provider] dropped tool call 2 of 2: no function name (id ${'a'.repeat(64)})`,
+    );
+  });
+
+  it('does not warn when every call is valid', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const result = await callWithRawToolCalls([
+      { id: 'call_a', function: { name: 'read_file', arguments: '{"path":"a"}' } },
+    ]);
+    expect(result.ok).toBe(true);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('includes no argument text in the warning', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await callWithRawToolCalls([
+      { id: 'call_a', function: { arguments: '{"content":"SECRET-CV-TEXT"}' } },
+      { id: 'call_b', function: { name: 123, arguments: 'SECRET-CV-TEXT' } },
+    ]);
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn.mock.calls.flat().join(' ')).not.toContain('SECRET');
+  });
+
   it('counts only named tool_use blocks in the Anthropic call total', async () => {
     process.env['LLM_API_KEY_ANTHROPIC'] = 'test-key';
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({

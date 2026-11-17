@@ -754,6 +754,23 @@ function appendAnthropicUserBlock(messages: Array<Record<string, unknown>>, bloc
   messages.push({ role: 'user', content: [block] });
 }
 
+const MAX_LOGGED_TOOL_CALL_ID_LENGTH = 64;
+
+// The id is model-supplied: collapse whitespace/control chars so it stays on one log line, then cap it.
+function sanitizeToolCallIdForLog(id: string): string {
+  return id
+    .replace(/[\s\p{Cc}]+/gu, ' ')
+    .trim()
+    .slice(0, MAX_LOGGED_TOOL_CALL_ID_LENGTH);
+}
+
+// Logs position, reason and call id only; never argument content or name text.
+function warnDroppedToolCall(index: number, total: number, reason: string, id?: unknown): void {
+  const safeId = typeof id === 'string' ? sanitizeToolCallIdForLog(id) : '';
+  const idPart = safeId.length > 0 ? ` (id ${safeId})` : '';
+  console.warn(`[llm-provider] dropped tool call ${index + 1} of ${total}: ${reason}${idPart}`);
+}
+
 function normalizeOpenAiToolCalls(toolCalls: unknown, finishReason?: string): LlmToolCall[] {
   if (!Array.isArray(toolCalls)) {
     return [];
@@ -761,6 +778,7 @@ function normalizeOpenAiToolCalls(toolCalls: unknown, finishReason?: string): Ll
 
   return toolCalls.flatMap((toolCall, index) => {
     if (!toolCall || typeof toolCall !== 'object') {
+      warnDroppedToolCall(index, toolCalls.length, 'entry is not an object');
       return [];
     }
 
@@ -770,6 +788,7 @@ function normalizeOpenAiToolCalls(toolCalls: unknown, finishReason?: string): Ll
     };
 
     if (typeof candidate.function?.name !== 'string') {
+      warnDroppedToolCall(index, toolCalls.length, 'no function name', candidate.id);
       return [];
     }
 
