@@ -25,7 +25,7 @@
 #   HEROBIDS_ENV    staging | production. Names the environment in the banner and in the
 #                   release command it prints.
 #   HEROBIDS_ROOT   Repo root (default: two levels above this script's directory).
-#   NO_COLOR        Set to disable the ANSI colours.
+#   NO_COLOR        Set to turn off the bold too (plain text).
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${HEROBIDS_ROOT:-$(cd "${SCRIPT_DIR}/../../.." && pwd)}"
@@ -37,13 +37,14 @@ SANDBOX_PATHS=(docker/Dockerfile.agent scripts/sandbox-exec.sh scripts/sandbox-e
 if [[ -n "${NO_COLOR:-}" ]]; then
   ALERT=''; RESET=''
 else
-  ALERT=$'\033[1;97;41m'   # bold white on red
+  ALERT=$'\033[1m'         # bold only: no colour, so it is not read as an error
   RESET=$'\033[0m'
 fi
 env_file_value() {
   { grep -E "^$1=" "${ROOT}/.env" 2>/dev/null || true; } | tail -n 1 | cut -d= -f2- | tr -d "\"'[:space:]"
 }
-# banner <line>... — full-width bold white-on-red block.
+# banner <line>... — full-width block in bold text. No colour: a stale pin is a
+# to-do, not an error.
 banner() {
   local bar line
   bar="$(printf '!%.0s' $(seq 1 78))"

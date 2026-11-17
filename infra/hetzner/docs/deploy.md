@@ -43,7 +43,7 @@ new image reaches agents, and rollback is changing one value.
 
 Every deploy now ends with a check (`scripts/check-agent-image-pin.sh`, run by
 `push.sh`, `maintenance-restart.sh` and again by `deploy.sh`). It prints a bold
-white-on-red banner when the pin is unset, is not a `sha-<commit>` tag, or lags the
+bold banner (no colour) when the pin is unset, is not a `sha-<commit>` tag, or lags the
 deployed commit. It lists the sandbox/entrypoint files that changed since the pin. It
 only warns and never fails the deploy. Run it any time:
 ```sh

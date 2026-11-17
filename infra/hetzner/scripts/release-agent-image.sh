@@ -16,6 +16,10 @@
 #      --include-live.
 # Staging and production use the same steps.
 #
+# Safe to re-run. If the pin is already set to the commit's image (for example an earlier run
+# stopped after step 4), steps 2 to 4 are skipped, the worker is checked (and recreated if it
+# does not report the pin), and it carries on to step 5.
+#
 # Usage:
 #   infra/hetzner/scripts/release-agent-image.sh --env <staging|production> [options] [<server-ip>]
 #
@@ -67,7 +71,9 @@ while [[ $# -gt 0 ]]; do
       SERVER_IP="$1"; shift ;;
   esac
 done
-if [[ -t 1 ]]; then BOLD=$'\033[1m'; RED=$'\033[1;31m'; GREEN=$'\033[1;32m'; RESET=$'\033[0m'; else BOLD=''; RED=''; GREEN=''; RESET=''; fi
+# Bold for step headers only. No colours: nothing here should read as an error unless it is one.
+if [[ -t 1 ]]; then BOLD=$'\033[1m'; RESET=$'\033[0m'; else BOLD=''; RESET=''; fi
+RED=''; GREEN=''
 step() { echo ""; echo "${BOLD}── $* ──${RESET}"; }
 die()  { echo "${RED}ERROR:${RESET} $*" >&2; exit 1; }
 ENV_FILE="${TF_DIR}/.env.${HEROBIDS_ENV}"
@@ -79,6 +85,12 @@ fi
 # shellcheck disable=SC2086
 ssh_cp() { ssh ${SSH_OPTS} "root@${SERVER_IP}" "$@"; }
 env_value() { { grep -E "^$1=" "$2" 2>/dev/null || true; } | tail -n 1 | cut -d= -f2- | tr -d "\"'[:space:]"; }
+# Compose command on the server. COMPOSE_OVERLAY comes from _ssh_opts.sh (a fixed file name
+# per environment), so it is written into the command here. Do not pass it as a
+# `VAR=value cd ... && cmd` prefix: the assignment would apply to `cd` only.
+SERVER_COMPOSE="cd /opt/herobids && docker compose -f docker-compose.yaml -f ${COMPOSE_OVERLAY}"
+# worker_pin: the NOMAD_AGENT_IMAGE the running worker container reports (empty if it cannot be read).
+worker_pin() { ssh_cp "${SERVER_COMPOSE} exec -T worker printenv NOMAD_AGENT_IMAGE" 2>/dev/null | tr -d '[:space:]' || true; }
 echo "${BOLD}Release agent image: ${HEROBIDS_ENV} (${SERVER_IP})${RESET}"
 [[ "${DRY_RUN}" == "true" ]] && echo "DRY RUN: verify and probe only, nothing will change."
 # ─── 1. Pick the commit ──────────────────────────────────────────────────────
@@ -94,23 +106,59 @@ IMAGE="${IMAGE_REPO}:sha-${SHA}"
 OLD_IMAGE="$(env_value NOMAD_AGENT_IMAGE "${ENV_FILE}")"
 SERVER_IMAGE="$(ssh_cp "grep -E '^NOMAD_AGENT_IMAGE=' /opt/herobids/.env 2>/dev/null | tail -n 1 | cut -d= -f2- | tr -d \"'[:space:]\"" || true)"
 echo "Current pin (${ENV_FILE##*/}): ${OLD_IMAGE:-<unset>}"
-if [[ "${SERVER_IMAGE}" != "${OLD_IMAGE}" ]]; then
+ALREADY_PINNED=false
+if [[ "${OLD_IMAGE}" == "${IMAGE}" && "${SERVER_IMAGE}" == "${IMAGE}" ]]; then
+  ALREADY_PINNED=true
+elif [[ "${SERVER_IMAGE}" != "${OLD_IMAGE}" ]]; then
   echo "${RED}WARNING:${RESET} the server's /opt/herobids/.env has a different pin (${SERVER_IMAGE:-<unset>}). The upload in step 4 replaces it with ${ENV_FILE##*/}."
 fi
-if [[ "${OLD_IMAGE}" == "${IMAGE}" && "${SERVER_IMAGE}" == "${IMAGE}" ]]; then
-  echo "${GREEN}Already pinned to ${IMAGE}. Nothing to release.${RESET}"
-  echo "Running agents keep their image until relaunched: maintenance-restart-from-local.sh --env ${HEROBIDS_ENV} --skip-deploy"
-  exit 0
+# verify_worker: wait until the running worker reports the pin; die with the reason if it never does.
+verify_worker() {
+  local actual=""
+  for _ in $(seq 1 20); do
+    actual="$(worker_pin)"
+    [[ "${actual}" == "${IMAGE}" ]] && { echo "${GREEN}Worker is running with ${IMAGE}.${RESET} New agent launches use it."; return 0; }
+    sleep 2
+  done
+  echo "Last compose output:" >&2
+  ssh_cp "${SERVER_COMPOSE} exec -T worker printenv NOMAD_AGENT_IMAGE" 2>&1 | tail -n 5 >&2 || true
+  die "The worker reports NOMAD_AGENT_IMAGE='${actual}', expected ${IMAGE}. Check: docker compose logs worker (on the server)."
+}
+# recreate_worker: same NPM_TOKEN handling as push.sh (compose reads it for the build secret definition).
+recreate_worker() {
+  echo "Recreating the worker so it reads the new value..."
+  # shellcheck disable=SC2086
+  ssh ${SSH_OPTS} "root@${SERVER_IP}" "COMPOSE_OVERLAY='${COMPOSE_OVERLAY}' bash -s" <<'REMOTE' || die "Could not recreate the worker. The server's env file already has the pin; re-run this command to retry, or run on the server: ${SERVER_COMPOSE} up -d --force-recreate --no-deps worker"
+set -euo pipefail
+cd /opt/herobids
+if [[ -z "${NPM_TOKEN:-}" ]]; then
+  NPM_TOKEN="$(grep -E '^NPM_TOKEN=' .env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '[:space:]' || true)"
 fi
-# ─── 2. CI image exists ──────────────────────────────────────────────────────
-step "2/5 Check the image is published"
-if ! ssh_cp "docker manifest inspect '${IMAGE}' >/dev/null 2>&1"; then
-  die "${IMAGE} is not in GHCR. Wait for GitHub Actions \"Build and Push Agent Image\" to finish for ${SHA:0:8}, or check that it succeeded. Nothing was changed."
-fi
-echo "OK: ${IMAGE}"
-# ─── 3. Probe on an agent node ───────────────────────────────────────────────
-step "3/5 Probe the image on an agent node"
-NODES="$(ssh_cp 'bash -s' <<'REMOTE'
+export NPM_TOKEN
+docker compose -f docker-compose.yaml -f "${COMPOSE_OVERLAY}" up -d --force-recreate --no-deps worker
+REMOTE
+}
+if [[ "${ALREADY_PINNED}" == "true" ]]; then
+  echo "${GREEN}Already pinned to ${IMAGE}.${RESET} Skipping the image check, probe and upload (steps 2 to 4)."
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    echo "DRY RUN complete. Nothing to change."
+    exit 0
+  fi
+  step "4/5 Confirm the worker uses the pin"
+  if [[ "$(worker_pin)" != "${IMAGE}" ]]; then
+    recreate_worker
+  fi
+  verify_worker
+else
+  # ─── 2. CI image exists ────────────────────────────────────────────────────
+  step "2/5 Check the image is published"
+  if ! ssh_cp "docker manifest inspect '${IMAGE}' >/dev/null 2>&1"; then
+    die "${IMAGE} is not in GHCR. Wait for GitHub Actions \"Build and Push Agent Image\" to finish for ${SHA:0:8}, or check that it succeeded. Nothing was changed."
+  fi
+  echo "OK: ${IMAGE}"
+  # ─── 3. Probe on an agent node ─────────────────────────────────────────────
+  step "3/5 Probe the image on an agent node"
+  NODES="$(ssh_cp 'bash -s' <<'REMOTE'
 set -euo pipefail
 export NOMAD_TOKEN="$(cat /etc/nomad.d/acl-token)"
 control_ip="$(hostname -I | tr ' ' '\n' | grep -E '^10\.' | head -n 1 || true)"
@@ -126,73 +174,53 @@ print("agent=%s browser=%s" % (pick("agent"), pick("browser")), end=" ")
 '
 echo "control=${control_ip:-none}"
 REMOTE
-)" || die "Could not list Nomad nodes on the control plane."
-AGENT_IP="$(sed -n 's/.*agent=\([^ ]*\).*/\1/p' <<<"${NODES}")"
-BROWSER_IP="$(sed -n 's/.*browser=\([^ ]*\).*/\1/p' <<<"${NODES}")"
-CONTROL_IP="$(sed -n 's/.*control=\([^ ]*\).*/\1/p' <<<"${NODES}")"
-IP_PATTERN='^[0-9]{1,3}(\.[0-9]{1,3}){3}$'
-[[ "${AGENT_IP}" =~ ${IP_PATTERN} ]] || die "No ready, eligible agent node found (got: ${NODES}). Cannot probe. Nothing was changed."
-[[ "${CONTROL_IP}" =~ ${IP_PATTERN} ]] || die "Could not find the control plane's private IP (got: ${NODES})."
-[[ "${BROWSER_IP}" == "none" || "${BROWSER_IP}" =~ ${IP_PATTERN} ]] || die "Unexpected browser node address: ${BROWSER_IP}"
-echo "Probing on agent node ${AGENT_IP} (control plane ${CONTROL_IP}, browser pool ${BROWSER_IP})"
-if ssh_cp "ssh -i /root/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking=accept-new root@${AGENT_IP} 'bash -s -- ${IMAGE} ${CONTROL_IP} ${BROWSER_IP}'" < "${SCRIPT_DIR}/probe-agent-image.sh"; then
-  echo "${GREEN}Probe passed.${RESET}"
-else
-  die "The probe failed (rows above). Do NOT release this image. The pin was not changed. Fix the image, or release a different commit with --sha."
+  )" || die "Could not list Nomad nodes on the control plane."
+  AGENT_IP="$(sed -n 's/.*agent=\([^ ]*\).*/\1/p' <<<"${NODES}")"
+  BROWSER_IP="$(sed -n 's/.*browser=\([^ ]*\).*/\1/p' <<<"${NODES}")"
+  CONTROL_IP="$(sed -n 's/.*control=\([^ ]*\).*/\1/p' <<<"${NODES}")"
+  IP_PATTERN='^[0-9]{1,3}(\.[0-9]{1,3}){3}$'
+  [[ "${AGENT_IP}" =~ ${IP_PATTERN} ]] || die "No ready, eligible agent node found (got: ${NODES}). Cannot probe. Nothing was changed."
+  [[ "${CONTROL_IP}" =~ ${IP_PATTERN} ]] || die "Could not find the control plane's private IP (got: ${NODES})."
+  [[ "${BROWSER_IP}" == "none" || "${BROWSER_IP}" =~ ${IP_PATTERN} ]] || die "Unexpected browser node address: ${BROWSER_IP}"
+  echo "Probing on agent node ${AGENT_IP} (control plane ${CONTROL_IP}, browser pool ${BROWSER_IP})"
+  if ssh_cp "ssh -i /root/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking=accept-new root@${AGENT_IP} 'bash -s -- ${IMAGE} ${CONTROL_IP} ${BROWSER_IP}'" < "${SCRIPT_DIR}/probe-agent-image.sh"; then
+    echo "${GREEN}Probe passed.${RESET}"
+  else
+    die "The probe failed (rows above). Do NOT release this image. The pin was not changed. Fix the image, or release a different commit with --sha."
+  fi
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    echo ""
+    echo "${GREEN}DRY RUN complete.${RESET} A real run would set NOMAD_AGENT_IMAGE=${IMAGE} in ${ENV_FILE##*/}, upload it, and recreate the worker."
+    exit 0
+  fi
+  # ─── 4. Move the pin ───────────────────────────────────────────────────────
+  step "4/5 Move the pin"
+  echo "  from: ${OLD_IMAGE:-<unset>}"
+  echo "    to: ${IMAGE}"
+  echo "This uploads ${ENV_FILE##*/} to ${SERVER_IP} and recreates the worker container (a few seconds)."
+  if [[ "${SKIP_CONFIRM}" != "true" ]]; then
+    read -rp "Continue? [y/N] " CONFIRM
+    [[ "${CONFIRM}" =~ ^[Yy] ]] || { echo "Aborted. Nothing was changed."; exit 0; }
+  fi
+  BACKUP="$(mktemp)"
+  trap 'rm -f "${BACKUP}"' EXIT
+  cp "${ENV_FILE}" "${BACKUP}"
+  restore_env_file() { cat "${BACKUP}" > "${ENV_FILE}"; echo "Restored ${ENV_FILE##*/} to its previous content."; }
+  NEW_FILE="$(mktemp)"
+  awk -v new="NOMAD_AGENT_IMAGE=${IMAGE}" '
+    /^NOMAD_AGENT_IMAGE=/ { if (!done) { print new; done = 1 }; next }
+    { print }
+    END { if (!done) print new }
+  ' "${ENV_FILE}" > "${NEW_FILE}"
+  cat "${NEW_FILE}" > "${ENV_FILE}"
+  rm -f "${NEW_FILE}"
+  if ! "${SCRIPT_DIR}/setup-env.sh" --env "${HEROBIDS_ENV}" "${SERVER_IP}" --file "${ENV_FILE}"; then
+    restore_env_file
+    die "Upload failed. The server's env file was not changed."
+  fi
+  recreate_worker
+  verify_worker
 fi
-if [[ "${DRY_RUN}" == "true" ]]; then
-  echo ""
-  echo "${GREEN}DRY RUN complete.${RESET} A real run would set NOMAD_AGENT_IMAGE=${IMAGE} in ${ENV_FILE##*/}, upload it, and recreate the worker."
-  exit 0
-fi
-# ─── 4. Move the pin ─────────────────────────────────────────────────────────
-step "4/5 Move the pin"
-echo "  from: ${OLD_IMAGE:-<unset>}"
-echo "    to: ${IMAGE}"
-echo "This uploads ${ENV_FILE##*/} to ${SERVER_IP} and recreates the worker container (a few seconds)."
-if [[ "${SKIP_CONFIRM}" != "true" ]]; then
-  read -rp "Continue? [y/N] " CONFIRM
-  [[ "${CONFIRM}" =~ ^[Yy] ]] || { echo "Aborted. Nothing was changed."; exit 0; }
-fi
-BACKUP="$(mktemp)"
-trap 'rm -f "${BACKUP}"' EXIT
-cp "${ENV_FILE}" "${BACKUP}"
-restore_env_file() { cat "${BACKUP}" > "${ENV_FILE}"; echo "Restored ${ENV_FILE##*/} to its previous content."; }
-NEW_FILE="$(mktemp)"
-awk -v new="NOMAD_AGENT_IMAGE=${IMAGE}" '
-  /^NOMAD_AGENT_IMAGE=/ { if (!done) { print new; done = 1 }; next }
-  { print }
-  END { if (!done) print new }
-' "${ENV_FILE}" > "${NEW_FILE}"
-cat "${NEW_FILE}" > "${ENV_FILE}"
-rm -f "${NEW_FILE}"
-if ! "${SCRIPT_DIR}/setup-env.sh" --env "${HEROBIDS_ENV}" "${SERVER_IP}" --file "${ENV_FILE}"; then
-  restore_env_file
-  die "Upload failed. The server's env file was not changed."
-fi
-echo "Recreating the worker so it reads the new value..."
-if ! ssh ${SSH_OPTS} "root@${SERVER_IP}" COMPOSE_OVERLAY="${COMPOSE_OVERLAY}" bash -s <<'REMOTE'
-set -euo pipefail
-cd /opt/herobids
-# Same NPM_TOKEN handling as push.sh: compose reads it for the build secret definition.
-if [[ -z "${NPM_TOKEN:-}" ]]; then
-  NPM_TOKEN="$(grep -E '^NPM_TOKEN=' .env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '[:space:]' || true)"
-fi
-export NPM_TOKEN
-docker compose -f docker-compose.yaml -f "${COMPOSE_OVERLAY}" up -d --force-recreate --no-deps worker
-REMOTE
-then
-  die "Could not recreate the worker. The env file on the server already has the new pin; re-run this command, or run: docker compose up -d --force-recreate --no-deps worker (on the server)."
-fi
-ACTUAL=""
-for _ in $(seq 1 20); do
-  ACTUAL="$(ssh ${SSH_OPTS} "root@${SERVER_IP}" COMPOSE_OVERLAY="${COMPOSE_OVERLAY}" \
-    'cd /opt/herobids && docker compose -f docker-compose.yaml -f "${COMPOSE_OVERLAY}" exec -T worker printenv NOMAD_AGENT_IMAGE' 2>/dev/null | tr -d '[:space:]' || true)"
-  [[ "${ACTUAL}" == "${IMAGE}" ]] && break
-  sleep 2
-done
-[[ "${ACTUAL}" == "${IMAGE}" ]] || die "The worker reports NOMAD_AGENT_IMAGE='${ACTUAL}', expected ${IMAGE}. Check: docker compose logs worker (on the server)."
-echo "${GREEN}Worker is running with ${IMAGE}.${RESET} New agent launches use it."
 # ─── 5. Relaunch running agents ──────────────────────────────────────────────
 step "5/5 Move running agents to the new image"
 echo "Running agents keep their old image until relaunched. A relaunch stops and restarts each"
@@ -211,6 +239,6 @@ echo ""
 ssh_cp "cd /opt/herobids && HEROBIDS_ENV=${HEROBIDS_ENV} infra/hetzner/scripts/check-agent-image-pin.sh" || true
 echo ""
 echo "${GREEN}Released ${IMAGE} to ${HEROBIDS_ENV}.${RESET}"
-if [[ "${OLD_IMAGE}" =~ :sha-[0-9a-f]{40}$ ]]; then
+if [[ "${OLD_IMAGE}" =~ :sha-[0-9a-f]{40}$ && "${OLD_IMAGE}" != "${IMAGE}" ]]; then
   echo "Roll back with: infra/hetzner/scripts/release-agent-image.sh --env ${HEROBIDS_ENV} --sha ${OLD_IMAGE##*:sha-}"
 fi

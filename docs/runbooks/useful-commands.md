@@ -5,6 +5,19 @@
 
 ## local
 
+```sh
+infra/hetzner/scripts/setup-env.sh --env staging --file infra/hetzner/.env.staging
+```
+
+```sh
+infra/hetzner/scripts/push.sh --env staging
+```
+
+When infra/autoscaler/control-plane config or .env changed
+```sh
+infra/hetzner/deploy.sh --env staging <staging-ip> --env-file infra/hetzner/.env.staging  
+```
+
 Run both herobids and the external trading service it depends
 ```sh
 scripts/shell/run/reset-and-run-xstack.sh
@@ -40,31 +53,13 @@ ssh -i ~/.ssh/herobids_deploy_key root@138.199.172.202 \
 ssh -i ~/.ssh/herobids_deploy_key root@138.199.172.202 "ls -d /opt/herobids/infra/hetzner/.terraform-envs/staging 2>&1 && echo 'exists' || echo 'not yet'"
 ```
 
-- infra/hetzner/scripts/setup-env.sh --env staging --file infra/hetzner/.env.staging
+```sh
+infra/hetzner/scripts/reset-and-run.sh --env staging <staging-ip> --env-file .env.ops.staging
+```
 
-- infra/hetzner/scripts/push.sh --env staging   # app only: git pull + build + compose up. Does NOT converge the control plane (autoscaler/Nomad/UFW config).
-
-- infra/hetzner/deploy.sh --env staging 138.199.172.202 --env-file infra/hetzner/.env.staging  # full chain incl. setup-control-plane.sh (converge). Use this when infra/autoscaler/control-plane config or .env changed, since hcloud_server.default ignores user_data and only converge keeps it current.
-
-- infra/hetzner/scripts/maintenance-restart-from-local.sh --env staging --skip-deploy --start-stopped --start-interval=30 --restart-running --include-live
-
-- DEPLOY_REF=origin/feat/safe-capacity-p9-staging infra/hetzner/scripts/maintenance-restart-from-local.sh --env staging --skip-deploy  # run the feature-branch copy of the script
-
-- infra/hetzner/scripts/reset-and-run.sh --env staging 138.199.172.202 --env-file .env.ops.staging
+- DEPLOY_REF=origin/<branch> infra/hetzner/scripts/maintenance-restart-from-local.sh --env staging --skip-deploy --start-stopped --start-interval=30 --restart-running --include-live
 
 - HEROBIDS_ENV=staging  scripts/shell/ops/download-eval-reports.sh
-
-- Release the latest agent image (move the `NOMAD_AGENT_IMAGE` pin to the deployed commit, after probing it on an agent node). Deploys print a bold banner telling you to run this. Same for production. Details: `infra/hetzner/docs/deploy.md`, "Agent image pin".
-```sh
-infra/hetzner/scripts/release-agent-image.sh --env staging --dry-run   # verify and probe only
-infra/hetzner/scripts/release-agent-image.sh --env staging             # release
-```
-
-- Is the pin behind the deployed commit? (deploys already print this)
-```sh
-ssh -i ~/.ssh/herobids_deploy_key root@138.199.172.202 \
-  'cd /opt/herobids && HEROBIDS_ENV=staging infra/hetzner/scripts/check-agent-image-pin.sh'
-```
 
 ```sh
 curl -v --resolve staging.openaidom.com:443:138.199.172.202 https://staging.openaidom.com

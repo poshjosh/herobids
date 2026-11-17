@@ -26,7 +26,7 @@ The pin was added deliberately for the sandbox rollout (sandbox plan S2/S5: pin,
 
 ## Fix
 
-Keep the pin and make a stale one impossible to miss. New `infra/hetzner/scripts/check-agent-image-pin.sh` prints a bold white-on-red banner when `NOMAD_AGENT_IMAGE` is unset, is not a `sha-<commit>` tag, points at a commit the checkout lacks, is not an ancestor of the deployed commit, or lags it. For a lagging pin it shows the age, the number of commits behind, and the sandbox/entrypoint files that changed since (the files the probe covers). It only warns (exit 0) and is skipped when `RUNTIME_BACKEND` is not `nomad`.
+Keep the pin and make a stale one impossible to miss. New `infra/hetzner/scripts/check-agent-image-pin.sh` prints a bold banner (no colour) when `NOMAD_AGENT_IMAGE` is unset, is not a `sha-<commit>` tag, points at a commit the checkout lacks, is not an ancestor of the deployed commit, or lags it. For a lagging pin it shows the age, the number of commits behind, and the sandbox/entrypoint files that changed since (the files the probe covers). It only warns (exit 0) and is skipped when `RUNTIME_BACKEND` is not `nomad`.
 
 - `push.sh` runs it after the deploy; `maintenance-restart.sh` runs it before it reports completion; `deploy.sh` repeats it as its last output.
 - The banner carries the fix: `infra/hetzner/scripts/release-agent-image.sh --env <env>`. That script releases the commit deployed on the server: it checks CI published the image, probes it on a live agent node (`probe-agent-image.sh`, sandbox rows K0 to K7, which were a manual checklist in sandbox plan S3), sets `NOMAD_AGENT_IMAGE` in `infra/hetzner/.env.<env>`, uploads it, recreates the worker (`up -d --force-recreate --no-deps worker`, because `restart` does not re-read `.env`), confirms the worker reports the new value, and offers to relaunch running agents. `--dry-run` stops after the probe. A failed probe leaves the pin unchanged.
@@ -54,7 +54,8 @@ Docs: `infra/hetzner/docs/deploy.md` ("Agent image pin"), `.env.environment.exam
 
 **Not done:**
 
-- Steps 4 and 5 of `release-agent-image.sh` (edit `.env.<env>`, upload, recreate the worker, relaunch agents) were not run: they change staging. The first real release is the first test of them.
+- First real release on staging (run by the owner, commit `4a71f8e9`): the probe passed, the env file was edited and uploaded, and the worker was recreated and reports the new pin. The script then stopped with `worker reports NOMAD_AGENT_IMAGE=''`. Cause: the check ran `ssh host VAR=x 'cd /opt/herobids && docker compose -f ... -f "${VAR}" exec ...'`; a prefix assignment applies only to the first command (`cd`), so the overlay was empty, compose failed, and `2>/dev/null` hid the error. The release itself was fine (confirmed read-only: server `.env` and the worker container both hold the new pin). Fixed: the overlay name is written into the command, the compose error is shown when the check fails, and re-running the script when the pin is already set now skips steps 2 to 4, confirms the worker, and continues to step 5 instead of exiting. Step 5 (relaunch) had not run yet at that point.
+- The banner first printed white on a red background, then red text. Red reads as an error and nothing was wrong, so the banner and `release-agent-image.sh` now use bold only, no colour.
 - Not run through `push.sh` / `deploy.sh` on a real server; the next deploy is the first run.
 - No automated test was added for these scripts.
 - The pins on staging and production are still stale until `release-agent-image.sh` is run for each. Agents already running stay on their old image until relaunched.
