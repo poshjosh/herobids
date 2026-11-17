@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { FINISH_RUN_REASON_MAX_LENGTH } from './tools.js';
 import {
   PEER_MESSAGE_SAFETY_MAX_CHARS,
   PeerDropPayloadSchema,
@@ -1020,6 +1021,33 @@ describe('tick turn events', () => {
 
     it('still accepts a completion from an older runtime that does not report them', () => {
       expect(LlmCompletedPayloadSchema.safeParse(base).success).toBe(true);
+    });
+
+    it('keeps the nudge count and finish_run status and reason so they reach the stored event', () => {
+      const parsed = LlmCompletedPayloadSchema.parse({
+        ...base,
+        nudgeCount: 2,
+        finishRunStatus: 'waiting',
+        finishRunReason: 'waiting for the user',
+      });
+      expect(parsed.nudgeCount).toBe(2);
+      expect(parsed.finishRunStatus).toBe('waiting');
+      expect(parsed.finishRunReason).toBe('waiting for the user');
+    });
+
+    it('rejects an unknown finish_run status', () => {
+      expect(LlmCompletedPayloadSchema.safeParse({ ...base, finishRunStatus: 'done' }).success).toBe(false);
+    });
+
+    it('rejects a finish_run reason longer than the limit', () => {
+      const tooLong = 'x'.repeat(FINISH_RUN_REASON_MAX_LENGTH + 1);
+      expect(LlmCompletedPayloadSchema.safeParse({ ...base, finishRunReason: tooLong }).success).toBe(false);
+      const atLimit = 'x'.repeat(FINISH_RUN_REASON_MAX_LENGTH);
+      expect(LlmCompletedPayloadSchema.safeParse({ ...base, finishRunReason: atLimit }).success).toBe(true);
+    });
+
+    it('rejects a negative nudge count', () => {
+      expect(LlmCompletedPayloadSchema.safeParse({ ...base, nudgeCount: -1 }).success).toBe(false);
     });
 
     it('rejects a negative elapsed time', () => {

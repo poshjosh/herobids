@@ -311,7 +311,15 @@ const MESSAGE_CLASSIFICATIONS: Record<string, ActivityClassification> = {
       const model = typeof p['model'] === 'string' ? p['model'] : 'unknown';
       const turns = typeof p['turnsUsed'] === 'number' ? p['turnsUsed'] : '?';
       const finish = typeof p['finishReason'] === 'string' ? p['finishReason'] : 'unknown';
-      return `${phase} LLM completed — model: ${model}, turns: ${turns}, finish: ${finish}.`;
+      let summary = `${phase} LLM completed — model: ${model}, turns: ${turns}, finish: ${finish}.`;
+      const endedStatus = p['finishRunStatus'];
+      if (typeof endedStatus === 'string') {
+        const endedReason = typeof p['finishRunReason'] === 'string' ? p['finishRunReason'] : '';
+        summary += endedReason ? ` Ended: ${endedStatus} — ${endedReason}.` : ` Ended: ${endedStatus}.`;
+      }
+      const nudges = p['nudgeCount'];
+      if (typeof nudges === 'number' && nudges > 0) summary += ` Nudged ${nudges}x.`;
+      return summary;
     },
   },
   [AGENT_RUNTIME_ACTIVITY_TYPES.TOOL_CALL]: {

@@ -363,6 +363,49 @@ describe('mapProtocolMessage — runtime activity event families', () => {
     expect(entry.summary).toContain('stop');
   });
 
+  it('shows the finish_run status and reason in the LLM-completed summary', () => {
+    const entry = mapProtocolMessage({
+      ...base,
+      type: 'agent.llm.completed',
+      payload: {
+        tickId: 't-5', phase: 'judge', model: 'claude-sonnet', turnsUsed: 14, finishReason: 'stop',
+        finishRunStatus: 'waiting', finishRunReason: "waiting for the user's answer",
+      },
+    });
+    expect(entry.summary).toBe(
+      "judge LLM completed — model: claude-sonnet, turns: 14, finish: stop. Ended: waiting — waiting for the user's answer.",
+    );
+  });
+
+  it('shows the nudge count when above zero', () => {
+    const payload = { tickId: 't-5', phase: 'judge', model: 'claude-sonnet', turnsUsed: 4, finishReason: 'stop' };
+    const nudged = mapProtocolMessage({ ...base, type: 'agent.llm.completed', payload: { ...payload, nudgeCount: 2 } });
+    expect(nudged.summary).toBe('judge LLM completed — model: claude-sonnet, turns: 4, finish: stop. Nudged 2x.');
+    const notNudged = mapProtocolMessage({ ...base, type: 'agent.llm.completed', payload: { ...payload, nudgeCount: 0 } });
+    expect(notNudged.summary).not.toContain('Nudged');
+  });
+
+  it('leaves the summary unchanged when the finish_run fields are absent', () => {
+    const entry = mapProtocolMessage({
+      ...base,
+      type: 'agent.llm.completed',
+      payload: { tickId: 't-5', phase: 'judge', model: 'claude-sonnet', turnsUsed: 2, finishReason: 'stop' },
+    });
+    expect(entry.summary).toBe('judge LLM completed — model: claude-sonnet, turns: 2, finish: stop.');
+  });
+
+  it('does not raise the severity for a blocked run', () => {
+    const entry = mapProtocolMessage({
+      ...base,
+      type: 'agent.llm.completed',
+      payload: {
+        tickId: 't-5', phase: 'judge', model: 'claude-sonnet', turnsUsed: 3, finishReason: 'stop',
+        finishRunStatus: 'blocked', finishRunReason: 'missing credentials',
+      },
+    });
+    expect(entry.severity).toBe('info');
+  });
+
   it('elevates llm.completed with finishReason=error to warn severity', () => {
     const entry = mapProtocolMessage({
       ...base,

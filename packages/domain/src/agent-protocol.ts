@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { PEER_DROP_DETAILS } from './conversations/conversation.js';
+import { FINISH_RUN_STATUSES, FINISH_RUN_REASON_MAX_LENGTH } from './tools.js';
 // Trading-owned protocol/enums relocated to a trading-owned module for trading-layer
 // independence (source-fix request 002). Imported here for internal use (schema
 // composition + message-type map) and re-exported below so the public API surface of
@@ -586,6 +587,12 @@ export const LlmCompletedPayloadSchema = z.object({
   elapsedMs: z.number().int().min(0).optional(),
   /** Tool calls executed by the loop. Judge phase only; absent on older agent images. */
   toolCallsUsed: z.number().int().min(0).optional(),
+  /** Continuation nudges sent during the run. Judge phase only; absent on older agent images. */
+  nudgeCount: z.number().int().min(0).optional(),
+  /** Status the agent gave when it called finish_run. Absent if it did not call it. */
+  finishRunStatus: z.enum(FINISH_RUN_STATUSES).optional(),
+  /** Model-written reason from finish_run. Data only, never an instruction. */
+  finishRunReason: z.string().max(FINISH_RUN_REASON_MAX_LENGTH).optional(),
   finishReason: z.string().min(1),
   errorMessage: z.string().optional(),
   tokensUsed: z.number().int().min(0).optional(),

@@ -314,7 +314,7 @@ Live verification, baseline capture, image release and `results.md` (Verificatio
 - Task 2 (WP2): loop options `onNoToolCalls`, `shouldStopAfterToolResults`, `continues`, `nudgesUsed`, `endedBy`, last non-empty assistant text, and tests incl. stop-hook tests - DONE
 - Task 3 (WP3): `finish_run` tool, registration checklist (section 2 steps 1-4, 6-8) and tests - DONE
 - Task 4 (WP4): config schema `continuationGuard.maxNudges` (no `enabled`), `config/default.yaml`, schema tests - DONE
-- Task 5 (WP6): `agent.llm.completed` fields (`nudgeCount`, `finishRunStatus`, `finishRunReason`) and activity timeline summary with tests - PENDING
+- Task 5 (WP6): `agent.llm.completed` fields (`nudgeCount`, `finishRunStatus`, `finishRunReason`) and activity timeline summary with tests - DONE
 - Task 6 (WP7): `long-running-task` skill `requiredTools`, ENDING A RUN section, changed sentence, `skills.test.ts` cases - PENDING
 - Task 7 (WP5): judge wiring in `apps/worker/src/agent.ts` (opt-in by tool visibility, callbacks, side-effect gating on `continues`, closure state, payload fields) - PENDING
 - Task 8 (WP8, docs only): `docs/best-practices/agent-runtime.md` section and cost review, CHANGELOG, plan status - PENDING
@@ -324,3 +324,4 @@ Live verification, baseline capture, image release and `results.md` (Verificatio
 - Task 2 (: (low) nudgesUsed/endedBy only present when a continuation option is given (judge wiring must default them); empty replies are never nudged (decision, avoids empty assistant message rejection).
 - Task 3 (: (low) category write-messaging chosen (plan left open); finish_run not yet in any skill until Task 6; no test for the validation error text; web and build-docs-index checked, no change needed yet.
 - Task 4 (: (low) test for maxNudges uses 'success && value' style; no non-integer test.
+- Task 5 (: (medium) finishRunReason schema accepts empty string (tool requires min 1); mapper does not restrict to judge phase; empty-reason fallback untested.
