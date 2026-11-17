@@ -455,3 +455,36 @@ same dir.
 `scripts/setup-control-plane.sh`, tests, `README.md`, runbooks. See
 `docs/bug-reports/2026/10/08/001-*`, `005-*`, `006-*`. traderton had the same
 bug: its `docs/bug-reports/2026/10/08/001-*`.
+
+## 22. A hand-set agent image pin went stale and nothing said so
+**Date:** 2026-11-17
+**Environment:** Staging (production has the same pin and the same gap)
+**Symptom:** The staging `job-searcher` agent searched far less than its skill
+allows, never created the skill's state files, and failed `edit_file` /
+`read_file_lines` with "unknown tool". The worker and API ran v0.10.1.
+**Root cause:** `NOMAD_AGENT_IMAGE` was pinned to `sha-b317176e` (2026-11-12) for the
+sandbox rollout and never moved. Deploys (`push.sh`) update the worker and API only,
+so agents ran an image 78 commits behind: without the durable-tool-result fix (bug
+`2026/11/14/002`), the file tools, or the run-status hint (config enabled, ignored by
+the old image). Nothing compared the pin with the deployed commit.
+**Fix:** Keep the pin (it gates a security boundary and gives one-value rollback) and
+make it impossible to miss and quick to fix: `scripts/check-agent-image-pin.sh` prints a
+bold banner at the end of `push.sh`, `maintenance-restart.sh` and `deploy.sh`, and the
+banner contains the command to run, `scripts/release-agent-image.sh --env <env>`. That
+script checks CI published the image, probes it on a live agent node
+(`probe-agent-image.sh`, sandbox rows K0 to K7, previously a manual checklist), moves the
+pin, recreates the worker and offers to relaunch running agents. Same on both
+environments. The check is one `git` comparison, so it costs the same at 10 agents or
+10,000; relaunching is serial (`maintenance-restart.sh`) and will need a rolling
+controller at that size. See `deploy.md`, "Agent image pin".
+**Rules that fall out of it:**
+- A value set by hand and forgotten needs a check that compares it with what moved.
+- A "re-probe before moving the pin" rule is not a reminder. A banner that carries the
+  exact command, backed by a script that runs the probe, is.
+- `docker compose restart <service>` does not re-read `env_file`. After changing `.env`,
+  use `up -d --force-recreate --no-deps <service>`. (Earlier docs said `restart`.)
+- Agents on an older image than the worker is by design (agents change image only on
+  relaunch). It must be visible, and the protocol must tolerate it.
+**Files changed:** `scripts/check-agent-image-pin.sh`, `scripts/release-agent-image.sh`,
+`scripts/probe-agent-image.sh`, `scripts/push.sh`, `scripts/maintenance-restart.sh`,
+`deploy.sh`, `.env.environment.example`, `deploy.md`. See `docs/bug-reports/2026/11/17/001-*`.

@@ -556,4 +556,9 @@ fi
 
 
 echo ""
+# Agents just restarted: tell the operator which image they launched on, and shout if
+# the hand-set pin lags the deployed commit. Warn only; absent on an older checkout.
+if [[ -f "${ROOT}/infra/hetzner/scripts/check-agent-image-pin.sh" ]]; then
+  HEROBIDS_ENV="${HEROBIDS_ENV}" bash "${ROOT}/infra/hetzner/scripts/check-agent-image-pin.sh" || true
+fi
 ok "=== Maintenance restart complete ==="

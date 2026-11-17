@@ -342,3 +342,7 @@ echo "  SSH:           ssh root@${SERVER_IP}"
 echo "  Logs:          ${SCRIPTS_DIR}/logs.sh ${SERVER_IP}"
 echo ""
 echo "========================================"
+# Repeat the agent-image pin check (push.sh already ran it mid-deploy) so a stale pin
+# is the last thing on screen. Warn only: never changes the exit code.
+# shellcheck disable=SC2029
+ssh ${SSH_OPTS} "root@${SERVER_IP}" "cd /opt/herobids && HEROBIDS_ENV=${HEROBIDS_ENV} infra/hetzner/scripts/check-agent-image-pin.sh" || true

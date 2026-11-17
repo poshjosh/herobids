@@ -54,6 +54,18 @@ ssh -i ~/.ssh/herobids_deploy_key root@138.199.172.202 "ls -d /opt/herobids/infr
 
 - HEROBIDS_ENV=staging  scripts/shell/ops/download-eval-reports.sh
 
+- Release the latest agent image (move the `NOMAD_AGENT_IMAGE` pin to the deployed commit, after probing it on an agent node). Deploys print a bold banner telling you to run this. Same for production. Details: `infra/hetzner/docs/deploy.md`, "Agent image pin".
+```sh
+infra/hetzner/scripts/release-agent-image.sh --env staging --dry-run   # verify and probe only
+infra/hetzner/scripts/release-agent-image.sh --env staging             # release
+```
+
+- Is the pin behind the deployed commit? (deploys already print this)
+```sh
+ssh -i ~/.ssh/herobids_deploy_key root@138.199.172.202 \
+  'cd /opt/herobids && HEROBIDS_ENV=staging infra/hetzner/scripts/check-agent-image-pin.sh'
+```
+
 ```sh
 curl -v --resolve staging.openaidom.com:443:138.199.172.202 https://staging.openaidom.com
 ```

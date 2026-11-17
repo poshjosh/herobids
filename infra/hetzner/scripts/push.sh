@@ -171,6 +171,9 @@ if command -v nomad &>/dev/null && nomad server members &>/dev/null 2>&1; then
 else
   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Nomad not running — skipping infrastructure job submission."
 fi
+# The agent image is pinned by hand (NOMAD_AGENT_IMAGE), so it goes stale while the
+# worker moves on. Print a loud banner if it lags the commit just deployed. Warn only.
+infra/hetzner/scripts/check-agent-image-pin.sh || true
 DEPLOY
 
 # ─── Done ─────────────────────────────────────────────────────────────────────
