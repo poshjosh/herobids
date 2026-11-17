@@ -305,3 +305,19 @@ Reviewer note (not a question): the instruction wording in section 5 is a draft 
 - `maxNudges` comes from validated operator config with a schema default of 2 (`config/default.yaml`, inherited by staging and production).
 - The registration checklist is complete (registry, catalog, skill, docs index) and its drift tests pass; existing `long-running-task` skill tests still pass.
 - `pnpm lint`, `pnpm test` and `pnpm build` pass, and the stage B comparison is recorded in a `results.md` in this folder before production.
+
+## Implementation Task List
+
+Live verification, baseline capture, image release and `results.md` (Verification and Rollout sections) are operational and not part of this implementation.
+
+- Task 1 (WP1): pure module `apps/worker/src/continuation-guard.ts` (nudge text constant, decision function) and tests - DONE
+- Task 2 (WP2): loop options `onNoToolCalls`, `shouldStopAfterToolResults`, `continues`, `nudgesUsed`, `endedBy`, last non-empty assistant text, and tests incl. stop-hook tests - PENDING
+- Task 3 (WP3): `finish_run` tool, registration checklist (section 2 steps 1-4, 6-8) and tests - PENDING
+- Task 4 (WP4): config schema `continuationGuard.maxNudges` (no `enabled`), `config/default.yaml`, schema tests - PENDING
+- Task 5 (WP6): `agent.llm.completed` fields (`nudgeCount`, `finishRunStatus`, `finishRunReason`) and activity timeline summary with tests - PENDING
+- Task 6 (WP7): `long-running-task` skill `requiredTools`, ENDING A RUN section, changed sentence, `skills.test.ts` cases - PENDING
+- Task 7 (WP5): judge wiring in `apps/worker/src/agent.ts` (opt-in by tool visibility, callbacks, side-effect gating on `continues`, closure state, payload fields) - PENDING
+- Task 8 (WP8, docs only): `docs/best-practices/agent-runtime.md` section and cost review, CHANGELOG, plan status - PENDING
+
+## Outstanding Issues
+- Task 1 (: (low) test regex for time/budget wording includes 'left'/'limit'; WP2 must pass zero-based turnIndex.
