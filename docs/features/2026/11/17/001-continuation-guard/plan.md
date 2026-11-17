@@ -1,6 +1,6 @@
 # Continuation guard: `finish_run` tool, a stop hook, and a stop-without-finishing nudge
 
-Status: DRAFT for review. Nothing is implemented. This plan describes the work; it does not do it.
+Status: Implemented, pending staging verification and rollout (baseline, stage B, results.md not done)
 Date: 2026-11-17
 Follows: `docs/features/2026/11/14/003-agent-run-status-hint/plan.md`, section "If this is not enough: continuation guard (separate plan)".
 
@@ -317,7 +317,7 @@ Live verification, baseline capture, image release and `results.md` (Verificatio
 - Task 5 (WP6): `agent.llm.completed` fields (`nudgeCount`, `finishRunStatus`, `finishRunReason`) and activity timeline summary with tests - DONE
 - Task 6 (WP7): `long-running-task` skill `requiredTools`, ENDING A RUN section, changed sentence, `skills.test.ts` cases - DONE
 - Task 7 (WP5): judge wiring in `apps/worker/src/agent.ts` (opt-in by tool visibility, callbacks, side-effect gating on `continues`, closure state, payload fields) - DONE
-- Task 8 (WP8, docs only): `docs/best-practices/agent-runtime.md` section and cost review, CHANGELOG, plan status - PENDING
+- Task 8 (WP8, docs only): `docs/best-practices/agent-runtime.md` section and cost review, CHANGELOG, plan status - DONE
 
 ## Outstanding Issues
 - Task 1 (: (low) test regex for time/budget wording includes 'left'/'limit'; WP2 must pass zero-based turnIndex.

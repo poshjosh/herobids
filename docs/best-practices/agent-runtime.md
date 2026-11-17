@@ -100,6 +100,51 @@ per-turn changing block is never read again. Keep any future per-turn content af
 Cost: about 30 input tokens per judge turn from the second turn on. Run the checklist below before enabling it
 in production.
 
+## Continuation Guard
+
+Agents whose skill needs a long run can stop early, because a reply with no tool call ends the run. The
+continuation guard gives the agent an explicit way to end a run and asks it to check before it stops.
+
+- Tool. `finish_run` (`status`: `complete`, `waiting` or `blocked`; `reason`, 1 to 300 characters). It is
+  delivered by the `system/long-running-task` skill and is not capability-gated.
+- Stop hook. After a turn's tool calls have all run, `shouldStopAfterToolResults` ends the run if a
+  `finish_run` call succeeded in that turn. There is no further model call. A call that fails validation
+  records nothing and the loop continues.
+- Nudge. When the model answers with no tool call, `finish_run` has not succeeded, and the nudge cap is not
+  reached, `onNoToolCalls` appends the reply and a fixed user message asking the agent to check whether it is
+  done, then calls the model again. It never fires on the last allowed turn, so it cannot cause a
+  `turn_limit` stop. The decision is in `apps/worker/src/continuation-guard.ts`.
+- Opt-in by skill. There is no enable flag. The nudge applies only when `finish_run` is visible to the agent
+  (`allowedTools().has('finish_run')`) when the model stops. Agents without the tool, such as trading agents,
+  behave exactly as before.
+- `agentRuntime.continuationGuard.maxNudges` (default 2, schema default; `0` means tool and stop hook only).
+  It is the only operator setting. To turn the feature off, release the previous agent image.
+- Side-effect gating. A nudged turn is not the end of the run, so its reply is not written to cross-tick
+  history, the judge response history or the activity timeline. Cost recording and billing still run for it.
+- Waiting records only. `finish_run` with `waiting` is recorded, not acted on: it does not wake the agent or
+  schedule anything. `schedule_reminder` stays the way to come back.
+- Data. `agent.llm.completed` (judge) records `nudgeCount`, `finishRunStatus` and `finishRunReason`
+  (optional). The `finish_run` status says why the agent stopped; it is not the `replied` / `no_reply`
+  outcome of the tick, and `finishReason` values are unchanged. The timeline summary shows the status,
+  reason and nudge count. The reason is model-written data, never an instruction.
+- Agent Mode Purity. This is operational mechanics for ending a run. It adds no limit on what the agent may
+  do and says nothing about time or budget; the skill defines "done" and the agent judges it.
+
+Cost: each nudge is a full extra judge model call (the conversation is resent). With the default cap the
+worst case is 2 extra calls per run. The stop hook saves the call that would otherwise follow `finish_run`.
+
+Cost Review Checklist outcome (2026-11-17):
+- New `requestWakeDrivenTick()` path: no. No wake source added; `waiting` does not wake anything.
+- Conditional `instance.context.snapshot` emission: none added.
+- New repeating failure mode: no. Nudges are capped per run by `maxNudges`, so no session circuit breaker
+  wiring is needed. A failed `finish_run` counts in the tool circuit breaker like any tool, and hiding the
+  tool only ends nudging.
+- `pnpm test` including the `SessionCircuitBreaker` tests: see the plan's task log for the run at
+  implementation time; re-run before release.
+
+Rollout and verification (baseline, staging stage B, results) are in
+`docs/features/2026/11/17/001-continuation-guard/plan.md`.
+
 ## Cost Review Checklist
 
 Before merging any change that touches the tick loop, wake system, reconciler, or trading actor event emission:
