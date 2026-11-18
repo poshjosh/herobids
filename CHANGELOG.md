@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+
+## v0.11.0 - 2026-11-18
 ### Added
 - Continuation guard for the judge loop. New `finish_run` tool (`status`: `complete`, `waiting` or `blocked`, default `complete`; `reason` up to 300 characters, default `Done`; both optional), delivered through the `system/long-running-task` skill, so only agents with that skill see it. A stop hook ends the run right after the tool results of the turn that called `finish_run` succeeded, with no further model call. When a model with the tool stops without calling it, the run is nudged to check whether it is done, at most `agentRuntime.continuationGuard.maxNudges` times (default 2; 0 turns nudging off). A nudge never fires on the last allowed turn. Agents without the tool behave as before. `waiting` is only recorded; it does not wake the agent. `agent.llm.completed` (judge) gains optional `nudgeCount`, `finishRunStatus` and `finishRunReason`, and the activity timeline summary shows the status, reason and nudge count. Agents pick this up with the next agent image release. Plan: docs/features/2026/11/17/001-continuation-guard/plan.md.
 
