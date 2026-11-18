@@ -1,7 +1,12 @@
 # Herobids useful commands
 
-- production ip - 167.233.213.107
-- staging ip - 138.199.172.202
+production 
+- ip = 167.233.213.107
+- previous agent image commit sha = b317176e94386bf6f6ac230724cfef730fa6ec37
+
+staging
+- ip = 138.199.172.202
+- previous agent image commit sha = 4a71f8e97fbdaa68fafb5a99f6c951b9d93d204
 
 ## local
 
@@ -16,6 +21,11 @@ infra/hetzner/scripts/push.sh --env staging
 When infra/autoscaler/control-plane config or .env changed
 ```sh
 infra/hetzner/deploy.sh --env staging <staging-ip> --env-file infra/hetzner/.env.staging  
+```
+
+Agent images are not automatically updated. You have to: 
+```sh
+infra/hetzner/scripts/release-agent-image.sh --env staging
 ```
 
 Run both herobids and the external trading service it depends

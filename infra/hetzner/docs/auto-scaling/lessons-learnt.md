@@ -97,6 +97,8 @@ client {
 
 **Fix:** Run `ssh-keygen -R <ip>` before reconnecting.
 
+**Control plane to agent nodes:** the same thing happens on the control plane's own `known_hosts` (`/root/.ssh/known_hosts`) when an agent node is rebuilt on a reused private IP. `release-agent-image.sh` now clears the stale entry itself in step 3, only for the IP of a ready, eligible Nomad node and only when ssh reports a changed key. For any other script or IP, run `ssh-keygen -R <ip>` on the control plane after confirming the node is ours.
+
 ---
 
 ## 8. `staging.tfvars` is gitignored — not available on the server

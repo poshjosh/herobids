@@ -183,6 +183,16 @@ REMOTE
   [[ "${CONTROL_IP}" =~ ${IP_PATTERN} ]] || die "Could not find the control plane's private IP (got: ${NODES})."
   [[ "${BROWSER_IP}" == "none" || "${BROWSER_IP}" =~ ${IP_PATTERN} ]] || die "Unexpected browser node address: ${BROWSER_IP}"
   echo "Probing on agent node ${AGENT_IP} (control plane ${CONTROL_IP}, browser pool ${BROWSER_IP})"
+  # A rebuilt node can reuse its private IP with a new host key, and ssh then refuses it. AGENT_IP
+  # came from Nomad's ready, eligible nodes (and passed IP_PATTERN), so it is one of ours: clear
+  # only that stale entry, and only when ssh reports a changed key. Unknown hosts are still
+  # recorded by accept-new, and any other connection error is left for the probe to report.
+  # See lessons-learnt.md #7.
+  HOSTKEY_CHECK="$(ssh_cp "ssh -i /root/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new root@${AGENT_IP} true 2>&1" || true)"
+  if grep -q 'REMOTE HOST IDENTIFICATION HAS CHANGED' <<<"${HOSTKEY_CHECK}"; then
+    echo "Host key for Nomad node ${AGENT_IP} changed (the node was likely rebuilt). Clearing its old key on the control plane."
+    ssh_cp "ssh-keygen -R ${AGENT_IP}" >/dev/null 2>&1 || die "Could not clear the old host key for ${AGENT_IP} on the control plane."
+  fi
   if ssh_cp "ssh -i /root/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking=accept-new root@${AGENT_IP} 'bash -s -- ${IMAGE} ${CONTROL_IP} ${BROWSER_IP}'" < "${SCRIPT_DIR}/probe-agent-image.sh"; then
     echo "${GREEN}Probe passed.${RESET}"
   else
