@@ -20,6 +20,7 @@ build/
 !.env.ops.environment.example
 !.env.backend.example
 !infra/hetzner/.env.environment.example
+!infra/hetzner/.env.eval.example
 
 # Config (contains credentials)
 config.yaml
