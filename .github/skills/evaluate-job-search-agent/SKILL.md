@@ -1,6 +1,6 @@
 ---
 name: evaluate-job-search-agent
-description: 'Evaluate a job-search agent after a run: did it follow openaidom-skills job-search and the platform long-running-task skill, did the continuation guard and finish_run behave, did the new make_http_request paging, web cache and references file get used, and did the agent find and verify jobs. Use when asked to evaluate, audit or compare a job-search agent run, to check the effect of skill, tool-limit or continuation-guard changes, or to compare against the 2026-11-17 baseline.'
+description: 'Evaluate a job-search agent after a run: did it follow openaidom-skills job-search and the platform long-running-task skill, did the continuation guard and finish_run behave, did the source list, ledger and frontier sweep work, did the make_http_request paging, web cache and references get used, and did the agent find and verify jobs. Use when asked to evaluate, audit or compare a job-search agent run, to check the effect of skill, tool-limit or continuation-guard changes, or to compare against the 2026-11-17 and 2026-11-19 baselines.'
 argument-hint: 'agent-id (required), evaluation-period, deployment-target, baseline (e.g. "agent-id=abc123 period=since-start baseline=builtin")'
 ---
 
@@ -14,7 +14,7 @@ Use `evaluate-agent` for trading agents. This skill is for job-search agents and
 
 - After a test run of a job-search agent on a rebuilt image or a new skill commit.
 - To compare a run with the builtin baseline below or with an earlier evaluation folder.
-- To validate a specific change: the long-running-task stop rule, the job-search Step 3 loop and run time allowance, `references/finding-and-validating-listings.md`, the `make_http_request` paging and web cache, the continuation guard, or the clearer `provider.invalid_tool_args` message.
+- To validate a specific change: the long-running-task stop rule, the job-search Step 3 frontier sweep and run time allowance, the source list and keyed ledger, `references/discovering-sources.md`, the `openaidom/job-search/` key prefix, `references/finding-and-validating-listings.md`, the `make_http_request` paging and web cache, the continuation guard, or the clearer `provider.invalid_tool_args` message.
 
 ## When Not to Use
 
@@ -51,6 +51,15 @@ Model `anthropic/claude-haiku-5.5`, user-chosen search interval 15 minutes, 52 m
 - Memory held only `prefs/user`, `candidate-profile`, `jobsearch/status`, `ltt/jobsearch/index`, `jobs/summary`, `search/search-ledger`. No per-job records, strategies, statistics or report state.
 - Tool errors: `add_skills` twice with `broker.timeout`, and one `create_task` with empty arguments.
 
+## Second baseline (agent a159bf10 "first-thunder", staging, 2026-11-18 to 11-19, job-search before the source list and keyed ledger)
+
+Same model, search interval 2 hours, 28 hours observed. Evaluation folder: `.ignore/eval/2026/11/19/a159bf10-0fd1-4222-8a84-329d5b44fb23/01/`.
+
+- 18 judge runs: 8 / 37 / 275 s (min / median / max), all `finish_run waiting`, 0 nudges; the allowance was 30 min and a typical run used 1 to 5.
+- 13 searches found 17 jobs, 4 verified open (15 of the 17 came from the first search); 0 `make_http_request`, 0 file reads, 0 `site:` queries in 50 `search_web` calls.
+- 80 external requests, 71 unique, repeat ratio 11%. 10 tool errors (8 `browse_url` 403/404, 2 `edit_file`).
+- Records used own or unprefixed key names (`jobsearch/profile`, `prefs/user`); no `jobs/archive/*`, no strategies or statistics records; `jobs/summary` stale by 3 searches; the ledger was split over 7 dated addendum keys.
+
 ## Procedure
 
 ### Step 1 — Determine the output folder
@@ -67,7 +76,7 @@ Save everything under `<output-folder>` and analyse it with `jq`, `grep`, `rg` a
    - The agent's messages to and from the user: find the conversation first (`\d conversations`, `\d agents`; the conversation links to the agent through its owner or peer key), then save `conversation_messages` (`sender_type`, `channel`, `subject`, `body`, `delivery_status`, `created_at`).
    - `agent_artifacts`, `agent_runtime_sessions`, `billing_usage_events` for the agent, and the `agents` row (without secrets).
 3. **Redis** (run `TYPE <key>` first; `agent:memory:*`, `agent:tasks:*` and `agent:reminders:*` are hashes):
-   - `agent:memory:<id>`: all fields. Keep the CV-derived `candidate-profile` out of the report (see Constraints).
+   - `agent:memory:<id>`: all fields. Keys should start with `openaidom/job-search/`; list and count the keys that do not (platform keys such as `ltt/` and `prefs/` are expected, others are drift). Keep the CV-derived `openaidom/job-search/candidate-profile` out of the report (see Constraints).
    - `agent:tasks:<id>`, `agent:reminders:<id>`.
    - `agent:prompt:judge-user-context:<id>` (a string with a 1-hour TTL: capture it right away, and note when).
 4. **Workspace** (`docker cp herobids-agent-<agent-id>:/workspace/<path> workspace/`): `skills-lock.json`, `.agents/skills/job-search/` (SKILL.md and `references/`), a listing with sizes of `web-cache/` (not its contents), and the first 40 lines of two cached files.
@@ -79,11 +88,11 @@ Without it a test of old code looks like a failed change.
 
 | Check | Evidence |
 |-------|----------|
-| P1 Job-search skill commit | `workspace/skills-lock.json` commit equals the pushed `openaidom-skills` commit you expect (`git -C <openaidom-skills> log origin/main -1`); the installed `SKILL.md` equals `git show <commit>:skills/job-search/SKILL.md` |
-| P2 Skill markers | Installed `SKILL.md` contains "Before searching, read" and "Repeat this step until"; `references/finding-and-validating-listings.md` exists in the workspace |
+| P1 Skill commit | `workspace/skills-lock.json` lists `job-search` at the pushed `openaidom-skills` commit you expect (`git -C <openaidom-skills> log origin/main -1`); the installed `SKILL.md` equals `git show <commit>:skills/job-search/SKILL.md` |
+| P2 Skill markers | Installed `SKILL.md` contains "Before searching, read", "The search is complete when every frontier entry", "### Ledger" and `openaidom/job-search/`; `references/finding-and-validating-listings.md`, and `references/discovering-sources.md` exist in the workspace |
 | P3 long-running-task text | Resolved `long-running-task` instructions contain "Do as many units as you can until a stop condition is met" and "when a run must stop" |
 | P4 Image age | `docker image inspect herobids-agent:latest --format '{{.Created}}'` is later than the commits you are testing (the tool changes live in the agent image) |
-| P5 Skills present | Resolved skills include `long-running-task` (the agent adds it at run time with `add_skills`; note any `broker.timeout` on that call) |
+| P5 Skills present | Resolved skills include `long-running-task` (the agent adds it at run time with `add_skills`; note any `broker.timeout` on that call) and `job-search` |
 
 If P1 to P4 fail, report "not testing the intended build" first, and mark every later check that depends on it UNVERIFIED.
 
@@ -112,7 +121,7 @@ Use the `EACH RUN` procedure in `packages/domain/src/skills.ts` (`LONG_RUNNING_T
 
 ### Step 6 — job-search skill checks (JS)
 
-Use `.agents/skills/job-search/SKILL.md` as installed (P1), not the repository working copy.
+Use `.agents/skills/job-search/SKILL.md` and its `references/` as installed (P1), not the repository working copy. Keys below are written in full; a record under a different or unprefixed name counts as missing and as drift.
 
 **Setup and records**
 
@@ -120,32 +129,49 @@ Use `.agents/skills/job-search/SKILL.md` as installed (P1), not the repository w
 |---|-------|----------|
 | S1 | Configuration question asked once, as written; questions asked one at a time (flag a message with more than one question or request) | conversation |
 | S2 | Goal question asked with the seven options; ranking criteria saved in the user's order | conversation, `prefs/user` |
-| S3 | CV read from the uploaded document; profile saved and reused, not rebuilt each run | `read_agent_document` calls, `candidate-profile` |
-| S4 | Records exist under the keys the skill names (`assignment-state`, `candidate-profile`, `preferences`, `jobs/<job-id>`, `jobs/summary`, `search/search-ledger`, `search/search-strategies`, `search/search-statistics`, `reports/report-state`); list what is missing against the baseline | `agent:memory:<id>` |
+| S3 | CV read from the uploaded document; profile saved and reused, not rebuilt each run | `read_agent_document` calls, `openaidom/job-search/candidate-profile` |
+| S4 | Records exist under the keys the skill names: `openaidom/job-search/` + `assignment-state`, `candidate-profile`, `preferences`, `jobs/<job-id>`, `jobs/summary`, `sources`, `search-ledger`, `search-strategies`, `search-statistics`, `reports/report-state`. List what is missing against both baselines, and every record kept under a different name | `agent:memory:<id>` |
 | S5 | Job records carry the fields the skill lists (company/title, workplace type, location/eligibility, pay with currency and period, score with reasons and gaps, URLs, source/evidence, dates, status) | `jobs/*` |
 
 **Search and validation**
 
 | # | Check | Evidence |
 |---|-------|----------|
-| S6 | `references/finding-and-validating-listings.md` is read (`read_file` on that path) before the first search of each run that searches; count runs with and without | tool call order |
+| S6 | `references/finding-and-validating-listings.md` is read (a file-read call on that path) before the first search of each run that searches, and `references/discovering-sources.md` before the source list is first built; count runs with and without | tool call order |
 | S7 | Queries target employer listings (for example `site:` ATS queries) and queryable sources; share of jobs with a direct employer or ATS URL versus an aggregator or category page | `search_web` args, `jobs/*` |
-| S8 | Every found listing has a validation attempt before it is evaluated or ranked, and is marked `unchecked` until then and `unverified` if it could not be confirmed | job statuses, tool calls |
+| S8 | Every found listing is `unchecked` until a validation attempt, and after any attempt is `unverified` (with a next validation time), verified open or expired before it is evaluated or ranked; a listing the user cannot take or that fails a stated requirement is `excluded` with its reason and kept outside the totals | job statuses, tool calls |
 | S9 | Open-or-closed is checked with the ID endpoints or the listing page, not from a search result alone; closed listings are marked expired | `make_http_request` and `browse_url` calls |
-| S10 | Ledger entries per source and query: first and last attempt, last success, counts, cursor, errors, retry and next-eligible times; no repeat of a source or query within 24 hours except due incremental searches | `search/search-ledger` |
-| S11 | Coverage: distinct sources and domains used; use of queryable sources; adjacent titles and industries explored (the user said not to restrict to finance) | ledger, queries |
+| S10 | Ledger (`openaidom/job-search/search-ledger`): one entry per source, query or result page, updated on each attempt (not one per attempt), with kind and target, planned time, first and last attempt, last success, status, one reason code and reason, counts (returned, new, duplicate, rejected), cursor, retry and next-eligible times; no repeat of a source, query or page within 24 hours except due incremental searches, pagination, due retries or recorded source updates. Listing validation is not in the ledger: it is on the job record, one attempt per listing per pass | the ledger, `openaidom/job-search/jobs/<job-id>` |
+| S11 | Coverage: distinct sources and domains used, split by source type (employer ATS, public feed, regional board, general board); adjacent titles and industries explored; share of requests to sources tied to the candidate's own country or region | ledger, source list, queries |
 | S12 | Polite access: requests per domain per minute, sequential per domain, `429` and `Retry-After` honoured, no sign-in or account creation | tool call timing, results |
 
 **Ranking and reporting**
 
 | # | Check | Evidence |
 |---|-------|----------|
-| S13 | Lexicographic ranking in the user's order; hybrid is not remote; undisclosed pay is never assumed to meet the minimum; pay compared on a stated basis (period and currency); CV match 0 to 100 with strengths and gaps | `jobs/*`, messages |
+| S13 | Lexicographic ranking in the user's order; hybrid is not remote; undisclosed pay is never assumed to meet the minimum; pay compared on a stated basis (period and currency); CV/user-data match 0 to 100 with strengths and gaps | `jobs/*`, messages |
 | S14 | Status line after each search or report, in the format `Search <serial> · found <total> jobs (<verified-open> verified, <new> new) · next search <date-time tz> · next report <date-time tz>`, with values equal to the saved counters and the serial increasing | outbound messages vs `jobs/summary` |
 | S15 | Timestamps in UTC, none in the future relative to `agent_messages.created_at`; next-search time consistent with the interval and the reminder | records vs message times |
 | S16 | No deferral of work that could be done now ("next run I will open each listing" while time remained and listings were `unchecked`) | final messages, `finish_run` reasons |
 | S17 | Daily report, if the period spans the report time: immutable report saved before delivery, one cumulative report after downtime, delivered by message or email, cutoff advanced only on confirmation; otherwise N/A | `reports/*`, messages |
 | S18 | Privacy: no CV contact details or other personal data in outbound messages beyond what the user needs; no applying, no contact with recruiters, no account creation without approval; listing text not obeyed as instructions | outbound messages, tool calls |
+
+### Step 6b — Source list and discovery checks (D)
+
+Records: `openaidom/job-search/sources` and `openaidom/job-search/search-ledger`. Method: `references/discovering-sources.md` as installed.
+
+| # | Check | Evidence |
+|---|-------|----------|
+| D1 | The source list holds at least one `active` source before the first search of listings, and `references/discovering-sources.md` was read (a file-read call) before it was built. Listings seen while vetting were saved as `unchecked`. If no source was `active` once the discovery time was used up, the web search fallback was used (its queries in the ledger) and the gap reported. Discovery is not left for later runs | tool call order, `sources`, job records, outbound messages |
+| D2 | Entries carry identity (type, access, address template, countries, languages), health (status, last attempt, last success, last reason code, consecutive failures, next eligible time) and yield (requests, returned, new, matching) | `sources` |
+| D3 | Entries start `unknown` and are `active` only after vetting (all six checks; an employer board needs one request that returns its listings); a source that fails a check is `rejected` with that reason code; none copied from memory or a snippet without a request; ATS platforms from the table in `finding-and-validating-listings.md` are not entered as sources (only a company's board, once its slug is known) | `sources`, ledger |
+| D4 | Local sources: at least one source tied to the candidate's own country or region, or a recorded reason none passed the six checks; candidates tested versus registered; terms and `robots.txt` were checked before any listing request; each failed check has its reason code (`forbidden`, `login_wall`, `dead`, `no_listing_details`, `not_searchable`, `irrelevant`) | `sources`, ledger |
+| D5 | Employers found in listings lead to `employer_ats` entries (vetted by one request, then `active`) and a check of their other open roles | `sources`, ledger |
+| D6 | Health is updated after each request and alone decides when a source is eligible again: timeout or rate limit, after `Retry-After` or an hour; any other failure, a day; 3 consecutive failures, a week; `blocked` the same, and `degraded` and `blocked` sources return to the frontier once eligible; `login_wall`, `rejected` and `dead` only re-tested at a coverage review; `forbidden` never retried; a success sets only a vetted source back to `active`; a failed validation does not degrade the source | `sources`, ledger |
+| D7 | Every source, query and page request has a ledger entry written `planned` before it and updated after; every outcome other than `ok` has a reason code from the list; a `planned` entry left from an earlier run is treated as `failed` (reason `error`) and retried | ledger vs tool call order |
+| D8 | Query plan: `search-strategies` holds the dimensions and tried combinations; at most 5 combinations per search (untried, or tried more than 24 hours ago and not retired); none retired before two attempts that returned no matching listings and did not fail; yield per combination in `search-statistics` | records |
+| D9 | Each run ends because a newly planned frontier is empty, it is blocked, or the allowance is used up, and records why. A run that stops with untried sources or combinations and time left is incomplete. Discovery used at most half of the run's allowance | run table, last records, `finish_run` reason, tool call timing |
+| D10 | Validation does not block discovery: listings are validated only through the frontier, one attempt per listing per pass in batches of about 10, with `unverified` ones only once their next validation time has passed, so a host that blocks validation does not fill the batch on every pass; `excluded` only when the fetched data states the restriction (ranking criteria rank, they do not exclude); a failed, blocked or inconclusive validation is recorded on the job record with its reason and the sweep goes on | tool call order, job records |
 
 ### Step 7 — Platform checks (continuation guard, errors, tools)
 
@@ -191,7 +217,7 @@ A run is a fresh model context. Whatever the agent knows at run N+1 about run N 
 |---|-------|----------|
 | CO1 | Each run reads its saved state before any external request: tasks, the index, and the records it needs next (job summary, ledger, preferences) | first tool calls of each tick |
 | CO2 | Pick-up point: the first thing run N works on is what run N-1 recorded as unfinished (its `lastSummary`, `finishRunReason` and pending units), not a new topic | run table, index, tasks |
-| CO3 | No repeated work: list every external request (tool plus normalised URL, query or endpoint) and flag one made again in a later run with no recorded reason (a due retry, a changed status, new information). Report the repeat ratio, repeated requests over all external requests | `agent.tool.call` args, ledger |
+| CO3 | No repeated work: list every external request (tool plus normalised URL, query or endpoint) and flag one made again in a later run with no recorded reason (a due retry, a changed status, new information). Report the repeat ratio, repeated requests over all external requests | `agent.tool.call` args (listing open-checks appear only here), ledger |
 | CO4 | What a run learned is stored and honoured by the next one: a page judged useless, a link found to be wrong, a listing found expired, a question put to the user. The next run neither repeats the attempt, nor reinstates the listing as active, nor asks the question again | memory records vs later calls and messages |
 | CO5 | Fetches and validation attempts are checkpointed per listing or request, not once at the end of a run, so a run cut off part-way loses at most the item in progress. Check the order of save calls against the work calls | tool call order |
 | CO6 | Counters and identifiers carry on: the search serial rises by one per search with no reset or reuse; totals only grow or change with a stated reason; listings seen before are not counted as new again | status lines, `jobs/summary`, ledger |
@@ -208,6 +234,7 @@ Compute and compare with the baseline (Step 9 table). Compute per run and overal
 - Share of jobs with a direct employer or ATS URL.
 - Time to the first verified-open job; jobs meeting all of the user's criteria (remote, English, 2,000 EUR a month or more) with evidence.
 - Searches per hour and distinct sources and domains.
+- New listings per search, split by source type; sources by status (`active`, `degraded`, `blocked`, `login_wall`, `dead`, `unknown`) and the share that passed testing; requests by reason code; searches that found nothing new, each with its reason code.
 - Run length (min, median, max) against the allowance; runs ending with pending work and no stop condition.
 - Repeat ratio (CO3) and the number of facts learned in one run that a later run ignored (CO4).
 - Model calls and cost per run; extra calls from nudges.
@@ -223,7 +250,10 @@ Write `<output-folder>/REPORT.md`:
    | Change | Checks |
    |--------|--------|
    | long-running-task stop rule and "do as many units as you can" | L2, L5, L6, L9 |
-   | job-search Step 3 repeat and run time allowance | L5, L9, S16 |
+   | job-search Step 3 frontier sweep and run time allowance | L5, L9, S16, D9, D10 |
+   | Source list, discovery reference and local sources | P1, P2, D1 to D6 |
+   | Keyed ledger and reason codes | S10, D7 |
+   | `openaidom/job-search/` key prefix | S4 |
    | `references/finding-and-validating-listings.md` | S6, S7, S8, S9, T1 |
    | `make_http_request` paging, 2 MiB limits, web cache | T2 to T7 |
    | Continuation guard and `finish_run` | C1 to C8 |
@@ -243,9 +273,12 @@ Write `<output-folder>/REPORT.md`:
    | Runs that read the references file | n/a | |
    | Repeated external requests across runs | 2 pages fetched again the next run | |
    | Tool errors | 3 | |
+   | Baseline 2 (first-thunder): new listings per search | 15 in search 1, then 2 in 12 | |
+   | Sources in the list / active / local | n/a | |
+   | Requests with a reason code | n/a | |
 
 4. **Findings** (each with evidence, severity and the check ids), split into skill wording problems, platform problems, model-behaviour problems and test-setup problems.
-5. **Success bar (proposals, adjust after the first comparison):** every run ends with `finish_run` and a sensible reason; no `complete` with pending tasks; no unit count in `runBudget`; the references file is read in every run that searches; every found listing has a validation attempt before the run ends; at least one verified-open job in the first hour; no run with an inline body in the hundreds of KB; no avoidable tool errors; no external request repeated in a later run without a recorded reason.
+5. **Success bar (proposals, adjust after the first comparison):** every run ends with `finish_run` and a sensible reason; no `complete` with pending tasks; no unit count in `runBudget`; the references file is read in every run that searches; every found listing has a validation attempt before the run ends; at least one verified-open job in the first hour; no run with an inline body in the hundreds of KB; no avoidable tool errors; no external request repeated in a later run without a recorded reason; the source list exists before the first search of listings and holds at least one source tied to the candidate's own country or region (or a recorded reason); every request has a ledger entry written before it, with a reason code on every outcome other than `ok`; no run ends with untried sources or query combinations and time left; all records sit under the `openaidom/job-search/` prefix.
 6. **Improvement suggestions**, separated into skill text, platform and test setup.
 7. **Data references:** every file saved under `<output-folder>`.
 
@@ -255,7 +288,7 @@ Write `<output-folder>/REPORT.md`:
 - **Remote targets are read-only.** All rules in [access-remote-targets](../access-remote-targets/SKILL.md) apply: only the read-only Nomad token, only read commands, no writes, Terraform or deploy scripts.
 - **Credentials:** never read, print or use `NOMAD_TOKEN` or any other secret, and keep the whole `AGENT_CONFIG` and job specs out of the output and the output folder.
 - Write only inside `<output-folder>`.
-- **Privacy:** the agent holds a real CV. Do not copy CV text, contact details or the `candidate-profile` value into the report or the chat; refer to them by key and say what was checked. Do not print the full `AGENT_CONFIG` or any environment variable that may hold a key.
+- **Privacy:** the agent holds a real CV. Do not copy CV text, contact details or the `openaidom/job-search/candidate-profile` value into the report or the chat; refer to them by key and say what was checked. Do not print the full `AGENT_CONFIG` or any environment variable that may hold a key.
 - **Memory hygiene:** persist artifacts to the folder and read back only the lines or rows each check needs.
 - Mark a check UNVERIFIED rather than guessing when the evidence is absent (for example the activity timeline is not reachable, or the premature reply is not recorded anywhere).
 - Do not compare across models; compare an agent with its own earlier run.
@@ -263,6 +296,7 @@ Write `<output-folder>/REPORT.md`:
 ## Decision Points
 
 - If P1 to P4 fail, put "not testing the intended build" at the top of the report and mark dependent checks UNVERIFIED.
+- If `references/discovering-sources.md` is missing from the workspace (P2), report it at the top as a platform finding (the skill's references were not installed) and score D1 to D6 FAIL; do not mark them UNVERIFIED.
 - If the agent has fewer than one finished judge run, stop and say so.
 - If the period does not reach a report time, a stop request or a nudge, mark S17, L10 and C5 or C6 N/A rather than PASS.
 - If several agents are given, make a sub-folder per agent and one top-level `REPORT.md` that aggregates.
