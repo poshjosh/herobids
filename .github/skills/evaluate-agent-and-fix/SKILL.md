@@ -30,6 +30,8 @@ Accepts the same inputs as `evaluate-agent`:
 | `deployment-target` | Where the stack is deployed | `local docker compose (development)` |
 | `expected-llm-cost` | Expected LLM cost for the period | `unknown` |
 
+For a staging or production `deployment-target`, evidence collection follows [access-remote-targets](../access-remote-targets/SKILL.md) and stays read-only. Fixes are made only in the local repository, never on the remote host.
+
 ## Procedure
 
 ### Step 1 — Evaluate

@@ -30,6 +30,8 @@ This skill analyses one or more agents after a trading session: downloads the ex
 | `expected-llm-cost` | Expected LLM cost for the period | `unknown` |
 | `output-folder` | Base path for saved data | `.ignore/eval/yyyy/MM/dd/<agent-id>/<serial>/` |
 
+The commands below assume local docker compose. If `deployment-target` is staging or production, follow [access-remote-targets](../access-remote-targets/SKILL.md) for every log, database, Redis and workspace read. It is read-only and uses the read-only Nomad token. Note the target in the report.
+
 ## Procedure
 
 ### Step 1 — Determine the output folder

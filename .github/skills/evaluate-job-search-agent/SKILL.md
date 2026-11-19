@@ -36,46 +36,7 @@ Commands below are for local docker compose (containers `herobids-agent-<agent-i
 
 ### Remote targets (staging, production)
 
-On a remote target the platform containers run on the server (reach them over SSH) and the agent runs as a Nomad allocation in namespace `herobids-agents`, job `agent-<agent-id>`, task `agent`.
-
-| | staging | production |
-|-|---------|------------|
-| Server IP | `138.199.172.202` | `167.233.213.107` |
-| SSH key | `~/.ssh/herobids_deploy_key` | the production key (`infra/hetzner/scripts/_ssh_opts.sh` with `HEROBIDS_ENV=production`) |
-| Token file | `infra/hetzner/.env.eval.staging` | `infra/hetzner/.env.eval.production` |
-
-(IPs and keys are also listed in `docs/runbooks/useful-commands.md`. If sourcing `_ssh_opts.sh` fails with a key warning, pass the key with `ssh -i` as below.)
-
-**Credential.** Use only `NOMAD_READONLY_TOKEN` from the token file for Nomad. Never use `NOMAD_TOKEN` (the management token) from `.env.staging`, `.env.production` or `.env.temp`, even if it is on disk. If the token file or the token is missing or rejected, stop and tell the user to run `infra/hetzner/scripts/setup-nomad-readonly.sh --env <env> --env-file .env.<env>`; do not work around it. Pass the token to the server on SSH stdin, never as an argument, in a file, or in output.
-
-```sh
-HOST=138.199.172.202; KEY=~/.ssh/herobids_deploy_key       # staging
-TOKEN=$(grep -E '^NOMAD_READONLY_TOKEN=' infra/hetzner/.env.eval.staging | cut -d= -f2-)
-AGENT=<agent-id>; NS=herobids-agents
-
-# Nomad on the server (token over stdin)
-nomad_ro() { printf '%s' "$TOKEN" | ssh -i "$KEY" -o BatchMode=yes root@"$HOST" \
-  "read -r NOMAD_TOKEN; export NOMAD_TOKEN NOMAD_ADDR=http://127.0.0.1:4646; $*"; }
-# Postgres and Redis (no token needed)
-psql_ro()  { ssh -i "$KEY" -o BatchMode=yes root@"$HOST" 'docker exec -i herobids-postgres-1 psql -U herobids -d herobids -At'; }  # SQL on stdin
-redis_ro() { ssh -i "$KEY" -o BatchMode=yes root@"$HOST" "docker exec -i herobids-redis-1 redis-cli $*"; }
-
-ALLOC=$(nomad_ro "nomad job allocs -namespace=$NS -json agent-$AGENT | jq -r '[.[]|select(.ClientStatus==\"running\")][0].ID'")
-```
-
-Equivalents for the local commands in Step 2 to 3:
-
-| Local | Remote |
-|-------|--------|
-| `docker logs herobids-agent-<id>` | `nomad_ro "nomad alloc logs -namespace=$NS $ALLOC agent"` and again with `-stderr` |
-| `docker exec herobids-postgres-1 psql ...` | `psql_ro` with the SQL on stdin |
-| `redis-cli ...` | `redis_ro "<command>"` |
-| `docker cp herobids-agent-<id>:/workspace/<path> workspace/` | `nomad_ro "nomad alloc exec -namespace=$NS $ALLOC cat /workspace/<path>" > workspace/<name>` |
-| listing with sizes | `nomad_ro "nomad alloc exec -namespace=$NS $ALLOC ls -la /workspace/<dir>"` |
-| `docker inspect ... AGENT_CONFIG` | `nomad_ro "nomad alloc exec -namespace=$NS $ALLOC printenv AGENT_CONFIG"` piped through `jq` locally to the same `resolvedSkills` fields. Do not save or print the whole value |
-| image age (P4) | `nomad_ro "nomad job inspect -namespace=$NS agent-$AGENT" \| jq -r '.Job.TaskGroups[].Tasks[].Config.image'`. Extract only the image; the job spec may contain secrets. The pinned worker image is also `docker exec herobids-worker-1 printenv NOMAD_AGENT_IMAGE` |
-
-Also useful: `nomad_ro "nomad node status"` and `nomad_ro "nomad job status -namespace=$NS agent-$AGENT"`.
+Follow [access-remote-targets](../access-remote-targets/SKILL.md) for SSH, the read-only Nomad token, the helper functions and the local-to-remote command table. Use it for every `docker` command in Steps 2 and 3, and note the target in the report. Job-search specifics: the image age check (P4) uses the agent image from `nomad job inspect` (only the image field), and the `AGENT_CONFIG` extraction stays limited to `resolvedSkills`.
 
 ## Builtin baseline (agent 42008a23, 2026-11-17, before these changes)
 
@@ -291,8 +252,8 @@ Write `<output-folder>/REPORT.md`:
 ## Constraints
 
 - **DO NOT fix anything and do not change the agent.** Do not message the agent, change its memory, tasks or reminders, or restart it. Analyse, explain and report. Fixes are a separate workflow.
-- **Remote targets are read-only.** The read-only Nomad token includes `alloc exec`, so it is read-only only by this rule. Run inside the agent container only `cat`, `ls`, `printenv <one named variable>` and similar reads. Never write, delete or kill anything there. In Nomad run only `job status|allocs|inspect`, `alloc logs|fs|exec` (read commands), `node status`. In Postgres run only `SELECT` and `\d`. In Redis run only `TYPE`, `GET`, `HGETALL`, `TTL`, `EXISTS` and `--scan`. No Terraform, no `docker` writes, no deploy or release scripts.
-- **Credentials:** use only `NOMAD_READONLY_TOKEN` (see Remote targets). Do not read, print or use `NOMAD_TOKEN` or any other secret. Do not echo any token, and keep the whole `AGENT_CONFIG` and job specs out of the output and out of the output folder.
+- **Remote targets are read-only.** All rules in [access-remote-targets](../access-remote-targets/SKILL.md) apply: only the read-only Nomad token, only read commands, no writes, Terraform or deploy scripts.
+- **Credentials:** never read, print or use `NOMAD_TOKEN` or any other secret, and keep the whole `AGENT_CONFIG` and job specs out of the output and the output folder.
 - Write only inside `<output-folder>`.
 - **Privacy:** the agent holds a real CV. Do not copy CV text, contact details or the `candidate-profile` value into the report or the chat; refer to them by key and say what was checked. Do not print the full `AGENT_CONFIG` or any environment variable that may hold a key.
 - **Memory hygiene:** persist artifacts to the folder and read back only the lines or rows each check needs.
