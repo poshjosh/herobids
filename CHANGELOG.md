@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.11.1 - 2026-11-20
+
 ### Fixed
 
 - Flickering of the create agent form -> skill search box on change 
