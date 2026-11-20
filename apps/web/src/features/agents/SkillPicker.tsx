@@ -65,11 +65,13 @@ export function SkillPicker({ selectedSkillIds, onChange, initialSkills, loading
     return listSelectableSkills(defaultQuery.data?.skills ?? []);
   }, [isSearching, searchQuery.data, initialSkills, defaultQuery.data]);
 
-  const isLoading = loading
-    || (isSearching && searchQuery.isLoading)
-    || (!initialSkills && !isSearching && defaultQuery.isLoading);
+  // Only the initial (non-search) load replaces the whole picker. While searching,
+  // the input must stay mounted (otherwise it flickers and loses focus); the list
+  // area below shows its own "Searching…" state.
+  const isInitialLoading = !isSearching
+    && (loading || (!initialSkills && defaultQuery.isLoading));
 
-  if (isLoading && displaySkills.length === 0) {
+  if (isInitialLoading && displaySkills.length === 0) {
     return <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.skillPicker.loading' })}</div>;
   }
 
