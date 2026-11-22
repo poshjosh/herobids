@@ -191,6 +191,9 @@ const DeleteAgentQuerySchema = z.object({
   scope: z.enum(['subtree', 'agent']).optional(),
 });
 
+/** Upper bound on the connections one owner-connections read returns, so a large account cannot flood an agent's context. */
+const OWNER_CONNECTIONS_LIST_LIMIT = 200;
+
 const DeleteChildQuerySchema = z.object({
   stopFirst: z.enum(['true', 'false']).optional(),
 });
@@ -3151,6 +3154,40 @@ export async function agentRoutes(
       childCount,
       remainingChildAllowance: Math.max(0, agent.childAgentLimit - childCount),
     });
+  });
+
+  // The owner's active connections, so an agent the user allowed to grant any connection (agent-child-grant-scope §7)
+  // can find ids to pass to create_child_agent. Agent keys only, and only for the agent's own row: 403 unless that
+  // agent has grantAnyConnectionToChildren. Explicit columns, so no credential reference, provider ref or profile leaves.
+  app.get<{ Params: { id: string } }>('/agents/:id/owner-connections', {
+    config: { agentAccess: 'self' },
+    preHandler: [requireAgentKeyCaller, requireSelfAgentOrUser],
+  }, async (request, reply) => {
+    const { id } = request.params;
+    const [agent] = await db.select({ grantAnyConnectionToChildren: agents.grantAnyConnectionToChildren })
+      .from(agents)
+      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+    if (!agent) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
+    if (!agent.grantAnyConnectionToChildren) {
+      return reply.status(403).send(errorPayload(
+        'agent.owner_connections.not_enabled',
+        'The user has not allowed this agent to grant any of their connections to children.',
+      ));
+    }
+
+    const rows = await db.select({
+      id: connections.id,
+      provider: connections.provider,
+      status: connections.status,
+      label: connections.label,
+    })
+      .from(connections)
+      .where(and(eq(connections.userId, request.userId), eq(connections.status, 'active')))
+      .orderBy(asc(connections.createdAt), asc(connections.id))
+      .limit(OWNER_CONNECTIONS_LIST_LIMIT);
+    return reply.send({ connections: rows });
   });
 
   // The agent's direct children, so it can learn their IDs. One query: each child's own child count is a

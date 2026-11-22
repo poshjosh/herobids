@@ -9,6 +9,7 @@ import {
   sessions,
   agents,
   agentRuntimeSessions,
+  connections,
   generateAgentApiKey,
 } from '@herobids/db';
 import type { AuthConfig } from '@herobids/domain';
@@ -86,7 +87,7 @@ interface SeededAgent {
 async function seedAgent(
   db: Db,
   userId: string,
-  options: { parentAgentId?: string; childAgentLimit?: number; withKey?: boolean } = {},
+  options: { parentAgentId?: string; childAgentLimit?: number; withKey?: boolean; grantAnyConnectionToChildren?: boolean } = {},
 ): Promise<SeededAgent> {
   const suffix = crypto.randomUUID().slice(0, 8);
   const agentId = `agent-${suffix}`;
@@ -103,6 +104,7 @@ async function seedAgent(
     parentAgentId: options.parentAgentId ?? null,
     depth: options.parentAgentId ? 1 : 0,
     childAgentLimit: options.childAgentLimit ?? 0,
+    grantAnyConnectionToChildren: options.grantAnyConnectionToChildren ?? false,
     permissionLevel: 'standard',
     createdAt: now,
     updatedAt: now,
@@ -148,7 +150,7 @@ describe.skipIf(SKIP)('own child allowance read (integration)', () => {
   });
 
   beforeEach(async () => {
-    await db.execute(sql`TRUNCATE conversations, agent_runtime_sessions, agents, sessions, users CASCADE`);
+    await db.execute(sql`TRUNCATE conversations, agent_runtime_sessions, agents, connections, sessions, users CASCADE`);
   });
 
   afterEach(async () => {
@@ -179,6 +181,8 @@ describe.skipIf(SKIP)('own child allowance read (integration)', () => {
       childAgentLimit: 3,
       childCount: 1,
       remainingChildAllowance: 2,
+      grantAnySkillToChildren: false,
+      grantAnyConnectionToChildren: false,
     });
   });
 
@@ -227,5 +231,107 @@ describe.skipIf(SKIP)('own child allowance read (integration)', () => {
     });
 
     expect(res.statusCode).toBe(404);
+  });
+
+  async function seedConnection(userId: string, overrides: Partial<typeof connections.$inferInsert> = {}): Promise<string> {
+    const id = `conn-${crypto.randomUUID().slice(0, 8)}`;
+    await db.insert(connections).values({
+      id,
+      userId,
+      provider: 'hyperliquid',
+      label: `Label ${id}`,
+      status: 'active',
+      credentialId: 'cred-secret-ref',
+      providerRef: '0xprovider-secret-ref',
+      resolvedVenueAccountId: 'venue-account-secret',
+      meta: { note: 'cached' },
+      ...overrides,
+    });
+    return id;
+  }
+
+  describe('owner connections read', () => {
+    it('lists only id, provider, status and label of the owner\'s active connections when the setting is on', async () => {
+      const userId = await seedUser(db);
+      const agent = await seedAgent(db, userId, { grantAnyConnectionToChildren: true });
+      const activeId = await seedConnection(userId);
+      await seedConnection(userId, { status: 'revoked' });
+      const app = await appWith();
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/agents/${agent.agentId}/owner-connections`,
+        headers: { Authorization: `Bearer ${agent.rawKey}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({
+        connections: [{ id: activeId, provider: 'hyperliquid', status: 'active', label: `Label ${activeId}` }],
+      });
+      expect(res.body).not.toMatch(/cred-secret-ref|0xprovider-secret-ref|venue-account-secret/);
+    });
+
+    it('does not list another user\'s connections', async () => {
+      const userId = await seedUser(db);
+      const otherUserId = await seedUser(db);
+      const agent = await seedAgent(db, userId, { grantAnyConnectionToChildren: true });
+      const mine = await seedConnection(userId);
+      await seedConnection(otherUserId);
+      const app = await appWith();
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/agents/${agent.agentId}/owner-connections`,
+        headers: { Authorization: `Bearer ${agent.rawKey}` },
+      });
+
+      expect(res.json().connections.map((row: { id: string }) => row.id)).toEqual([mine]);
+    });
+
+    it('refuses with 403 when the setting is off', async () => {
+      const userId = await seedUser(db);
+      const agent = await seedAgent(db, userId);
+      await seedConnection(userId);
+      const app = await appWith();
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/agents/${agent.agentId}/owner-connections`,
+        headers: { Authorization: `Bearer ${agent.rawKey}` },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ error: 'agent.owner_connections.not_enabled' });
+    });
+
+    it('an agent key cannot read another agent\'s list, even when that agent has the setting on', async () => {
+      const userId = await seedUser(db);
+      const caller = await seedAgent(db, userId);
+      const other = await seedAgent(db, userId, { grantAnyConnectionToChildren: true, withKey: false });
+      const app = await appWith();
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/agents/${other.agentId}/owner-connections`,
+        headers: { Authorization: `Bearer ${caller.rawKey}` },
+      });
+
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('refuses a user caller, since the route is for agent keys', async () => {
+      const userId = await seedUser(db);
+      const agent = await seedAgent(db, userId, { grantAnyConnectionToChildren: true, withKey: false });
+      const token = await userToken(db, userId);
+      const app = await appWith();
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/agents/${agent.agentId}/owner-connections`,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(403);
+    });
   });
 });

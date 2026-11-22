@@ -42,6 +42,38 @@ describe('agent platform client', () => {
     expect(init?.headers).toMatchObject({ Authorization: `Bearer ${API_KEY}` });
   });
 
+  it('parses the grant settings from the allowance read', async () => {
+    const fetchImpl = fetchReturning(jsonResponse(200, {
+      id: AGENT_ID, childAgentLimit: 2, childCount: 0, remainingChildAllowance: 2,
+      grantAnySkillToChildren: true, grantAnyConnectionToChildren: true,
+    }));
+
+    const result = await makeClient(fetchImpl).getOwnAllowance();
+
+    expect(result).toMatchObject({ ok: true, data: { grantAnySkillToChildren: true, grantAnyConnectionToChildren: true } });
+  });
+
+  it('reads both grant settings as false when the API omits them', async () => {
+    const fetchImpl = fetchReturning(jsonResponse(200, {
+      id: AGENT_ID, childAgentLimit: 2, childCount: 0, remainingChildAllowance: 2,
+    }));
+
+    const result = await makeClient(fetchImpl).getOwnAllowance();
+
+    expect(result).toMatchObject({ ok: true, data: { grantAnySkillToChildren: false, grantAnyConnectionToChildren: false } });
+  });
+
+  it('lists the owner connections from the agent-scoped endpoint', async () => {
+    const fetchImpl = fetchReturning(jsonResponse(200, {
+      connections: [{ id: 'c1', provider: 'bybit', status: 'active', label: 'Main', credentialId: 'dropped' }],
+    }));
+
+    const result = await makeClient(fetchImpl).listOwnerConnections();
+
+    expect(String(fetchImpl.mock.calls[0]![0])).toBe(`${BASE_URL}/agents/${AGENT_ID}/owner-connections`);
+    expect(result).toEqual({ ok: true, data: [{ id: 'c1', provider: 'bybit', status: 'active', label: 'Main' }] });
+  });
+
   it('reads the stop switch of its own agent with the agent key', async () => {
     const fetchImpl = fetchReturning(jsonResponse(200, { paused: true }));
 

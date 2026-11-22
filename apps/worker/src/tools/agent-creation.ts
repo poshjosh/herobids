@@ -8,6 +8,7 @@ import { convertZodToJsonSchema } from './registry.js';
  */
 
 export const CREATE_CHILD_AGENT_TOOL_NAME = 'create_child_agent';
+export const LIST_OWNER_CONNECTIONS_TOOL_NAME = 'list_owner_connections';
 
 /**
  * Creator tools act on direct children and are shown only when the agent has at least one. They are
@@ -34,6 +35,11 @@ export function isCreateChildAgentExposed(allowance: AgentAllowance | null): boo
   return allowance !== null && allowance.childAgentLimit > 0 && allowance.childCount < allowance.childAgentLimit;
 }
 
+/** list_owner_connections is shown only while the user lets this agent grant any of their connections. A null allowance hides it. */
+export function isListOwnerConnectionsExposed(allowance: AgentAllowance | null): boolean {
+  return allowance !== null && allowance.grantAnyConnectionToChildren;
+}
+
 /** Creator tools are shown when the agent has at least one direct child. A null allowance hides them. */
 export function isCreatorToolExposed(allowance: AgentAllowance | null): boolean {
   return allowance !== null && allowance.childCount > 0;
@@ -44,8 +50,8 @@ export function isCreatorToolExposed(allowance: AgentAllowance | null): boolean 
 const CreateChildAgentParamsSchema = z.object({
   name: z.string().trim().min(1).max(100).describe('Name for the child agent'),
   prompt: z.string().trim().min(1).max(8000).describe('Goal and instructions for the child agent'),
-  skillIds: z.array(z.string().min(1)).optional().describe('Skills to grant the child from your own skills. Only skills you hold can be granted.'),
-  connectionIds: z.array(z.string().min(1)).optional().describe('Connections to grant the child from your own connections. Only connections you hold can be granted.'),
+  skillIds: z.array(z.string().min(1)).optional().describe('Skills to grant the child, by skill id or slug. Which skills are allowed depends on your grant settings: skills you hold, or any skill the user may select when the user turned on that setting. A refusal lists the missing skills; the user can assign them to you or turn on the setting.'),
+  connectionIds: z.array(z.string().min(1)).optional().describe('Connection ids to grant the child. Which connections are allowed depends on your grant settings: connections you hold, or any active connection of the user when the user turned on that setting (list_owner_connections then lists them). A refusal lists the missing connections; the user can assign them to you or turn on the setting.'),
   executionDefaults: z.object({
     mode: z.enum(['paper', 'shadow']).optional().describe('Execution mode for a trading child. Defaults to paper. shadow needs a connection granted to the child. live is not supported yet.'),
     slippageBps: z.number().min(0).nullable().optional().describe('Allowed slippage in basis points (1 bps = 0.01%). Omit for the platform default.'),
@@ -105,7 +111,7 @@ function platformFailure(error: AgentPlatformError): ToolResult {
 
 const createChildAgentTool: AgentTool = {
   name: CREATE_CHILD_AGENT_TOOL_NAME,
-  description: 'Create a child agent with its own name and prompt. You may grant it some of your skills and connections. The child starts by default; pass start: false to create it stopped. For a child with a trading skill, executionDefaults sets its execution mode and slippage: the child takes whatever mode you pass and defaults to paper. shadow needs a connection granted to the child. live is not supported yet. Returns the new agent ID, its depth, its status, whether it started, and your remaining child allowance. A retry with the same name within the platform window returns the existing child with duplicate: true and does not start it again.',
+  description: 'Create a child agent with its own name and prompt. You may grant it skills and connections; which ones depends on your grant settings (see skillIds and connectionIds). If a grant is refused, report it to the user instead of retrying with other skills. The child starts by default; pass start: false to create it stopped. For a child with a trading skill, executionDefaults sets its execution mode and slippage: the child takes whatever mode you pass and defaults to paper. shadow needs a connection granted to the child. live is not supported yet. Returns the new agent ID, its depth, its status, whether it started, and your remaining child allowance. A retry with the same name within the platform window returns the existing child with duplicate: true and does not start it again.',
   parametersSchema: CreateChildAgentParamsSchema,
   parameters: convertZodToJsonSchema(CreateChildAgentParamsSchema),
   category: 'write-database',
@@ -166,6 +172,25 @@ const listChildAgentsTool: AgentTool = {
     const listed = await ctx.agentPlatform.listChildAgents();
     if (!listed.ok) return platformFailure(listed.error);
     return { success: true, data: { ok: true, count: listed.data.length, children: listed.data } };
+  },
+};
+
+// --- list_owner_connections ---
+
+const listOwnerConnectionsTool: AgentTool = {
+  name: LIST_OWNER_CONNECTIONS_TOOL_NAME,
+  description: 'List the user\'s active connections (id, provider, status, label) that you may grant to a child through create_child_agent connectionIds. Available only when the user allowed you to grant any of their connections. Shows no credentials. A child with a trading connection can trade on that account, so grant only what the child needs.',
+  parametersSchema: NoParamsSchema,
+  parameters: convertZodToJsonSchema(NoParamsSchema),
+  category: 'read-database',
+  async execute(_params: unknown, ctx: ToolContext): Promise<ToolResult> {
+    if (!ctx.agentPlatform) return notConfigured();
+
+    const listed = await ctx.agentPlatform.listOwnerConnections();
+    if (!listed.ok) return platformFailure(listed.error);
+    // Re-picked by field so nothing beyond id, provider, status and label can reach the agent.
+    const connections = listed.data.map(({ id, provider, status, label }) => ({ id, provider, status, label }));
+    return { success: true, data: { ok: true, count: connections.length, connections } };
   },
 };
 
@@ -274,6 +299,7 @@ const messageChildAgentTool: AgentTool = {
 export const agentCreationTools: AgentTool[] = [
   createChildAgentTool,
   listChildAgentsTool,
+  listOwnerConnectionsTool,
   getChildAgentStatusTool,
   pauseChildAgentTool,
   stopChildAgentTool,

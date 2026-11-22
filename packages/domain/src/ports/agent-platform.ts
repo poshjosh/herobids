@@ -15,6 +15,18 @@ export interface AgentAllowance {
   childAgentLimit: number;
   childCount: number;
   remainingChildAllowance: number;
+  /** User-set: the agent may give children any skill the owner may select, not only skills it holds. */
+  grantAnySkillToChildren: boolean;
+  /** User-set: the agent may give children any active connection the owner has, not only connections it holds. */
+  grantAnyConnectionToChildren: boolean;
+}
+
+/** One of the owner's connections as an agent sees it. Never carries credentials or provider references. */
+export interface OwnerConnectionSummary {
+  id: string;
+  provider: string;
+  status: string;
+  label: string;
 }
 
 export interface CreateChildAgentInput {
@@ -85,6 +97,7 @@ export interface AgentDocumentTextPage {
 export interface AgentPlatformPort {
   getOwnAllowance(): Promise<Result<AgentAllowance, AgentPlatformError>>;
   readAgentDocument(documentId: string, offset: number): Promise<Result<AgentDocumentTextPage, AgentPlatformError>>;
+  listOwnerConnections(): Promise<Result<OwnerConnectionSummary[], AgentPlatformError>>;
   createChildAgent(input: CreateChildAgentInput): Promise<Result<ChildAgentCreated, AgentPlatformError>>;
   listChildAgents(): Promise<Result<ChildAgentSummary[], AgentPlatformError>>;
   getChildStatus(agentId: string): Promise<Result<ChildAgentStatus, AgentPlatformError>>;

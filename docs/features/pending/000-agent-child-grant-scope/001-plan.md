@@ -141,7 +141,7 @@ Check before coding:
 1. DONE — Refusal detail in the tool result (§4). Safe on its own and useful at once. Pass the response body through for all 4xx responses, not only grant refusals. A 400 `validation_error` was also reduced to "HTTP 400" and hid its cause. The [Agent Child Execution Mode](../000-agent-child-execution-mode/001-plan.md) plan shares this step. Do it once.
 2. DONE — Migration, policy change and the `grantedNotHeld` audit field, flags default off. No behavior change.
 3. DONE — User-only route, audit and allowance read.
-4. PENDING — Worker client and tool text. Add `list_owner_connections` only if the connection flag ships.
+4. DONE — Worker client and tool text. Add `list_owner_connections` only if the connection flag ships.
 5. PENDING — UI: card, then create flow.
 6. PENDING — Docs: [agent-creation-tools.md](/Users/chinomso.ikwuagwu/dev_ai/herobids/docs/tech/agents/tools/agent-creation-tools.md) (Grant rule row and the creator action list), the parent plan's §6 note, user docs for the two settings, CHANGELOG.
 
@@ -185,3 +185,17 @@ Refusal-body passthrough (rollout step 1) issues are recorded in the execution-m
 - Low: duplicated comment on the create-schema fields and insert.
 - Note: the "permission level above the parent" integration test was passing for the wrong reason (agent keys cannot send `permissionLevel`); it now pins `field_not_allowed`. The real cap is covered only in `agent-create-policy.test.ts`.
 - Note: duplicate ids in `skillIds` on `POST /agents` return 500 (pre-existing `agent_skills` PK conflict).
+
+### Item 4 — Worker client and tool text
+
+- Medium: `list_owner_connections` missing from `docs/tech/agents/tools/agent-creation-tools.md` and the capability registry manifest (`docs/features/pending/000-capability-foundations/009-...`); catalogue-owner sign-off (§7, tool-budget gap) not recorded. Docs part is covered by step 6.
+- Medium: no controller-level visibility test for `isListOwnerConnectionsExposed` (null allowance, flag off, flag on).
+- Medium: tool is shown when `childAgentLimit` is 0; decide whether to require limit > 0.
+- Medium: connection `label` is uncapped free text in `OwnerConnectionsResponseSchema`; add `.max(...)`.
+- Low: `KNOWN_AGENT_TOOL_NAMES` / `TOOL_CATALOG` ordering is not alphabetical.
+- Low: comment why `request()` schema type is `ZodType<T, ZodTypeDef, unknown>`.
+- Low: no truncation signal when the owner has more than 200 active connections.
+- Low: skill text is slightly repetitive on "do not retry".
+- Low: add API integration cases for inactive-connection exclusion and the 200-row cap.
+- Unverified: `search_skills` output fields (id, slug, ref) were checked by the implementer; reviewer asks to confirm against tests.
+- Finding (§9 check 1): the broker's `add_skills` handler has no user-approval gate. It refuses user-only skills and `base`, then applies the owner's selectability/entitlement check. An agent can self-assign any skill the owner may select. The skill flag changes convenience and footprint; the connection flag changes access.

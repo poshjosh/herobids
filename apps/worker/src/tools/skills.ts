@@ -961,7 +961,7 @@ const SearchSkillsParamsSchema = z.object({
 const searchSkillsTool: AgentTool = {
   name: 'search_skills',
   description:
-    'Search for skills by keyword across the system skills/platform catalog and the external skill registry.',
+    'Search for skills by keyword across the system skills/platform catalog and the external skill registry. Each local result has an id and a skill slug; each external result has a ref. Any of these can be passed to add_skills or to create_child_agent skillIds.',
   parametersSchema: SearchSkillsParamsSchema,
   parameters: convertZodToJsonSchema(SearchSkillsParamsSchema),
   category: 'read-database',

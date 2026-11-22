@@ -162,6 +162,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'list_app_docs',
   'list_bots',
   'list_child_agents',
+  'list_owner_connections',
   'list_files',
   'list_memory_keys',
   'list_positions',
@@ -237,6 +238,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
 
   // read-database
   get_child_agent_status: { category: 'read-database', description: 'Read the status, runtime state and child allowance of one of your direct child agents. Only works for children you created.' },
+  list_owner_connections: { category: 'read-database', description: 'List the user\'s active connections (id, provider, status, label) you may grant to a child. Only when the user allowed you to grant any of their connections.' },
   list_child_agents:   { category: 'read-database',       description: 'List your direct child agents with their ID, name, status and number of children. Returns an empty list when you have none.' },
   get_analytics:       { category: 'read-database',       description: 'Get trading analytics: total trades, win rate, P&L, fees, per-bot/agent-direct breakdown.' },
   list_positions:      { category: 'read-database',       description: 'List open positions owned by this agent (bot-created + direct).' },

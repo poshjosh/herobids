@@ -178,7 +178,9 @@ export const CHILD_AGENT_MANAGEMENT_SKILL: SkillDefinition = {
 
 - Use \`create_child_agent\` only when a separate, focused goal needs its own agent. The child starts when you create it. Pass \`start: false\` to create it stopped.
 - A retry of \`create_child_agent\` with the same name returns the existing child with \`duplicate: true\`. Nothing is created or started again, so do not create another child to retry.
-- If \`create_child_agent\` is refused, report the refusal to the user. Do not retry with another mode and do not create a second child.
+- If \`create_child_agent\` is refused for its execution mode or trading setup, report the refusal to the user. Do not retry with another mode and do not create a second child.
+- If it is refused because you may not grant a skill or connection (\`agent.create.grant_not_held\`), report the missing ids to the user. Do not retry with other skills or connections. The user can assign them to you or turn on your grant setting.
+- If you may grant any of the user's connections, \`list_owner_connections\` lists their ids. Grant only what the child needs.
 - Use \`delete_child_agent\` only on a direct child you no longer need. Deletion is permanent. The child must have no children of its own. A running child is stopped first. Pass \`stopFirst: false\` to refuse the delete while the child runs instead.
 
 Each tick/session check the child agents you have and manage them. For example, if need communicate with each child agent to guide them towards their goal(s).
@@ -198,6 +200,7 @@ Each tick/session check the child agents you have and manage them. For example, 
   requiredTools: [
     'create_child_agent',
     'list_child_agents',
+    'list_owner_connections',
     'get_child_agent_status',
     'pause_child_agent',
     'stop_child_agent',

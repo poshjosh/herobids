@@ -25,7 +25,7 @@ import { SandboxEnforcer } from './agents/sandbox-enforcer.js';
 import { compareStreamIds, OUTBOUND_READ_BLOCK_MS, OUTBOUND_READ_TIMEOUT_MS, OutboundInbox, readGroupLastDeliveredId, settleTick, tickOutcome, type OutboundEntry, type TickOutcome } from './agents/outbound-inbox.js';
 import { createAgentPlatformClientFromEnv } from './agents/agent-platform-client.js';
 import { PeerReceiveGate, isPeerEnvelope } from './agents/peer-receive-gate.js';
-import { CREATE_CHILD_AGENT_TOOL_NAME, CREATOR_TOOL_NAMES, isCreateChildAgentExposed, isCreatorToolExposed } from './tools/agent-creation.js';
+import { CREATE_CHILD_AGENT_TOOL_NAME, CREATOR_TOOL_NAMES, LIST_OWNER_CONNECTIONS_TOOL_NAME, isCreateChildAgentExposed, isCreatorToolExposed, isListOwnerConnectionsExposed } from './tools/agent-creation.js';
 import type { AgentAllowance, SelectedVenueAccountResolution } from '@herobids/domain';
 import { buildIncrementalContext, estimateTokens } from './context-diff.js';
 import { resolveAgentCostProfile, type CostPreset } from './cost-profile.js';
@@ -755,6 +755,7 @@ setAgentPlatformToolAvailability(null);
 function setAgentPlatformToolAvailability(allowance: AgentAllowance | null): void {
   const circuitBlockedTools = toolCircuitBreaker.getBlockedTools(tickCount);
   toolVisibility.setToolAvailability(CREATE_CHILD_AGENT_TOOL_NAME, isCreateChildAgentExposed(allowance), circuitBlockedTools);
+  toolVisibility.setToolAvailability(LIST_OWNER_CONNECTIONS_TOOL_NAME, isListOwnerConnectionsExposed(allowance), circuitBlockedTools);
   const creatorToolsVisible = isCreatorToolExposed(allowance);
   for (const toolName of CREATOR_TOOL_NAMES) {
     toolVisibility.setToolAvailability(toolName, creatorToolsVisible, circuitBlockedTools);

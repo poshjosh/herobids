@@ -6,15 +6,19 @@ import {
   CREATOR_TOOL_NAMES,
   isCreateChildAgentExposed,
   isCreatorToolExposed,
+  isListOwnerConnectionsExposed,
 } from './agent-creation.js';
 
 const createAgentTool = agentCreationTools.find((t) => t.name === 'create_child_agent')!;
 const pauseChildTool = agentCreationTools.find((t) => t.name === 'pause_child_agent')!;
 const listChildAgentsTool = agentCreationTools.find((t) => t.name === 'list_child_agents')!;
 const deleteChildAgentTool = agentCreationTools.find((t) => t.name === 'delete_child_agent')!;
+const listOwnerConnectionsTool = agentCreationTools.find((t) => t.name === 'list_owner_connections')!;
 
-function allowance(childAgentLimit: number, childCount: number) {
+function allowance(childAgentLimit: number, childCount: number, grants: { skill?: boolean; connection?: boolean } = {}) {
   return {
+    grantAnySkillToChildren: grants.skill ?? false,
+    grantAnyConnectionToChildren: grants.connection ?? false,
     id: 'agent-1',
     childAgentLimit,
     childCount,
@@ -33,6 +37,7 @@ function fakePlatform(overrides: Partial<AgentPlatformPort> = {}): AgentPlatform
     listChildAgents: vi.fn(async () => ok([])),
     deleteChildAgent: vi.fn(async () => ok({ deleted: true as const, stopped: false })),
     readAgentDocument: vi.fn(async () => err(platformError('agent.platform.not_found', false))),
+    listOwnerConnections: vi.fn(async () => ok([])),
     ...overrides,
   };
 }
@@ -444,5 +449,45 @@ describe('delete_child_agent', () => {
 
   it('rejects unknown parameters such as a parent id', () => {
     expect(deleteChildAgentTool.parametersSchema.safeParse({ agentId: 'child-1', parentAgentId: 'x' }).success).toBe(false);
+  });
+});
+
+describe('list_owner_connections', () => {
+  it('is exposed only when the user allows granting any connection', () => {
+    expect(isListOwnerConnectionsExposed(allowance(2, 0, { connection: true }))).toBe(true);
+    expect(isListOwnerConnectionsExposed(allowance(2, 0, { skill: true }))).toBe(false);
+    expect(isListOwnerConnectionsExposed(null)).toBe(false);
+  });
+
+  it('is read-only and takes no parameters', () => {
+    expect(listOwnerConnectionsTool.category).toBe('read-database');
+    expect(listOwnerConnectionsTool.parametersSchema.safeParse({}).success).toBe(true);
+    expect(listOwnerConnectionsTool.parametersSchema.safeParse({ userId: 'other' }).success).toBe(false);
+  });
+
+  it('returns only id, provider, status and label, never a credential field', async () => {
+    const leaky = { id: 'c1', provider: 'hyperliquid', status: 'active', label: 'Main', credentialId: 'cred-secret', providerRef: '0xabc' };
+    const platform = fakePlatform({ listOwnerConnections: vi.fn(async () => ok([leaky])) });
+
+    const result = await listOwnerConnectionsTool.execute({}, makeCtx(platform));
+
+    expect(result).toMatchObject({ success: true, data: { count: 1, connections: [{ id: 'c1', provider: 'hyperliquid', status: 'active', label: 'Main' }] } });
+    expect(JSON.stringify(result)).not.toMatch(/cred-secret|0xabc/);
+  });
+
+  it('reports the platform refusal when the setting is off', async () => {
+    const platform = fakePlatform({ listOwnerConnections: vi.fn(async () => err(platformError('agent.owner_connections.not_enabled', false))) });
+
+    const result = await listOwnerConnectionsTool.execute({}, makeCtx(platform));
+
+    expect(result).toMatchObject({ success: false, errorCode: 'agent.owner_connections.not_enabled' });
+  });
+});
+
+describe('create_child_agent grant text', () => {
+  it('does not claim that only held skills can be granted', () => {
+    const text = JSON.stringify(createAgentTool.parameters) + createAgentTool.description;
+    expect(text).not.toContain('Only skills you hold');
+    expect(text).not.toContain('Only connections you hold');
   });
 });

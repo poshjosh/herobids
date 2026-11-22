@@ -516,22 +516,27 @@ describe('BASE_SKILL — long-running task pointer', () => {
 });
 
 describe('child-agent-management skill', () => {
-  it('lists exactly the seven child-management tools', () => {
+  it('lists exactly the eight child-management tools', () => {
     expect(CHILD_AGENT_MANAGEMENT_SKILL.requiredTools.slice().sort()).toEqual([
       'create_child_agent',
       'delete_child_agent',
       'get_child_agent_status',
       'list_child_agents',
+      'list_owner_connections',
       'message_child_agent',
       'pause_child_agent',
       'stop_child_agent',
     ]);
   });
 
-  it('tells the agent to report a refused create, not retry with another mode or create a second child', () => {
+  it('tells the agent to report a mode refusal, not retry with another mode or create a second child', () => {
     expect(CHILD_AGENT_MANAGEMENT_SKILL.instructions).toContain(
       'report the refusal to the user. Do not retry with another mode and do not create a second child.',
     );
+  });
+
+  it('tells the agent to report a grant refusal, not retry with other skills', () => {
+    expect(CHILD_AGENT_MANAGEMENT_SKILL.instructions).toContain('Do not retry with other skills or connections.');
   });
 
   it('is a system skill, so it is seeded with the others', () => {

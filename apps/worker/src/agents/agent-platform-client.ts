@@ -9,6 +9,7 @@ import type {
   ChildAgentStatus,
   ChildAgentSummary,
   CreateChildAgentInput,
+  OwnerConnectionSummary,
   PeerMessagingState,
   PeerMessagingStatePort,
   Result,
@@ -39,6 +40,18 @@ const AllowanceResponseSchema = z.object({
   childAgentLimit: z.number().int().min(0),
   childCount: z.number().int().min(0),
   remainingChildAllowance: z.number().int().min(0),
+  // Absent from an older API: the setting then reads as off, which is the safe default.
+  grantAnySkillToChildren: z.boolean().default(false),
+  grantAnyConnectionToChildren: z.boolean().default(false),
+});
+
+const OwnerConnectionsResponseSchema = z.object({
+  connections: z.array(z.object({
+    id: z.string().min(1),
+    provider: z.string(),
+    status: z.string(),
+    label: z.string(),
+  })),
 });
 
 const StartRefusalSchema = z.object({
@@ -156,7 +169,7 @@ export function createAgentPlatformClient(options: AgentPlatformClientOptions): 
   async function request<T>(
     method: 'GET' | 'POST' | 'DELETE',
     path: string,
-    schema: z.ZodType<T>,
+    schema: z.ZodType<T, z.ZodTypeDef, unknown>,
     body?: Record<string, unknown>,
   ): Promise<Result<T, AgentPlatformError>> {
     // One deadline covers the request and the body read, so a stalled response cannot hang the tool.
@@ -208,6 +221,12 @@ export function createAgentPlatformClient(options: AgentPlatformClientOptions): 
   return {
     async getOwnAllowance(): Promise<Result<AgentAllowance, AgentPlatformError>> {
       return request('GET', `${agentPath}/child-allowance`, AllowanceResponseSchema);
+    },
+
+    async listOwnerConnections(): Promise<Result<OwnerConnectionSummary[], AgentPlatformError>> {
+      const listed = await request('GET', `${agentPath}/owner-connections`, OwnerConnectionsResponseSchema);
+      if (!listed.ok) return listed;
+      return ok(listed.data.connections);
     },
 
     async readAgentDocument(documentId: string, offset: number): Promise<Result<AgentDocumentTextPage, AgentPlatformError>> {
