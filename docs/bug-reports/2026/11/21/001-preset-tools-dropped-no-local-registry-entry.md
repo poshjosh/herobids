@@ -1,7 +1,7 @@
 # Bug Report: the three strategy-preset tools are never visible to agents (`list_strategy_presets`, `assess_strategy_preset`, `change_strategy_preset`)
 
 - **Status:** FIXED in Herobids code (2026-11-21, uncommitted at the time of writing). Focused suites, `pnpm lint`, `pnpm build` and the full `pnpm test` pass. Two things are still open:
-  - `list_strategy_presets` and `change_strategy_preset` do not work end to end until the matching Traderton release (T1 and T2 in `.kiro/specs/preset-tools-dropped-no-local-registry/tasks.md`) is deployed. Until then Traderton answers "preset assessment not available in this context", which the proxies map to `validation.invalid_payload` (`fault: false`). `assess_strategy_preset` needs no Traderton change.
+  - `list_strategy_presets` and `change_strategy_preset` do not work end to end until a Traderton build that includes the matching fix is deployed. That fix is written and tested in the Traderton working tree (2026-11-21) but is uncommitted and not deployed. It is described in Traderton's `docs/bug-reports/2026/11/21/002-list-and-change-strategy-preset-unavailable-without-venue-account.md`. (The spec called its two parts "T1" and "T2" in `.kiro/specs/preset-tools-dropped-no-local-registry/tasks.md`; those labels were created for that spec and are not an existing Traderton plan.) Until it is deployed, Traderton answers "preset assessment not available in this context", which the proxies map to `validation.invalid_payload` (`fault: false`). `assess_strategy_preset` needs no Traderton change.
   - Staging verification is pending. Nobody has restarted a canary agent on a new image and read `Backend tool visibility` in its log. The expected result is `toolCount: 22, taggedToolCount: 22, droppedTools: []`.
 - **Severity:** Medium. A whole documented capability (an agent reviewing and switching its own strategy preset) cannot be used by any trading agent, and the review wake tells the agent to call tools it does not have. Medium rather than High only because a user can presumably still change the preset themselves in the web app. That workaround was not verified.
 - **Date:** 2026-11-21
@@ -94,7 +94,7 @@ Three thin proxy tools in `apps/worker/src/tools/strategy-presets.ts` forward to
 
 Detection: a dropped tagged tool is now one `error` log per skill (`droppedToolNames`). `backend-skill-tools.test.ts` fails when a tool in the checked-in, names-only fixture `apps/worker/src/external-backend/__fixtures__/traderton-skill-tools.json` has no local tool.
 
-Rollout: Traderton T1/T2 first, then Herobids, then release the agent image and restart a canary. A skill reload alone is not enough on an agent still running the old image.
+Rollout: the Traderton fix first (see Traderton bug report 2026/11/21/002), then Herobids, then release the agent image and restart a canary. A skill reload alone is not enough on an agent still running the old image.
 
 ## Verification (2026-11-21)
 
