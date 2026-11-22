@@ -82,9 +82,9 @@ Design: [Agent Child Grant Scope](../../../features/pending/000-agent-child-gran
 - Unchanged by either flag: the owner checks (skill selectability and entitlement, connection exists, owned by the owner and `active`), `agent.create.grant_user_only` for the children skill, the permission level cap, allowance, depth, plan total and rate.
 - A child never inherits the flags. It starts with both off, whatever its creator's settings.
 - Turning a flag off affects future creates only. Existing children keep their grants.
-- Write route: `PUT /agents/:id/child-grant-scope`, user callers only (agent keys get 403). Strict body `{ grantAnySkillToChildren: boolean, grantAnyConnectionToChildren: boolean }`. It is scoped to the owner, so another user's agent returns 404. Audit action `agent.child_grant_scope_set`, written in the same transaction, with both values as detail. `POST /agents` accepts the two fields for user callers only; agent keys are refused by the allowlist. `PATCH` and `PUT /agents/:id` do not write them.
+- Write route: `PUT /agents/:id/child-grant-scope`, user callers only (agent keys get 403). Strict body `{ grantAnySkillToChildren: boolean, grantAnyConnectionToChildren: boolean }`. It is scoped to the owner, so another user's agent returns 404. Audit action `agent.child_grant_scope_set`, written in the same transaction, with both values as detail. `POST /agents` accepts the two fields for user callers only; agent keys are refused by the allowlist. `PATCH /agents/:id` does not write them.
 - Read: `GET /agents/:id/child-allowance` returns both flags next to `childAgentLimit`. The worker reads them into its allowance, which drives the `list_owner_connections` visibility.
-- `GET /agents/:id/owner-connections` is agent-key only and self-scoped. It returns `403 agent.owner_connections.not_enabled` when `grantAnyConnectionToChildren` is off, and `404` when the agent is not the caller's own. The 200 body is `{ connections: [{ id, provider, status, label }] }`, active connections only, capped at 200.
+- `GET /agents/:id/owner-connections` is agent-key only and self-scoped. It returns `403 agent.owner_connections.not_enabled` when `grantAnyConnectionToChildren` is off, and `403` when the id is another agent's. The 200 body is `{ connections: [{ id, provider, status, label }] }`, active connections only, capped at 200.
 - Audit: the `agent.child_created` detail carries `grantedNotHeld: { skills: string[], connections: string[] }`, the requested ids the creating agent did not hold and the flags let through. Both arrays are empty when everything was held or the flags are off. Ids only.
 - The skill flag is not a hard security boundary. The broker's `add_skills` has no user-approval gate, so an agent can already assign itself any skill the owner may select (user-only skills and `base` are refused). The skill flag changes convenience and the parent's footprint. The connection flag changes account access, because a connection carries venue credentials and a child with a trading connection can trade on that account.
 - On `agent.create.grant_not_held` the tool tells the agent to report the missing ids to the user and not retry with other skills.
@@ -93,7 +93,7 @@ Design: [Agent Child Grant Scope](../../../features/pending/000-agent-child-gran
 
 A child that holds a trading skill takes the `executionDefaults` its parent passes. Design: [Agent Child Execution Mode](../../../features/pending/000-agent-child-execution-mode/001-plan.md).
 
-- `mode` is `paper` or `shadow`. The tool schema leaves `live` out. `mode` defaults to `paper` when omitted, and `executionDefaults` itself is optional for an agent caller.
+- `mode` is `paper` or `shadow`. The tool schema leaves `live` out. `mode` defaults to `paper` for a trading child when omitted, and `executionDefaults` itself is optional for an agent caller.
 - `slippageBps` is stored on the child as given. Omit it for the platform default.
 - The child gets exactly what the parent sets. There is no cap against the parent's own mode, and nothing is copied from the parent's profile. Anything not set takes the same server default as a user-created child. `capital`, `risk` and `authorizationMode` are outside the allowlist and are refused with `agent.create.field_not_allowed`.
 - `shadow` needs at least one connection granted to the child, as for a user-created agent. Without one the create is refused with a 400 connection message.
@@ -103,7 +103,7 @@ A child that holds a trading skill takes the `executionDefaults` its parent pass
 
 ### Refusal details in tool results
 
-On any 4xx the platform client attaches the bounded refusal body (`params`, validation issues) to the error. The tool puts it in the error text as `Details: {...}` after the message, with the namespaced code in `errorCode`, because the agent loop forwards only `error` and `errorCode` for a failed tool. A refused grant (`agent.create.grant_not_held`) also gets a hint: ask the user to assign the missing skills or connections, and do not retry with the same ones. Refusals such as `agent.create.live_not_supported` carry their message the same way.
+On any 4xx the platform client attaches the bounded refusal body (`params`, validation issues) to the error. The tool puts it in the error text as `Details: {...}` after the message, with the namespaced code in `errorCode`, because the agent loop forwards only `error` and `errorCode` for a failed tool. A refused grant (`agent.create.grant_not_held`) also gets a hint (`grantNotHeldHint` in `apps/worker`): ask the user to assign the missing skills or connections to the agent, or to turn on the setting that lets it grant skills or connections it does not hold, and do not retry with the same ones. Refusals such as `agent.create.live_not_supported` carry their message the same way.
 
 ## Known gaps
 

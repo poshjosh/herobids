@@ -25,8 +25,8 @@ An agent may also pause or stop its direct children, and send them messages. It 
 ## Skills and connections for child agents
 Two settings on an agent decide what it may give its children. Only you can change them, on the same card as the child allowance, or when you create the agent. Both start off.
 
-- **Give children skills it does not have.** Off: a child can get only skills the creating agent has. On: a child can get any skill you could select yourself. This changes convenience and the creating agent's footprint, not what is reachable: an agent can already add any skill you may select to itself with its `add_skills` tool, so this setting is not a security limit.
-- **Give children any of my connections.** Off: a child can get only connections the creating agent has. On: a child can get any of your active connections. This changes account access. A child with a trading connection can trade on that account, so turn it on only when you want that.
+- **Allow this agent to give children skills it does not have.** Off: a child can get only skills the creating agent has. On: a child can get any skill you could select yourself. This changes convenience and the creating agent's footprint, not what is reachable: an agent can already add any skill you may select to itself with its `add_skills` tool, so this setting is not a security limit.
+- **Allow this agent to give children any of my connections.** Off: a child can get only connections the creating agent has. On: a child can get any of your active connections. This changes account access. A child with a trading connection can trade on that account, so turn it on only when you want that.
 
 Things to know:
 

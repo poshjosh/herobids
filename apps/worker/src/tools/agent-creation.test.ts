@@ -143,6 +143,12 @@ describe('create_child_agent input schema', () => {
     expect(result.success).toBe(true);
   });
 
+  it.each([10001, 1.5, -1])('executionDefaults rejects slippageBps %s', (slippageBps) => {
+    expect(createAgentTool.parametersSchema.safeParse({ name: 'c', prompt: 'p', executionDefaults: { slippageBps } }).success).toBe(false);
+  });
+  it.each([0, 10000])('executionDefaults accepts boundary slippageBps %s', (slippageBps) => {
+    expect(createAgentTool.parametersSchema.safeParse({ name: 'c', prompt: 'p', executionDefaults: { slippageBps } }).success).toBe(true);
+  });
   it('executionDefaults is optional and may leave mode out', () => {
     expect(createAgentTool.parametersSchema.safeParse({ name: 'c', prompt: 'p' }).success).toBe(true);
     expect(createAgentTool.parametersSchema.safeParse({ name: 'c', prompt: 'p', executionDefaults: {} }).success).toBe(true);

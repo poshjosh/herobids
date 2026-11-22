@@ -468,3 +468,31 @@ describe('create_child_agent refusal detail', () => {
     expect(result.retryable).toBe(true);
   });
 });
+
+describe('agent platform client — refusal body tolerance', () => {
+  async function refuse(body: unknown) {
+    const client = makeClient(fetchReturning(jsonResponse(403, body)));
+    const result = await client.createChildAgent({ name: 'c', prompt: 'p', start: true });
+    if (result.ok) throw new Error('expected a refusal');
+    return result.error;
+  }
+  it('keeps a namespaced error code when message is not a string', async () => {
+    const error = await refuse({ error: 'agent.create.allowance_exhausted', message: 42 });
+    expect(error.code).toBe('agent.create.allowance_exhausted');
+  });
+  it('keeps a namespaced error code when params and details are malformed', async () => {
+    const error = await refuse({ error: 'agent.create.grant_not_held', params: 'nope', details: 'nope' });
+    expect(error.code).toBe('agent.create.grant_not_held');
+  });
+  it('keeps kind and some missing ids when params exceed the size cap', async () => {
+    const missing = Array.from({ length: 300 }, (_, i) => `skill-${i}`);
+    const error = await refuse({ error: 'agent.create.grant_not_held', message: 'm', params: { kind: 'skill', missing } });
+    const context = error.context as { truncated?: boolean; params?: { kind: string; missing: string[]; missingCount: number } };
+    expect(error.code).toBe('agent.create.grant_not_held');
+    expect(context.truncated).toBe(true);
+    expect(context.params?.kind).toBe('skill');
+    expect(context.params?.missing.slice(0, 3)).toEqual(['skill-0', 'skill-1', 'skill-2']);
+    expect(context.params?.missing.length).toBeLessThan(300);
+    expect(context.params?.missingCount).toBe(300);
+  });
+});

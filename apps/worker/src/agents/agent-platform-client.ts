@@ -109,15 +109,17 @@ const DocumentTextResponseSchema = z.object({
  */
 const ApiErrorBodySchema = z.object({
   error: z.string().max(100),
-  message: z.string().optional(),
-  params: z.record(z.string(), z.unknown()).optional(),
-  details: z.array(z.unknown()).optional(),
+  // Each optional field is tolerant: a malformed one is dropped, never the namespaced `error` code.
+  message: z.string().optional().catch(undefined),
+  params: z.record(z.string(), z.unknown()).optional().catch(undefined),
+  details: z.array(z.unknown()).optional().catch(undefined),
 });
 type ApiErrorBody = z.infer<typeof ApiErrorBodySchema>;
 const NAMESPACED_CODE = /^agent\.[a-z_.]+$/;
 const MAX_REFUSAL_MESSAGE_CHARS = 500;
 const MAX_REFUSAL_DETAILS = 10;
 const MAX_REFUSAL_CONTEXT_CHARS = 2_000;
+const MAX_REFUSAL_PARAM_ITEMS = 20;
 
 const STATUS_ERROR_CODES: ReadonlyArray<{ min: number; max: number; code: string; retryable: boolean }> = [
   { min: 400, max: 400, code: 'agent.platform.invalid_request', retryable: false },
@@ -155,7 +157,24 @@ function refusalContext(status: number, body: ApiErrorBody): Record<string, unkn
   if (body.params) context['params'] = body.params;
   if (body.details) context['details'] = body.details.slice(0, MAX_REFUSAL_DETAILS);
   if (JSON.stringify(context).length <= MAX_REFUSAL_CONTEXT_CHARS) return context;
+  const capped: Record<string, unknown> = { status, apiError: body.error, truncated: true };
+  if (body.params) capped['params'] = capParams(body.params);
+  if (JSON.stringify(capped).length <= MAX_REFUSAL_CONTEXT_CHARS) return capped;
   return { status, apiError: body.error, truncated: true };
+}
+
+/** Keeps scalar params (e.g. kind) and the first N items of each array, with the full count alongside. */
+function capParams(params: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (Array.isArray(value) && value.length > MAX_REFUSAL_PARAM_ITEMS) {
+      result[key] = value.slice(0, MAX_REFUSAL_PARAM_ITEMS);
+      result[`${key}Count`] = value.length;
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
 }
 
 /** Everything the container may ask of the platform as itself. */

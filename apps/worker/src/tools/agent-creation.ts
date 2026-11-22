@@ -54,7 +54,7 @@ const CreateChildAgentParamsSchema = z.object({
   connectionIds: z.array(z.string().min(1)).optional().describe('Connection ids to grant the child. Which connections are allowed depends on your grant settings: connections you hold, or any active connection of the user when the user turned on that setting (list_owner_connections then lists them). A refusal lists the missing connections; the user can assign them to you or turn on the setting.'),
   executionDefaults: z.object({
     mode: z.enum(['paper', 'shadow']).optional().describe('Execution mode for a trading child. Defaults to paper. shadow needs a connection granted to the child. live is not supported yet.'),
-    slippageBps: z.number().min(0).nullable().optional().describe('Allowed slippage in basis points (1 bps = 0.01%). Omit for the platform default.'),
+    slippageBps: z.number().int().min(0).max(10000).nullable().optional().describe('Allowed slippage in basis points (1 bps = 0.01%). Omit for the platform default.'),
   }).strict().optional().describe('Execution settings for a child that holds a trading skill. Only valid for a trading child. Omit to use the defaults.'),
   start: z.boolean().default(true).describe('Start the child after it is created. Default true. Set false to create it stopped.'),
 }).strict();
