@@ -138,12 +138,12 @@ Check before coding:
 
 ## 11. Rollout
 
-1. Refusal detail in the tool result (§4). Safe on its own and useful at once. Pass the response body through for all 4xx responses, not only grant refusals. A 400 `validation_error` was also reduced to "HTTP 400" and hid its cause. The [Agent Child Execution Mode](../000-agent-child-execution-mode/001-plan.md) plan shares this step. Do it once.
-2. Migration, policy change and the `grantedNotHeld` audit field, flags default off. No behavior change.
-3. User-only route, audit and allowance read.
-4. Worker client and tool text. Add `list_owner_connections` only if the connection flag ships.
-5. UI: card, then create flow.
-6. Docs: [agent-creation-tools.md](/Users/chinomso.ikwuagwu/dev_ai/herobids/docs/tech/agents/tools/agent-creation-tools.md) (Grant rule row and the creator action list), the parent plan's §6 note, user docs for the two settings, CHANGELOG.
+1. DONE — Refusal detail in the tool result (§4). Safe on its own and useful at once. Pass the response body through for all 4xx responses, not only grant refusals. A 400 `validation_error` was also reduced to "HTTP 400" and hid its cause. The [Agent Child Execution Mode](../000-agent-child-execution-mode/001-plan.md) plan shares this step. Do it once.
+2. PENDING — Migration, policy change and the `grantedNotHeld` audit field, flags default off. No behavior change.
+3. PENDING — User-only route, audit and allowance read.
+4. PENDING — Worker client and tool text. Add `list_owner_connections` only if the connection flag ships.
+5. PENDING — UI: card, then create flow.
+6. PENDING — Docs: [agent-creation-tools.md](/Users/chinomso.ikwuagwu/dev_ai/herobids/docs/tech/agents/tools/agent-creation-tools.md) (Grant rule row and the creator action list), the parent plan's §6 note, user docs for the two settings, CHANGELOG.
 
 Steps 1 and 2 to 3 can ship separately. Step 5 depends on 3.
 

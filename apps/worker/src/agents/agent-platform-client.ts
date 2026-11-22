@@ -89,9 +89,22 @@ const DocumentTextResponseSchema = z.object({
   totalChars: z.number().int().min(0),
 });
 
-/** The API's own namespaced error code, read from the body. Only this field is ever read. */
-const ApiErrorBodySchema = z.object({ error: z.string().max(100) });
+/**
+ * The refusal body the API sends on a 4xx: `error` (a namespaced code, or a plain one such as
+ * `validation_error`), `message`, and optional `params` (e.g. kind, missing) or `details` (Zod issues).
+ * Only these fields are read; anything else in the body is dropped.
+ */
+const ApiErrorBodySchema = z.object({
+  error: z.string().max(100),
+  message: z.string().optional(),
+  params: z.record(z.string(), z.unknown()).optional(),
+  details: z.array(z.unknown()).optional(),
+});
+type ApiErrorBody = z.infer<typeof ApiErrorBodySchema>;
 const NAMESPACED_CODE = /^agent\.[a-z_.]+$/;
+const MAX_REFUSAL_MESSAGE_CHARS = 500;
+const MAX_REFUSAL_DETAILS = 10;
+const MAX_REFUSAL_CONTEXT_CHARS = 2_000;
 
 const STATUS_ERROR_CODES: ReadonlyArray<{ min: number; max: number; code: string; retryable: boolean }> = [
   { min: 400, max: 400, code: 'agent.platform.invalid_request', retryable: false },
@@ -107,15 +120,29 @@ function platformError(code: string, message: string, retryable: boolean): Agent
   return { code, message, retryable };
 }
 
-function mapStatusError(status: number, apiCode: string | null): AgentPlatformError {
+function mapStatusError(status: number, body: ApiErrorBody | null): AgentPlatformError {
   const retryable = status === 429 || status >= 500;
-  // A namespaced code from the API is passed through on 4xx; it is one of a fixed set the server emits.
-  if (apiCode && status >= 400 && status < 500) {
-    return platformError(apiCode, `The platform refused the request (HTTP ${status}).`, retryable);
-  }
+  const isRefusal = status >= 400 && status < 500;
+  const apiCode = body && NAMESPACED_CODE.test(body.error) ? body.error : null;
   const match = STATUS_ERROR_CODES.find((entry) => status >= entry.min && status <= entry.max);
-  const code = match?.code ?? 'agent.platform.rejected';
-  return platformError(code, `The platform returned HTTP ${status}.`, match?.retryable ?? false);
+  if (isRefusal) {
+    // A namespaced code from the API is passed through; it is one of a fixed set the server emits.
+    const code = apiCode ?? match?.code ?? 'agent.platform.rejected';
+    const detail = body?.message?.trim().slice(0, MAX_REFUSAL_MESSAGE_CHARS);
+    const message = `The platform refused the request (HTTP ${status})${detail ? `: ${detail}` : '.'}`;
+    const context = body ? refusalContext(status, body) : undefined;
+    return { ...platformError(code, message, retryable), ...(context ? { context } : {}) };
+  }
+  return platformError(match?.code ?? 'agent.platform.rejected', `The platform returned HTTP ${status}.`, match?.retryable ?? false);
+}
+
+/** The structured part of a refusal, bounded so a large body cannot flood the agent's context. */
+function refusalContext(status: number, body: ApiErrorBody): Record<string, unknown> | undefined {
+  const context: Record<string, unknown> = { status, apiError: body.error };
+  if (body.params) context['params'] = body.params;
+  if (body.details) context['details'] = body.details.slice(0, MAX_REFUSAL_DETAILS);
+  if (JSON.stringify(context).length <= MAX_REFUSAL_CONTEXT_CHARS) return context;
+  return { status, apiError: body.error, truncated: true };
 }
 
 /** Everything the container may ask of the platform as itself. */
@@ -160,8 +187,7 @@ export function createAgentPlatformClient(options: AgentPlatformClientOptions): 
     }
 
     if (!response.ok) {
-      const apiCode = extractApiCode(text);
-      const failure = mapStatusError(response.status, apiCode);
+      const failure = mapStatusError(response.status, extractApiErrorBody(text));
       logger?.warn({ code: failure.code, status: response.status, method, path }, 'Agent platform call rejected');
       return err(failure);
     }
@@ -230,12 +256,11 @@ export function createAgentPlatformClient(options: AgentPlatformClientOptions): 
   };
 }
 
-function extractApiCode(text: string): string | null {
+function extractApiErrorBody(text: string): ApiErrorBody | null {
   if (!text) return null;
   try {
     const parsed = ApiErrorBodySchema.safeParse(JSON.parse(text));
-    if (parsed.success && NAMESPACED_CODE.test(parsed.data.error)) return parsed.data.error;
-    return null;
+    return parsed.success ? parsed.data : null;
   } catch {
     return null;
   }

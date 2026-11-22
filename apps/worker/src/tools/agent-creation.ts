@@ -75,9 +75,26 @@ function notConfigured(): ToolResult {
   return { success: false, error: 'agent platform is not configured for this agent', errorCode: NOT_CONFIGURED_CODE, retryable: false };
 }
 
-/** Maps a platform failure to a structured tool error. Only the namespaced code and fixed message leave the client. */
+const GRANT_NOT_HELD_CODE = 'agent.create.grant_not_held';
+
+/** Remedy for a refused grant: the agent cannot fix it itself, so it is told who can. */
+function grantNotHeldHint(context: Record<string, unknown> | undefined): string {
+  const params = context?.['params'];
+  const kind = params && typeof params === 'object' ? (params as Record<string, unknown>)['kind'] : undefined;
+  const noun = kind === 'connection' ? 'connections' : 'skills';
+  return `Ask the user to assign the missing ${noun} to you, or to turn on the setting that lets you grant ${noun} you do not hold. Do not retry with the same ${noun}.`;
+}
+
+/**
+ * Maps a platform failure to a structured tool error. On a 4xx the client attaches the bounded
+ * refusal detail (params such as kind and missing, validation issues); it goes into the error text
+ * because the agent loop forwards only `error` and `errorCode` for a failed tool.
+ */
 function platformFailure(error: AgentPlatformError): ToolResult {
-  return { success: false, error: error.message, errorCode: error.code, retryable: error.retryable };
+  const parts = [error.message];
+  if (error.context) parts.push(`Details: ${JSON.stringify(error.context)}`);
+  if (error.code === GRANT_NOT_HELD_CODE) parts.push(grantNotHeldHint(error.context));
+  return { success: false, error: parts.join(' '), errorCode: error.code, retryable: error.retryable };
 }
 
 // --- create_child_agent ---

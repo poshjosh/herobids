@@ -98,10 +98,10 @@ No change to `AllowanceResponseSchema` or the allowance route.
 
 ## 8. Rollout
 
-1. Pass the refusal body through for all 4xx (shared with the grant-scope plan).
-2. Route change: allowlist, schema requirement for agent callers, live refusal, metrics outcome, audit field.
-3. Worker tool schema and description, skill text.
-4. Docs: [agent-creation-tools.md](/Users/chinomso.ikwuagwu/dev_ai/herobids/docs/tech/agents/tools/agent-creation-tools.md) (tool inputs, the allowlist, the live refusal), the parent plan §5 note, CHANGELOG.
+1. DONE — Pass the refusal body through for all 4xx (shared with the grant-scope plan).
+2. PENDING — Route change: allowlist, schema requirement for agent callers, live refusal, metrics outcome, audit field.
+3. PENDING — Worker tool schema and description, skill text.
+4. PENDING — Docs: [agent-creation-tools.md](/Users/chinomso.ikwuagwu/dev_ai/herobids/docs/tech/agents/tools/agent-creation-tools.md) (tool inputs, the allowlist, the live refusal), the parent plan §5 note, CHANGELOG.
 
 Steps 1 and 2 can ship separately. No `.env` or operator config change, so no `.example` update. No migration.
 
@@ -127,3 +127,19 @@ Replacing the refusal with that design is the point at which `agent.create.live_
 ## 11. Open Questions
 
 None.
+
+## Outstanding Issues
+
+Grouped by rollout item. Items shared with the grant-scope plan are recorded once, here.
+
+### Item 1 — Refusal body passthrough (shared)
+
+- Medium: `ApiErrorBodySchema` is strict. A malformed optional field (`message: 123`, `details: {}`) makes the whole parse fail and loses the namespaced error code. Make optional fields tolerant (`.catch(undefined)`) and add a test.
+- Medium: `refusalContext` drops `params` when over 2,000 chars, losing `kind` and the missing ids. Cap array lengths inside `params` instead, and test with 100+ ids.
+- Medium: the grant hint mentions a "grant setting" that does not exist until grant-scope steps 2 to 5 ship. Fine if those ship soon, otherwise reword.
+- Low: add a test for another tool (e.g. delete 404) pinning the shared passthrough.
+- Low: assert `error.context` in the 403 `forbidden` test.
+- Low: oversized-body test should assert which branch ran.
+- Low: consider an allowlist of validation-detail fields (`path`, `message`, `code`).
+- Low: `Details` repeats `apiError`, which duplicates `errorCode`.
+- Low: replace the `params as Record<string, unknown>` cast in `grantNotHeldHint` with a small Zod parse.

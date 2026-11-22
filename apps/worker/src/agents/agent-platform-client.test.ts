@@ -129,7 +129,7 @@ describe('agent platform client', () => {
     expect(result).toEqual({ ok: true, data: body });
   });
 
-  it('a 403 response maps to a namespaced forbidden error without the response body', async () => {
+  it('a 403 with a non-namespaced code maps to a namespaced forbidden error and drops unknown body fields', async () => {
     const fetchImpl = fetchReturning(jsonResponse(403, { error: 'forbidden', echo: API_KEY }));
     const result = await makeClient(fetchImpl).pauseChildAgent('child-1');
 
@@ -304,3 +304,113 @@ describe('agent platform client — child listing and deletion', () => {
   });
 });
 
+
+function makeToolContext(client: ReturnType<typeof makeClient>): ToolContext {
+  return {
+    agentId: AGENT_ID,
+    sessionId: 'session-1',
+    phase: 'judge',
+    executionMode: 'paper',
+    permissionLevel: 'standard',
+    redis: {
+      hset: vi.fn(async () => 1),
+      hget: vi.fn(async () => null),
+      hgetall: vi.fn(async () => null),
+      hdel: vi.fn(async () => 0),
+      publish: vi.fn(async () => 0),
+    },
+    publishToInbound: vi.fn(async () => undefined),
+    agentPlatform: client,
+  };
+}
+
+async function createChild(fetchImpl: typeof fetch) {
+  const tool = agentCreationTools.find((t) => t.name === 'create_child_agent')!;
+  return tool.execute({ name: 'Research child', prompt: 'Summarise.' }, makeToolContext(makeClient(fetchImpl)));
+}
+
+describe('create_child_agent refusal detail', () => {
+  it('a refused grant tells the agent which skills are missing and who can fix it', async () => {
+    const result = await createChild(fetchReturning(jsonResponse(403, {
+      error: 'agent.create.grant_not_held',
+      message: 'The creating agent does not hold every requested skill.',
+      params: { kind: 'skill', missing: ['skill-a', 'skill-b'] },
+      rule: 'grant',
+    })));
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('agent.create.grant_not_held');
+    expect(result.retryable).toBe(false);
+    expect(result.error).toContain('does not hold every requested skill');
+    expect(result.error).toContain('skill-a');
+    expect(result.error).toContain('skill-b');
+    expect(result.error).toContain('Ask the user to assign the missing skills');
+    expect(result.error).toContain('turn on the setting');
+  });
+
+  it('a refused connection grant names connections in the remedy', async () => {
+    const result = await createChild(fetchReturning(jsonResponse(403, {
+      error: 'agent.create.grant_not_held',
+      message: 'The creating agent does not hold every requested connection.',
+      params: { kind: 'connection', missing: ['conn-1'] },
+    })));
+
+    expect(result.error).toContain('conn-1');
+    expect(result.error).toContain('assign the missing connections');
+  });
+
+  it('a 400 validation_error keeps its cause instead of only the status', async () => {
+    const result = await createChild(fetchReturning(jsonResponse(400, {
+      error: 'validation_error',
+      details: [{ code: 'custom', path: ['executionDefaults'], message: 'executionDefaults is required' }],
+    })));
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('agent.platform.invalid_request');
+    expect(result.retryable).toBe(false);
+    expect(result.error).toContain('HTTP 400');
+    expect(result.error).toContain('executionDefaults is required');
+  });
+
+  it('a 4xx carries the message of a non-grant refusal', async () => {
+    const result = await createChild(fetchReturning(jsonResponse(403, {
+      error: 'agent.create.allowance_exhausted',
+      message: 'Child agent limit reached.',
+    })));
+
+    expect(result.errorCode).toBe('agent.create.allowance_exhausted');
+    expect(result.error).toContain('Child agent limit reached.');
+    expect(result.error).not.toContain('Ask the user to assign');
+  });
+
+  it('a 4xx with an unparseable body still reports the status', async () => {
+    const result = await createChild(vi.fn(async () => new Response('<html>nope</html>', { status: 400 })));
+
+    expect(result.errorCode).toBe('agent.platform.invalid_request');
+    expect(result.error).toContain('HTTP 400');
+  });
+
+  it('bounds the detail of an oversized refusal body and never echoes unknown fields or the key', async () => {
+    const details = Array.from({ length: 50 }, (_, i) => ({ path: ['field', i], message: 'x'.repeat(200) }));
+    const result = await createChild(fetchReturning(jsonResponse(400, { error: 'validation_error', details, echo: API_KEY })));
+
+    expect(result.error!.length).toBeLessThan(3_000);
+    expect(result.error).not.toContain(API_KEY);
+  });
+
+  it('a 5xx stays retryable and carries no response body detail', async () => {
+    const result = await createChild(fetchReturning(jsonResponse(503, { error: 'unavailable', message: 'secret internals', params: { a: 1 } })));
+
+    expect(result.errorCode).toBe('agent.platform.unavailable');
+    expect(result.retryable).toBe(true);
+    expect(result.error).not.toContain('secret internals');
+    expect(result.error).not.toContain('Details');
+  });
+
+  it('a 429 stays retryable', async () => {
+    const result = await createChild(fetchReturning(jsonResponse(429, { error: 'rate_limited', message: 'slow down' })));
+
+    expect(result.errorCode).toBe('agent.platform.rate_limited');
+    expect(result.retryable).toBe(true);
+  });
+});

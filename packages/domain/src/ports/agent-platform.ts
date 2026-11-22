@@ -2,7 +2,8 @@ import type { Result, DomainError } from '../result.js';
 
 /**
  * A failed platform API call from inside an agent container. `code` is a namespaced
- * dot-string (e.g. `agent.platform.timeout`) and never carries response bodies.
+ * dot-string (e.g. `agent.platform.timeout`). On a 4xx refusal, `context` carries the bounded
+ * refusal detail from the response body (status, apiError, params, details); never a raw body.
  */
 export interface AgentPlatformError extends DomainError {
   retryable: boolean;
