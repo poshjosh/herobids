@@ -374,7 +374,7 @@ Decision & rationale:
   newly-created one shows it as a placeholder default (field empty). This is
   cosmetic and expected.
 
-### 6. Operator config / `.env` twins — PENDING
+### 6. Operator config / `.env` twins — DONE
 
 Files:
 - `config/default.yaml` (confirm `agentRuntime.nonTradingDefaults.tickIntervalMs`
@@ -570,3 +570,9 @@ Grouped by plan item.
 - Low: add a regression test for a trading agent with a legacy stored 86400000 (current tests cover non-trading only).
 - Low: optional domain test for `resolveTradingTickIntervalMs` with stored 24h and a changed (12h) operator default; docs now state that a legacy 24h kept after the operator default changes is not replaced when a trading skill is added.
 - Note: the "zero behaviour change" claim holds for cadence; the add-trading-skill replacement rule depends on the current operator default.
+
+### Item 6 — Operator config
+
+- No code or config change needed: `agentRuntime.nonTradingDefaults.tickIntervalMs` exists in `config/default.yaml` (single operator source; schema default is `NON_TRADING_DEFAULT_TICK_INTERVAL_MS`), the API and worker both read it from `appConfig`, and no env var was added (no `.example` change).
+- Low: optional-parameter fallbacks to the domain constant remain in `agents.ts`, `agent-interactivity.ts` and `agent-session-manager.ts` (kept because many tests call the routes without the argument).
+- Not verified: the implementer did not read `docs/best-practices/configuration.md` for this item.
