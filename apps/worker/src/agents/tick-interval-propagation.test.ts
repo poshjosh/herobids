@@ -3,8 +3,11 @@
  * resolveEffectiveTickIntervalMs (non-trading tick resolver plan, item 2).
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import type { RuntimeDescriptor } from '@herobids/domain';
+
+const logMocks = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }));
+vi.mock('../logger.js', () => ({ createLogger: () => logMocks }));
 import { resolveRuntimeCapabilityDescriptor } from '@herobids/db';
 import type { Database } from '@herobids/db';
 import { AgentSessionManager } from './agent-session-manager.js';
@@ -151,6 +154,51 @@ async function launchAgentConfig(opts: {
   expect(runtimeLauncher.launch).toHaveBeenCalledTimes(1);
   return runtimeLauncher.launch.mock.calls[0]![0].agentConfig as Record<string, unknown>;
 }
+
+describe('AgentSessionManager launch tick logging', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const WARN_FRAGMENT = 'external skills without capability families';
+  const warnedAboutFamilies = () => logMocks.warn.mock.calls.some((call) => String(call[1]).includes(WARN_FRAGMENT));
+
+  it('logs agent id, trading classification, tick source and resolved tick at launch', async () => {
+    await launchAgentConfig({ hasTrading: false, stored: null, operatorDefault: OPERATOR_NON_TRADING_TICK_MS });
+    expect(logMocks.info).toHaveBeenCalledWith(
+      { agentId: 'agent-1', hasTradingCapability: false, tickSource: 'non_trading_default', resolvedTickIntervalMs: OPERATOR_NON_TRADING_TICK_MS },
+      'Resolved agent tick interval at launch',
+    );
+    expect(warnedAboutFamilies()).toBe(false);
+  });
+
+  it('logs source user for an explicit tick and no warning', async () => {
+    await launchAgentConfig({ hasTrading: true, stored: 900_000 });
+    expect(logMocks.info).toHaveBeenCalledWith(
+      expect.objectContaining({ hasTradingCapability: true, tickSource: 'user', resolvedTickIntervalMs: 900_000 }),
+      'Resolved agent tick interval at launch',
+    );
+    expect(warnedAboutFamilies()).toBe(false);
+  });
+
+  it('warns when a null-tick agent is non-trading but has an external skill with empty families', async () => {
+    const capabilityDescriptor = await resolveThroughDb([externalSkillRow([])]);
+    await launchAgentConfig({ hasTrading: false, stored: null, operatorDefault: OPERATOR_NON_TRADING_TICK_MS, capabilityDescriptor });
+    const warn = logMocks.warn.mock.calls.find((call) => String(call[1]).includes(WARN_FRAGMENT));
+    expect(warn?.[0]).toMatchObject({
+      agentId: 'agent-1',
+      skills: [{ skillId: 'ext_crypto_bot_management', sourceRef: 'traderton/skills/crypto-bot-management' }],
+    });
+  });
+
+  it('does not warn when the external skill carries the trading family or the tick is explicit', async () => {
+    const trading = await resolveThroughDb([externalSkillRow(['trading'])]);
+    await launchAgentConfig({ hasTrading: false, stored: null, capabilityDescriptor: trading });
+    const empty = await resolveThroughDb([externalSkillRow([])]);
+    await launchAgentConfig({ hasTrading: false, stored: 3_600_000, capabilityDescriptor: empty });
+    expect(warnedAboutFamilies()).toBe(false);
+  });
+});
 
 describe('AgentSessionManager tickIntervalMs resolution', () => {
   it('gives a non-trading agent with no stored tick the operator non-trading default', async () => {

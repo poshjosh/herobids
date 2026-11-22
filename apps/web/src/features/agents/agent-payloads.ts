@@ -169,8 +169,8 @@ export interface UpdateAgentPayloadInput {
     lightModel: string;
     heavyModel: string;
   };
+  /** Tick field untouched: omit tickIntervalMs from the PATCH so the API keeps (or replaces) the stored value. */
   preserveOriginalTickIntervalMs?: boolean;
-  originalTickIntervalMs?: number | null;
   style?: string;
   strategyPreset?: string;
   /** When true, enable platform preset assessment for this agent. */
@@ -287,7 +287,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   dailySpendBudgetUsd: number | null;
   risk?: Record<string, unknown> | null;
   executionDefaults?: Record<string, unknown> | null;
-  tickIntervalMs: number | null;
+  tickIntervalMs?: number | null;
   capital?: string | null;
   provider: string | null;
   lightModel: string | null;
@@ -334,13 +334,11 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   if (input.maxSlippageBps) executionDefaults.slippageBps = parseInt(input.maxSlippageBps, 10);
   // Omit slippageBps when empty (rather than sending null) — ExecutionDefaultsSchema rejects null
 
-  // Tick field untouched => resend the stored value; touched and empty => null (use the default).
-  const parsedTickInterval = input.preserveOriginalTickIntervalMs
-    ? undefined
-    : getTickIntervalMsOrThrow(input.tickIntervalMins);
-  const tickIntervalMs = input.preserveOriginalTickIntervalMs
-    ? (input.originalTickIntervalMs ?? null)
-    : parsedTickInterval ?? null;
+  // PATCH semantics: tick field untouched => omit (the API keeps the stored value and may replace it
+  // when a trading skill is added); touched and empty => null (use the default); touched with a value => that value.
+  const tickIntervalPatch: { tickIntervalMs?: number | null } = input.preserveOriginalTickIntervalMs
+    ? {}
+    : { tickIntervalMs: getTickIntervalMsOrThrow(input.tickIntervalMins) ?? null };
 
   // Resolve wakePreferences for update:
   // - subscribedSources provided with items → send wakePreferences with those sources
@@ -362,7 +360,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     // the form holds blanks, and sending them would clear the stored values.
     ...(profileWritable ? { risk } : {}),
     ...(profileWritable && executionDefaults.mode !== null ? { executionDefaults } : {}),
-    tickIntervalMs,
+    ...tickIntervalPatch,
     ...(profileWritable ? { capital: input.capital.trim() || null } : {}),
     ...(normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) ? { openPositionEscalationToJudgePolicy: normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) } : {}),
     provider: includeIntelligence && input.modelOverrideEnabled ? input.modelForm.provider || null : null,

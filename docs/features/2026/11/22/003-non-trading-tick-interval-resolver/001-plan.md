@@ -576,3 +576,14 @@ Grouped by plan item.
 - No code or config change needed: `agentRuntime.nonTradingDefaults.tickIntervalMs` exists in `config/default.yaml` (single operator source; schema default is `NON_TRADING_DEFAULT_TICK_INTERVAL_MS`), the API and worker both read it from `appConfig`, and no env var was added (no `.example` change).
 - Low: optional-parameter fallbacks to the domain constant remain in `agents.ts`, `agent-interactivity.ts` and `agent-session-manager.ts` (kept because many tests call the routes without the argument).
 - Not verified: the implementer did not read `docs/best-practices/configuration.md` for this item.
+
+### Final gap review rework (H1/H2)
+
+- Fixed: edit form omits an untouched tick (API's add-trading-skill replacement now runs for legacy 24h agents); launch info log and warn in the worker; cost-profile tests; real-DB PATCH null/omit/explicit integration test (wired into `test:integration`).
+- Medium: the integration test has no case for adding a trading skill to a legacy 86400000 agent with the tick omitted (200, tick replaced) or with an explicit 86400000 (400). Covered only by web DOM and API unit tests.
+- Medium: the launch warn in `agent-session-manager.ts` fires for any null-tick, non-trading-resolved agent with an external skill that has empty capability families, so it will be noisy for legitimate non-trading external skills (no dedupe). Lower to info, dedupe, or tighten.
+- Medium (pre-existing, commit `7d17d4ae`): `EditAgentModal` builds `skillIds` by filtering `form.skillIds` through the first page (20) of selectable skills, so a skill picked via picker search that is not on that page is silently dropped on save. It cannot cause a wrong tick (the API sees no skill change), but it is silent data loss and also hides search-picked trading skills from the edit form's trading logic. Fix separately: keep a map of seen skills, have `SkillPicker.onChange` return skill objects, or stop filtering and let the API reject non-selectable ids.
+- Medium: API vs worker trading classification can still differ for a skill whose DB capability families are missing from the API's registered maps (warn/log added, alignment not done because `hasSkillCapabilityFamily` is a sync lookup used widely).
+- Medium: removing the last trading skill leaves an explicit fast tick in place (documented in `docs/tech/agents/runtime-policy-and-reasoning.md`, no new behaviour).
+- Low: `runtime-policy-propagation.integration.test.ts` not extended; `TRUNCATE ... CASCADE` NOTICE noise and an obscure `'9999_all.sql'` sentinel in the new integration test.
+- Not verified: no browser/visual check of the edit form.

@@ -106,6 +106,17 @@ Existing agents (no data migration):
 - Adding a trading skill later replaces a stored tick with the style cadence only
   if it still equals the current operator default. A legacy 24 h kept after the
   operator default changed is not replaced and stays as an explicit tick.
+- The replacement only runs when the PATCH omits `tickIntervalMs`. The web edit
+  form omits the field while it is untouched, so a legacy 24 h agent that gains a
+  trading skill moves to the style cadence. A tick sent in the request, even one
+  equal to the stored value, is treated as a deliberate choice and is validated
+  against the max hold as is (the max-hold check runs on the post-replacement
+  tick). An edit that clears the field sends `null`.
+- Removing the last trading skill changes nothing about the tick (current
+  behaviour, no reverse replacement). A stored explicit tick, such as the style's
+  30 min, stays, so the agent now runs a non-trading workload at a fast cadence
+  until the creator edits or clears it. A stored `null` resolves to the operator
+  default (24 h) at the next launch, with the max hold validated against that.
 - Their edit form shows 24 h as a filled value. A new non-trading agent has
   `null`, so its edit form shows an empty field with the effective default notice.
 - Old non-trading agents with a null tick now get the operator default at launch

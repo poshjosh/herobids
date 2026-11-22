@@ -21,7 +21,18 @@ vi.mock('../../lib/api-client.js', async (importOriginal) => {
       getConnections: vi.fn().mockResolvedValue({ connections: [] }),
       listDocuments: vi.fn().mockResolvedValue({ documents: [] }),
     },
-    skills: { ...actual.skills, list: vi.fn().mockResolvedValue({ skills: [] }) },
+    skills: {
+      ...actual.skills,
+      list: vi.fn().mockResolvedValue({
+        skills: [{
+          id: 'traderton/skills/crypto-trading',
+          name: 'Crypto trading',
+          description: 'Trade crypto',
+          isSelectable: true,
+          capabilityFamilies: ['trading'],
+        }],
+      }),
+    },
     auth: { ...actual.auth, me: vi.fn().mockResolvedValue({ id: 'user-1', isAdmin: false, email: 'a@example.com', chatAddresses: [] }) },
     ai: {
       ...actual.ai,
@@ -34,7 +45,21 @@ vi.mock('../../lib/api-client.js', async (importOriginal) => {
   };
 });
 
-vi.mock('./SkillPicker.js', () => ({ SkillPicker: () => null }));
+const TRADING_SKILL_ID = 'traderton/skills/crypto-trading';
+
+vi.mock('./SkillPicker.js', () => ({
+  SkillPicker: ({ selectedSkillIds, onChange, initialSkills }: { selectedSkillIds: string[]; onChange: (ids: string[]) => void; initialSkills?: unknown[] }) => (
+    // Enabled only once the skills query has resolved, so the added skill is selectable.
+    <button
+      type="button"
+      data-testid="add-trading-skill"
+      disabled={(initialSkills ?? []).length === 0}
+      onClick={() => onChange([...selectedSkillIds, TRADING_SKILL_ID])}
+    >
+      add trading skill
+    </button>
+  ),
+}));
 vi.mock('../notifications/NotificationsBlock.js', () => ({ NotificationsBlock: () => null }));
 
 import { EditAgentModal } from './EditAgentModal.js';
@@ -102,6 +127,12 @@ function maxHoldInput(): HTMLInputElement {
   return document.getElementById('rp-maxHoldDurationMs') as HTMLInputElement;
 }
 
+async function addTradingSkill(): Promise<void> {
+  const button = screen.getByTestId('add-trading-skill') as HTMLButtonElement;
+  await waitFor(() => expect(button.disabled).toBe(false));
+  fireEvent.click(button);
+}
+
 async function save(): Promise<Record<string, unknown>> {
   fireEvent.submit(document.getElementById('edit-agent-form')!);
   await waitFor(() => expect(updateAgent).toHaveBeenCalledTimes(1));
@@ -118,13 +149,30 @@ afterEach(() => {
 });
 
 describe('EditAgentModal tick interval', () => {
-  it('hydrates a null stored tick as an empty field with the generic hint and saves it unchanged as null', async () => {
+  it('hydrates a null stored tick as an empty field with the generic hint and omits it when untouched', async () => {
     renderModal(makeAgent({ tickIntervalMs: null, tickIntervalSource: 'unset', effectiveTickIntervalMs: null }));
     expect(tickInput().value).toBe('');
     const hint = screen.getByText(DEFAULT_HINT);
     expect(tickInput().getAttribute('aria-describedby')).toBe(hint.id);
     const body = await save();
-    expect(body.tickIntervalMs).toBeNull();
+    expect(body).not.toHaveProperty('tickIntervalMs');
+  });
+
+  it('omits the tick when a trading skill is added to a legacy 24h agent so the API can replace it', async () => {
+    renderModal(makeAgent({ skillIds: [], tickIntervalMs: 86_400_000, tickIntervalSource: 'user', effectiveTickIntervalMs: 86_400_000 }));
+    expect(tickInput().value).toBe('1440');
+    await addTradingSkill();
+    const body = await save();
+    expect(body.skillIds).toEqual([TRADING_SKILL_ID]);
+    expect(body).not.toHaveProperty('tickIntervalMs');
+  });
+
+  it('sends the typed tick when a trading skill is added and the user also edits the tick', async () => {
+    renderModal(makeAgent({ skillIds: [], tickIntervalMs: 86_400_000, tickIntervalSource: 'user', effectiveTickIntervalMs: 86_400_000 }));
+    await addTradingSkill();
+    fireEvent.change(tickInput(), { target: { value: '30' } });
+    const body = await save();
+    expect(body.tickIntervalMs).toBe(1_800_000);
   });
 
   it('shows the server effective default as helper text without filling the field or persisting it', async () => {
@@ -133,7 +181,7 @@ describe('EditAgentModal tick interval', () => {
     const notice = screen.getByText(/Using the default for this agent's skills: every 24h/);
     expect(tickInput().getAttribute('aria-describedby')).toBe(notice.id);
     const body = await save();
-    expect(body.tickIntervalMs).toBeNull();
+    expect(body).not.toHaveProperty('tickIntervalMs');
   });
 
   it('drops the effective-default notice once the user types a value, and sends it as explicit', async () => {
@@ -144,12 +192,12 @@ describe('EditAgentModal tick interval', () => {
     expect(body.tickIntervalMs).toBe(3_600_000);
   });
 
-  it('hydrates a stored explicit tick as that value and preserves it when untouched', async () => {
+  it('hydrates a stored explicit tick as that value and leaves it to the API (omitted) when untouched', async () => {
     renderModal(makeAgent({ tickIntervalMs: 5_400_000, tickIntervalSource: 'user', effectiveTickIntervalMs: 5_400_000 }));
     expect(tickInput().value).toBe('90');
     expect(screen.queryByText(DEFAULT_HINT)).toBeNull();
     const body = await save();
-    expect(body.tickIntervalMs).toBe(5_400_000);
+    expect(body).not.toHaveProperty('tickIntervalMs');
   });
 
   it('sends null (use default) when the user clears a stored explicit value', async () => {
@@ -166,7 +214,7 @@ describe('EditAgentModal tick interval', () => {
     expect(tickInput().value).toBe('1440');
     expect(maxHoldInput().value).toBe('');
     const body = await save();
-    expect(body.tickIntervalMs).toBe(86_400_000);
+    expect(body).not.toHaveProperty('tickIntervalMs');
     expect(body.runtimePolicyOverrides ?? null).toBeNull();
   });
 

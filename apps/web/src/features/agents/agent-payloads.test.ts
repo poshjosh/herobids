@@ -364,7 +364,7 @@ describe('agent payload builders', () => {
     });
   });
 
-  it('preserves an existing legacy millisecond cadence when the edit form leaves it untouched', () => {
+  it('omits tickIntervalMs from the edit payload when the field is untouched', () => {
     expect(buildUpdateAgentPayload({
       name: 'Momentum scout',
       prompt: 'Watch BTC and trade breakouts.',
@@ -387,12 +387,44 @@ describe('agent payload builders', () => {
       stopLossCooldownSecs: '',
       tickIntervalMins: '2',
       preserveOriginalTickIntervalMs: true,
-      originalTickIntervalMs: 90_000,
       capital: '',
       modelOverrideEnabled: false,
       modelForm: { provider: '', lightModel: '', heavyModel: '' },
       emailDelivery: 'inherit',
-    }).tickIntervalMs).toBe(90_000);
+    })).not.toHaveProperty('tickIntervalMs');
+  });
+
+  it.each([
+    { label: 'touched and empty sends null', tickIntervalMins: '', expected: null },
+    { label: 'touched with a value sends that value', tickIntervalMins: '2', expected: 120_000 },
+  ])('edit payload: $label', ({ tickIntervalMins, expected }) => {
+    expect(buildUpdateAgentPayload({
+      name: 'Momentum scout',
+      prompt: 'Watch BTC.',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technicalPreFilterEnabled: false,
+      technical: null,
+      skillIds: [],
+      hasBotManagementSkill: false,
+      executionMode: '',
+      hasTradingCapability: false,
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      dailyMaxLossPct: '',
+      maxDrawdownPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+      tickIntervalMins,
+      preserveOriginalTickIntervalMs: false,
+      capital: '',
+      modelOverrideEnabled: false,
+      modelForm: { provider: '', lightModel: '', heavyModel: '' },
+      emailDelivery: 'inherit',
+    }).tickIntervalMs).toBe(expected);
   });
 
   it('buildUpdateAgentPayload preserves both intelligence and technical fields in hybrid mode', () => {
@@ -799,7 +831,6 @@ describe('agent payload builders', () => {
       stopLossCooldownSecs: '',
       tickIntervalMins: '1.5',
       preserveOriginalTickIntervalMs: false,
-      originalTickIntervalMs: 90_000,
       capital: '',
       modelOverrideEnabled: false,
       modelForm: { provider: '', lightModel: '', heavyModel: '' },

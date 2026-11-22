@@ -127,6 +127,33 @@ describe('resolveAgentCostProfile', () => {
     expect(profile.tickIntervalMs).toBe(1_800_000);
   });
 
+  it('applies the non-trading 24h tick the session manager resolves (explicit 86_400_000 beats the preset)', () => {
+    const profile = resolveAgentCostProfile({
+      provider: 'openai',
+      heavyModel: 'gpt-4.1',
+      lightModel: 'gpt-4.1-mini',
+      costPreset: 'premium',
+      baseTickIntervalMs: 900_000,
+      tickIntervalMs: 86_400_000,
+    });
+
+    expect(profile.tickIntervalMs).toBe(86_400_000);
+  });
+
+  it('gives a trading agent whose tick was left undefined by the session manager the preset cadence, not 24h', () => {
+    const profile = resolveAgentCostProfile({
+      provider: 'openai',
+      heavyModel: 'gpt-4.1',
+      lightModel: 'gpt-4.1-mini',
+      costPreset: 'premium',
+      baseTickIntervalMs: 900_000,
+      tickIntervalMs: undefined,
+    });
+
+    expect(profile.tickIntervalMs).toBe(600_000);
+    expect(profile.tickIntervalMs).not.toBe(86_400_000);
+  });
+
   it('falls back to baseTickIntervalMs when neither preset nor explicit interval is set', () => {
     const profile = resolveAgentCostProfile({
       provider: 'openai',

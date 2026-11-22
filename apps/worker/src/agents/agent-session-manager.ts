@@ -501,12 +501,38 @@ export class AgentSessionManager {
 
         // Explicit stored tick wins; non-trading unset gets the operator default;
         // trading unset stays omitted so cost-profile/style cadence applies.
-        const { tickIntervalMs: effectiveTickIntervalMs } = resolveEffectiveTickIntervalMs({
+        const hasTradingCapability = deriveHasTradingCapability(runtimeDescriptor.resolvedSkills);
+        const { tickIntervalMs: effectiveTickIntervalMs, source: tickSource } = resolveEffectiveTickIntervalMs({
           storedTickIntervalMs: agent.tickIntervalMs ?? null,
-          hasTradingCapability: deriveHasTradingCapability(runtimeDescriptor.resolvedSkills),
+          hasTradingCapability,
           nonTradingDefaultTickIntervalMs:
             this.config.nonTradingDefaultTickIntervalMs ?? NON_TRADING_DEFAULT_TICK_INTERVAL_MS,
         });
+        logger.info(
+          { agentId: agent.id, hasTradingCapability, tickSource, resolvedTickIntervalMs: effectiveTickIntervalMs },
+          'Resolved agent tick interval at launch',
+        );
+        // The API classifies trading from skill ids / registered backend refs; the worker from the stored
+        // capabilityFamilies of the resolved skill rows. An installed external skill whose row has no families
+        // is classified non-trading here, so a null tick would launch at the 24h default. The worker cannot
+        // see the API's backend-ref registry (the backend config is only forwarded to the container), so this
+        // warns on the observable symptom instead of the exact disagreement.
+        if (tickSource === 'non_trading_default') {
+          const emptyFamilyExternalSkills = runtimeDescriptor.resolvedSkills.filter(
+            (skill) => typeof skill.sourceRef === 'string'
+              && (!Array.isArray(skill.capabilityFamilies) || skill.capabilityFamilies.length === 0),
+          );
+          if (emptyFamilyExternalSkills.length > 0) {
+            logger.warn(
+              {
+                agentId: agent.id,
+                resolvedTickIntervalMs: effectiveTickIntervalMs,
+                skills: emptyFamilyExternalSkills.map((skill) => ({ skillId: skill.id, sourceRef: skill.sourceRef })),
+              },
+              'Agent with an unset tick has external skills without capability families; classified non-trading, launching at the non-trading default tick. If one of them is a trading skill, set its capability families or an explicit tick',
+            );
+          }
+        }
 
         const agentConfig: Record<string, unknown> = {
           name: agent.name,
@@ -560,7 +586,7 @@ export class AgentSessionManager {
             agent.style ?? null,
             agent.runtimePolicyOverrides ?? null,
             // D6: style-default active hours apply only to trading agents.
-            { hasTradingCapability: deriveHasTradingCapability(runtimeDescriptor.resolvedSkills) },
+            { hasTradingCapability },
           ),
         };
         const { rawKey: agentApiKey, keyHash: apiKeyHash } = generateAgentApiKey();

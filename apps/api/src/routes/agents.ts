@@ -1696,8 +1696,10 @@ export async function agentRoutes(
     }
 
     // Adding a trading skill moves a non-trading default tick to the style's trading tick.
-    // A tick sent in the request is never replaced, and an unset (null) tick stays unset:
+    // A tick sent in the request is never replaced (clients must omit an untouched tick; an explicit value,
+    // even one equal to the stored one, is a deliberate choice), and an unset (null) tick stays unset:
     // the style cadence applies at launch, and writing it would turn a default into a user value.
+    // The max-hold validation below runs on the post-replacement tick.
     const addsTradingSkill = mergedIsTradingCapable && !hasSkillCapabilityFamily(existingSkillIds, 'trading');
     if (addsTradingSkill && parsed.data.tickIntervalMs === undefined && agent.tickIntervalMs !== null) {
       const scheduleStyle = AgentStyleSchema.catch('balanced').parse(parsed.data.style ?? agent.style);
