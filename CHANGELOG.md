@@ -12,8 +12,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Creating an agent with either grant setting on now records both settings in the `agent.created` audit detail, so a widened grant scope set at creation is as visible as one set through `PUT /agents/:id/child-grant-scope`. The keys are left out when both settings are off.
 ### Changed
 - Agent style defaults now follow the strategy preset tiers. Careful uses the Minimal cost preset (90 min tick, 450 min max hold), Balanced uses Standard (30 min tick, 90 min max hold) and Bold stays Premium (10 min tick). New agents in the create form default to Balanced, which is now Standard instead of Premium. Daily spend hints ($1/$5/$30) are unchanged. Existing agents keep their saved values.
-
-### Changed
 - The non-trading 24 h default tick interval is now decided by the API and worker, not the web form. The create and edit forms leave the tick interval empty unless the user types one, and no longer derive or check max hold on the client. The API stores `null` when the interval is omitted, returns `effectiveTickIntervalMs` and `tickIntervalSource` on agent responses, validates max hold against the effective tick, and the worker applies `agentRuntime.nonTradingDefaults.tickIntervalMs` at launch. `PATCH` with `tickIntervalMs: null` clears back to the default. This fixes create failing with `maxHoldDurationMs must be >= tickIntervalMs` for a trading skill picked through the skill picker's search. Existing agents with a stored 24 h tick are unchanged (no migration). See `docs/tech/agents/runtime-policy-and-reasoning.md`.
 
 ### Fixed
