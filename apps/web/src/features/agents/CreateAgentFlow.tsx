@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { getAllowedReasoningLevels, RUNTIME_POLICY_CEILINGS, ReasoningLevelSchema, generateAgentNameCandidate, type ReasoningLevel } from '@herobids/domain';
+import { CHILD_AGENT_MANAGEMENT_SKILL_ID, getAllowedReasoningLevels, RUNTIME_POLICY_CEILINGS, ReasoningLevelSchema, generateAgentNameCandidate, type ReasoningLevel } from '@herobids/domain';
 import { agents as agentsApi, capabilities as capabilitiesApi, connections as connectionsApi, auth as authApi, ai as aiApi, providerCatalog as providerCatalogApi, type Skill } from '../../lib/api-client.js';
 import { Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, resolvePromptTemplate, resolveGoalPlaceholderKey, selectedSkillsHaveCapabilityFamily } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';
+import { ChildGrantScopeFields } from './ChildGrantScopeFields.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
 import { NotificationsBlock } from '../notifications/NotificationsBlock.js';
@@ -93,6 +94,9 @@ interface IntentState {
   subscribedSources: string[];
   pendingFiles: File[];
   permissionLevel: 'restricted' | 'standard' | 'full';
+  /** Only sent when the children skill is selected and the plan allows children. */
+  grantAnySkillToChildren: boolean;
+  grantAnyConnectionToChildren: boolean;
 }
 
 type CreateAgentOAuthDraft = {
@@ -194,6 +198,8 @@ export function CreateAgentFlow({
     subscribedSources: ['watch_threshold', 'discovery_delta', 'regime_change'],
     pendingFiles: [],
     permissionLevel: 'standard',
+    grantAnySkillToChildren: false,
+    grantAnyConnectionToChildren: false,
     };
   });
   const [modelTouched, setModelTouched] = useState(false);
@@ -405,6 +411,8 @@ export function CreateAgentFlow({
   );
   const showIntelligence = intent.capabilityMode === 'intelligence' || intent.capabilityMode === 'hybrid';
   const requiresTradingSetup = hasCapabilityFamily(selectedSkills, 'trading');
+  const childAgentLimitCeiling = meQuery.data?.planEntitlements?.limits.childAgentLimitCeiling ?? 0;
+  const showChildGrantScope = intent.skillIds.includes(CHILD_AGENT_MANAGEMENT_SKILL_ID) && childAgentLimitCeiling > 0;
   const availableConnections = (tradingConnectionsQuery.data?.connections ?? []).filter(
     (connection) => connection.status === 'active',
   );
@@ -500,7 +508,7 @@ export function CreateAgentFlow({
       const technicalPayload = (!hasStrategyPreset && intent.technicalPreFilterEnabled && requiresTradingSetup)
         ? technicalFormStateToPayload(intent.technicalConfig, intent.venue, intent.venueType as 'orderbook' | 'swap')
         : null;
-      const agent = await agentsApi.create(buildCreateAgentPayload({
+      const basePayload = buildCreateAgentPayload({
         name: intent.name,
         goal: intent.goal,
         capabilityMode: intent.capabilityMode,
@@ -535,7 +543,14 @@ export function CreateAgentFlow({
         platformAssessmentReviewIntervalHours: intent.platformAssessmentReviewIntervalHours,
         authorizationMode: intent.authorizationMode,
         permissionLevel: intent.permissionLevel,
-      }));
+      });
+      const agent = await agentsApi.create({
+        ...basePayload,
+        ...(showChildGrantScope ? {
+          grantAnySkillToChildren: intent.grantAnySkillToChildren,
+          grantAnyConnectionToChildren: intent.grantAnyConnectionToChildren,
+        } : {}),
+      });
 
       // Upload any documents selected during creation
       if (intent.pendingFiles && intent.pendingFiles.length > 0) {
@@ -803,6 +818,20 @@ export function CreateAgentFlow({
               </div>
             )}
           </div>
+
+          {showChildGrantScope && (
+            <div style={{ marginBottom: '20px' }}>
+              <ChildGrantScopeFields
+                idPrefix="create-agent"
+                value={{
+                  grantAnySkillToChildren: intent.grantAnySkillToChildren,
+                  grantAnyConnectionToChildren: intent.grantAnyConnectionToChildren,
+                }}
+                onChange={(scope) => setIntent((state) => ({ ...state, ...scope }))}
+                disabled={mutation.isPending}
+              />
+            </div>
+          )}
 
           </>}
             connectionInAiTab

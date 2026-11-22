@@ -1100,6 +1100,10 @@ export interface Agent {
   creatorId?: string | null;
   /** Maximum direct child agents this agent may create; set by the user only. */
   childAgentLimit?: number;
+  /** User-set: this agent may give children skills it does not hold. */
+  grantAnySkillToChildren?: boolean;
+  /** User-set: this agent may give children any of the owner's active connections. */
+  grantAnyConnectionToChildren?: boolean;
   createdAt: string;
   updatedAt: string;
   activeSession?: { id: string; status: string; lastHeartbeatAt: string; startedAt: string; startupProgress?: AgentStartupProgress | null } | null;
@@ -1311,6 +1315,8 @@ export interface AgentDeletePreview {
 export interface AgentChildAllowance {
   id: string;
   childAgentLimit: number;
+  grantAnySkillToChildren: boolean;
+  grantAnyConnectionToChildren: boolean;
   childCount: number;
   remainingChildAllowance: number;
 }
@@ -1348,6 +1354,9 @@ export const agents = {
     strategyPreset?: string | null;
     skillPresetId?: string | null;
     authorizationMode?: 'direct' | 'approval_required' | null;
+    /** Sent only when the children skill is selected. */
+    grantAnySkillToChildren?: boolean;
+    grantAnyConnectionToChildren?: boolean;
   }) =>
     request<Agent>('/agents', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: string, data: {
@@ -1389,6 +1398,11 @@ export const agents = {
     request<{ childAgentLimit: number }>(`/agents/${id}/child-limit`, {
       method: 'PUT',
       body: JSON.stringify({ childAgentLimit }),
+    }),
+  setChildGrantScope: (id: string, scope: { grantAnySkillToChildren: boolean; grantAnyConnectionToChildren: boolean }) =>
+    request<{ grantAnySkillToChildren: boolean; grantAnyConnectionToChildren: boolean }>(`/agents/${id}/child-grant-scope`, {
+      method: 'PUT',
+      body: JSON.stringify(scope),
     }),
   listDocuments: (agentId: string) =>
     request<AgentDocument[]>(`/agents/${agentId}/documents`),

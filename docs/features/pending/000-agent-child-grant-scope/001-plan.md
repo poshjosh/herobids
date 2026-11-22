@@ -142,7 +142,7 @@ Check before coding:
 2. DONE — Migration, policy change and the `grantedNotHeld` audit field, flags default off. No behavior change.
 3. DONE — User-only route, audit and allowance read.
 4. DONE — Worker client and tool text. Add `list_owner_connections` only if the connection flag ships.
-5. PENDING — UI: card, then create flow.
+5. DONE — UI: card, then create flow.
 6. PENDING — Docs: [agent-creation-tools.md](/Users/chinomso.ikwuagwu/dev_ai/herobids/docs/tech/agents/tools/agent-creation-tools.md) (Grant rule row and the creator action list), the parent plan's §6 note, user docs for the two settings, CHANGELOG.
 
 Steps 1 and 2 to 3 can ship separately. Step 5 depends on 3.
@@ -199,3 +199,14 @@ Refusal-body passthrough (rollout step 1) issues are recorded in the execution-m
 - Low: add API integration cases for inactive-connection exclusion and the 200-row cap.
 - Unverified: `search_skills` output fields (id, slug, ref) were checked by the implementer; reviewer asks to confirm against tests.
 - Finding (§9 check 1): the broker's `add_skills` handler has no user-approval gate. It refuses user-only skills and `base`, then applies the owner's selectability/entitlement check. An agent can self-assign any skill the owner may select. The skill flag changes convenience and footprint; the connection flag changes access.
+
+### Item 5 — UI
+
+- Low: `scopeDraft` is not reconciled with a refetched saved value (stale draft could overwrite changes from another tab).
+- Low: draft reappears when the limit goes 0 → above 0; untested, probably fine.
+- Low: create-flow flags stay in `intent` after the children skill is deselected (not sent; checkboxes reappear pre-ticked).
+- Low: check `--color-warning` contrast in both themes; create flow passes no `describedBy`.
+- Low: trailing whitespace noise in `ChildAgentAllowanceCard.tsx`.
+- Unverified: `hi`/`ar` strings need native-speaker review; no test for create-flow checkboxes disabled while submitting.
+- Unverified: no browser/visual check done (fieldset layout, RTL, contrast).
+- Integration to confirm: `PUT /child-grant-scope` accepted at limit 0.

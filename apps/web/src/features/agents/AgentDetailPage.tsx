@@ -547,7 +547,7 @@ export function AgentDetails({ agentId }: { agentId: string }) {
           </Card>
         )}
 
-        <ChildAgentAllowanceCard agent={agent} ceiling={childAgentLimitCeiling} />
+        <ChildAgentAllowanceCard key={agent.id} agent={agent} ceiling={childAgentLimitCeiling} />
 
         <Card>
           <details>
