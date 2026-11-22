@@ -101,7 +101,7 @@ No change to `AllowanceResponseSchema` or the allowance route.
 1. DONE — Pass the refusal body through for all 4xx (shared with the grant-scope plan).
 2. DONE — Route change: allowlist, schema requirement for agent callers, live refusal, metrics outcome, audit field.
 3. DONE — Worker tool schema and description, skill text.
-4. PENDING — Docs: [agent-creation-tools.md](/Users/chinomso.ikwuagwu/dev_ai/herobids/docs/tech/agents/tools/agent-creation-tools.md) (tool inputs, the allowlist, the live refusal), the parent plan §5 note, CHANGELOG.
+4. DONE — Docs: [agent-creation-tools.md](/Users/chinomso.ikwuagwu/dev_ai/herobids/docs/tech/agents/tools/agent-creation-tools.md) (tool inputs, the allowlist, the live refusal), the parent plan §5 note, CHANGELOG.
 
 Steps 1 and 2 can ship separately. No `.env` or operator config change, so no `.example` update. No migration.
 
@@ -170,3 +170,13 @@ Grouped by rollout item. Items shared with the grant-scope plan are recorded onc
 - Low: no test that `executionDefaults` is omitted from the body when undefined.
 - Low: no worker test tying `agent.create.live_not_supported` to the refusal body passthrough.
 - Low: "defaults to paper / live not supported" repeated in three places.
+
+### Item 4 — Docs
+
+- Medium: `agent-creation-tools.md` says the child gets "exactly what the parent sets" and server defaults otherwise; backed by tests but not traced end to end.
+- Medium: `slippageBps` "stored as given" — confirm persistence into the trading profile write.
+- Medium: "`mode` defaults to `paper`" should read "for a trading child".
+- Low: vague "trading and non-trading agents can create each other" wording.
+- Low: Known gaps have no owner or tracking reference.
+- Low: CHANGELOG passthrough bullet could sit under Changed/Fixed.
+- Low: parent plan's stale bullet could use a strikethrough.

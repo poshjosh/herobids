@@ -20,7 +20,7 @@ If the allowance has not been read, `create_child_agent` and the creator tools a
 
 | Tool | Input | What it does |
 |---|---|---|
-| `create_child_agent` | `name` (1–100 chars), `prompt` (1–8000 chars), optional `skillIds`, optional `connectionIds`, optional `start` (boolean, default `true`) | Creates a child agent. With `start` true (the default) the child is started through the same start the user uses. With `start: false` it stays `stopped`. Returns the new agent ID, its depth, its `status`, `duplicate`, `started`, `startError` (set when the start was refused; the child then stays created and stopped), `childAgentLimit` and `remainingChildAllowance`. A create whose name matches a direct child of the same parent, created within `agentCreation.duplicateChildWindowSeconds`, returns that child with `duplicate: true` and `started: false`. It creates and starts nothing, so a retry never makes a second child. Grants are limited to skills and connections the creating agent holds. The children skill cannot be granted (`skill.user_only`). |
+| `create_child_agent` | `name` (1–100 chars), `prompt` (1–8000 chars), optional `skillIds`, optional `connectionIds`, optional `executionDefaults` (`{ mode?: 'paper' \| 'shadow', slippageBps?: number \| null }`, trading child only), optional `start` (boolean, default `true`) | Creates a child agent. With `start` true (the default) the child is started through the same start the user uses. With `start: false` it stays `stopped`. Returns the new agent ID, its depth, its `status`, `duplicate`, `started`, `startError` (set when the start was refused; the child then stays created and stopped), `childAgentLimit` and `remainingChildAllowance`. A create whose name matches a direct child of the same parent, created within `agentCreation.duplicateChildWindowSeconds`, returns that child with `duplicate: true` and `started: false`. It creates and starts nothing, so a retry never makes a second child. Grants are limited to skills and connections the creating agent holds. The children skill cannot be granted (`skill.user_only`). See [Child execution mode](#child-execution-mode). |
 | `list_child_agents` | none | Lists the direct children: ID, name, status, depth, number of their own children and `lastStartRefusal`. Returns an empty list when there are none. |
 | `get_child_agent_status` | `agentId` | Returns the status, runtime state, depth and `lastStartRefusal` of one direct child. |
 | `pause_child_agent` | `agentId`, optional `reason` (max 500 chars) | Pauses one direct child. The pause is recorded as requested by the creator. |
@@ -46,7 +46,8 @@ All inputs are strict. Unknown keys, such as `creatorId`, `parentAgentId`, `dept
 | Grant | `agent.create.grant_not_held` | A requested skill or connection is not held by the creating agent. |
 | User-only grant | `agent.create.grant_user_only` | The requested skill is the children skill, which only the user may assign. |
 | Permission | `agent.create.permission_exceeds_parent` | The child's permission level cannot exceed the parent's. |
-| Fields | `agent.create.field_not_allowed` | An input field is outside the allowlist. |
+| Fields | `agent.create.field_not_allowed` | An input field is outside the allowlist: `name`, `prompt`, `skillIds`, `connectionIds`, `executionDefaults`, `start`. |
+| Live mode | `agent.create.live_not_supported` | `executionDefaults.mode` is `live`. HTTP 403, so the tool does not retry. Checked after the allowlist and schema checks, before any boundary write. |
 
 The child is created first, in its own transaction. The start runs after that commit. A refused start (for example a missing model selection or a skill that cannot be ported) is not a creation failure: the child stays `stopped` and the response carries `started: false` and `startError` with the namespaced code.
 
@@ -67,11 +68,30 @@ Operator settings are in [Configuration: Agent creation limits](../../configurat
 - If the platform API is slow, down or refuses a request, the tool returns a retryable error and the agent continues.
 - The agent cannot start a child itself. A child whose launch was refused stays `stopped` until the user starts it. The skill tells the agent to report `lastStartRefusal` to the user and not to create another child to retry.
 
+### Child execution mode
+
+A child that holds a trading skill takes the `executionDefaults` its parent passes. Design: [Agent Child Execution Mode](../../../features/pending/000-agent-child-execution-mode/001-plan.md).
+
+- `mode` is `paper` or `shadow`. The tool schema leaves `live` out. `mode` defaults to `paper` when omitted, and `executionDefaults` itself is optional for an agent caller.
+- `slippageBps` is stored on the child as given. Omit it for the platform default.
+- The child gets exactly what the parent sets. There is no cap against the parent's own mode, and nothing is copied from the parent's profile. Anything not set takes the same server default as a user-created child. `capital`, `risk` and `authorizationMode` are outside the allowlist and are refused with `agent.create.field_not_allowed`.
+- `shadow` needs at least one connection granted to the child, as for a user-created agent. Without one the create is refused with a 400 connection message.
+- `executionDefaults` on a child with no trading skill keeps the existing 400 ("Execution mode is only valid for agents with trading skills"). Trading and non-trading agents can create each other.
+- `live` is refused with `403 agent.create.live_not_supported` and no child is written. The API enforces this even though the tool schema does not offer `live`. It is a fixed rule that reads no parent data. User-created agents are unaffected. The metrics outcome is `live_refused`.
+- `agent.child_created` audit detail carries the child's resolved `executionMode` (null for a non-trading child).
+
+### Refusal details in tool results
+
+On any 4xx the platform client attaches the bounded refusal body (`params`, validation issues) to the error. The tool puts it in the error text as `Details: {...}` after the message, with the namespaced code in `errorCode`, because the agent loop forwards only `error` and `errorCode` for a failed tool. A refused grant (`agent.create.grant_not_held`) also gets a hint: ask the user to assign the missing skills or connections, and do not retry with the same ones. Refusals such as `agent.create.live_not_supported` carry their message the same way.
+
 ## Known gaps
 
 - `message_child_agent` says replies count against the same limit. This is not yet true. A child's reply goes through the child's own `send_message` and does not use the creator-child bucket.
 - The creator's pause and stop audit entry is written after the state change, so the two are not atomic.
 - A refused launch is not pushed to the parent. The parent sees `lastStartRefusal` only when it calls `get_child_agent_status` or `list_child_agents`. The parent's tick has no child-status wake source, so it does not get a note.
+- Default-capital provisioning for agent-created trading children is unverified.
+- `slippageBps` has no upper bound in the tool schema.
+- The API accepts `executionDefaults: null`, but the tool does not.
 
 ## Assigning the children skill
 

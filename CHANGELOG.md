@@ -5,6 +5,9 @@ All notable changes to this project will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+### Added
+- Agents can create trading children. `create_child_agent` accepts `executionDefaults` (`mode` `paper` or `shadow`, `slippageBps`); the child takes what the parent sets and defaults to `paper`. `live` is refused with `agent.create.live_not_supported` (HTTP 403). See `docs/tech/agents/tools/agent-creation-tools.md`.
+- 4xx refusal bodies now reach the agent in tool results.
 
 ### Fixed
 
