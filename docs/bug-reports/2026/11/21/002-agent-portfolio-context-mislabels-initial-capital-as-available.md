@@ -45,7 +45,7 @@ Approved by the owner on 2026-11-21. Not started. Depends on traderton's new fie
 
 ## Implementation Plan (coordinator task list)
 1. DONE - Map traderton summary fields (initialCapital, equity, availableCapital, realized/unrealized P&L, drawdown, pnlSinceCapitalChange, fundingIncluded, asOf) into portfolio state; delete `available + exposure` equity derivation and infer-once startingCapital; stamp freshness with boundary `asOf`.
-2. PENDING - Prompt/portfolio block: show equity, total P&L, lifetime realized, P&L since capital change, funding label; rename "Available capital"; size perPositionCap from real available capital.
+2. DONE - Prompt/portfolio block: show equity, total P&L, lifetime realized, P&L since capital change, funding label; rename "Available capital"; size perPositionCap from real available capital.
 3. PENDING - Platform-side debounced account-summary refresh after fills/position close and at each decision wake.
 4. PENDING - Redis `startingCapital` readers aligned; update fixtures/tests (`runtime-composition.test.ts`, `hybrid-agent-evaluator.test.ts`, `venue-intelligence.test.ts`); CHANGELOG.
 
@@ -54,3 +54,7 @@ Approved by the owner on 2026-11-21. Not started. Depends on traderton's new fie
 - Medium: equity/netPnl freeze at the last summary read while `recalculatePortfolioFromPositions` still updates unrealized/exposure from live positions (resolved by item 3 refresh; prompt should show asOf/age next to equity).
 - Medium: api `AccountSummary.capital`/`capitalAvailable` now carry initialCapital (label "Capital" still implies a balance); rename to initialCapital/initialCapitalSet and update i18n label `capability.trading.attr.capital` + visual check.
 - Low: tool descriptions in `apps/worker/src/tools/account.ts` and `tool-schemas.ts` still say "usable/available capital"; hybrid-agent-evaluator.test.ts fixtures not updated with new fields; worker/api tsconfig exclude tests so lint doesn't typecheck them; `positions[]` of the summary is not folded into openPositions.
+### Item 2 (code review, no High)
+- Item 1 label rename done for the UI label ("Initial capital", en/ar/hi - hi/ar translations need human check); API fields `capital`/`capitalAvailable` deliberately kept (rename to `initialCapital`/`initialCapitalSet` deferred). Tool descriptions in `apps/worker/src/tools/account.ts` and `tool-schemas.ts` fixed. `hybrid-agent-evaluator.test.ts` fixtures updated.
+- Medium: visual check of the capability card (en/ar/hi) not done.
+- Low: `buildAccountLines(..., Date.now())` makes tick context time-dependent (inject clock); unrealized line lacks "excluding funding" label; no boundary test at 9,999.99/10,000 for `usd()`; `portfolio-lines.ts`/`runtime-composition.ts` mutual (type-only) import.

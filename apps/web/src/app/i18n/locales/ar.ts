@@ -1047,7 +1047,7 @@ export const messages: Record<string, string> = {
   'capability.trading.attr.connection': 'الاتصال',
   'capability.trading.attr.executionMode': 'وضع التنفيذ',
   'capability.trading.attr.authorization': 'التفويض',
-  'capability.trading.attr.capital': 'رأس المال',
+  'capability.trading.attr.capital': 'رأس المال الأولي',
   'capability.trading.attr.openPositions': 'الصفقات المفتوحة',
   'capability.trading.attr.positionSizeMode': 'وضع حجم الصفقة',
   'capability.trading.attr.warnings': 'التحذيرات',

@@ -721,6 +721,20 @@ describe('runtime composition helpers', () => {
     expect(performance.riskAdjustedReturn).toBeNull();
   });
 
+  it('renders initial capital, equity, available capital and funding-excluded P&L in the portfolio block', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    foldSummary(state, lossSummary);
+
+    const userContext = buildTickUserContext(state, []);
+
+    expect(userContext).toContain('Initial capital (configured allocation): $1000.00');
+    expect(userContext).toMatch(/Equity \(as of 2026-11-21T10:00:00\.000Z, [^)]*excluding funding\): \$850\.00/);
+    expect(userContext).toContain('Available capital (equity minus margin used): $550.00');
+    expect(userContext).toContain('Lifetime realized P&L (all time, excluding funding): -$200.00');
+    expect(userContext).toContain('Realized P&L since capital change (since start; capital never changed, excluding funding): -$200.00');
+    expect(userContext).toContain('Drawdown: -15.00% (peak equity $1000.00)');
+  });
+
   it('keeps starting capital equal to initial capital instead of inferring it from available capital and exposure', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
     foldSummary(state, lossSummary);

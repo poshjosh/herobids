@@ -383,7 +383,7 @@ function buildSchemaRegistry(): Record<string, SchemaEntry> {
     schema: {
       type: 'string',
       pattern: '^\\d+(\\.\\d+)?$',
-      description: 'Target position size as a decimal string. Use get_account_summary() to determine available capital and compute sizing. A typical starting range is 5–10% of capital. Required — must be provided.',
+      description: 'Target position size as a decimal string. Use get_account_summary() to read equity and available capital (equity minus margin used) and compute sizing. A typical starting range is 5–10% of equity. Required — must be provided.',
     },
     example: '0.5',
     version: '1.0.0',

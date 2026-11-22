@@ -1,11 +1,14 @@
 import type { HybridPricingIdentity, RuntimeFreshness, RuntimeVenueSignal, TechnicalScanState, RuntimePortfolioSummary, RuntimePositionSnapshot } from './runtime-composition.js';
 import { fmtUsd } from './fmt.js';
+import { buildAccountLines } from './portfolio-lines.js';
 
 export interface HybridPromptInput {
   scan: TechnicalScanState;
   portfolio: RuntimePortfolioSummary;
   openPositions: RuntimePositionSnapshot[];
   maxPositions: number;
+  /** Clock for account-summary age labels (defaults to Date.now()). */
+  now?: number;
   /** Agent memory snapshot for hybrid prompt enrichment. */
   agentMemory?: Record<string, { value: unknown; updatedAt?: string }> | null;
   /** Max inline memory keys rendered. */
@@ -105,9 +108,7 @@ export function buildHybridPrompt(input: HybridPromptInput): string {
   lines.push('');
 
   // Capital and position context
-  const formattedCapital = fmtUsd(portfolio.availableCapitalUsd);
-  const capitalStr = formattedCapital === 'unavailable' ? 'unknown' : formattedCapital;
-  lines.push(`Available capital: ${capitalStr}`);
+  lines.push(...buildAccountLines(portfolio, input.now ?? Date.now()));
   lines.push(`Max positions: ${maxPositions}`);
 
   const activePositions = openPositions.filter((p) => p.side !== 'flat');
@@ -317,9 +318,12 @@ export function buildHybridPrompt(input: HybridPromptInput): string {
   lines.push('Do not re-analyze indicators — trust the scanner\'s scores.');
   lines.push('Size recommendations:');
   lines.push(`- Max ${maxPositions} positions total, ${activePositions.length} currently open`);
-  if (portfolio.availableCapitalUsd !== null && portfolio.availableCapitalUsd !== undefined && portfolio.availableCapitalUsd > 0) {
-    const perPositionCap = portfolio.availableCapitalUsd / Math.max(1, maxPositions);
-    lines.push(`- Suggested max ${maxPositions} positions, ~${fmtUsd(perPositionCap)} each`);
+  // Sized from the real balance (available capital, else equity), never the configured allocation.
+  const sizingBase = portfolio.availableCapitalUsd ?? portfolio.equityUsd;
+  const sizingLabel = portfolio.availableCapitalUsd !== null ? 'available capital' : 'equity';
+  if (sizingBase !== null && sizingBase > 0) {
+    const perPositionCap = sizingBase / Math.max(1, maxPositions);
+    lines.push(`- Suggested ~${fmtUsd(perPositionCap)} per position (${sizingLabel} ÷ ${maxPositions} max positions)`);
   }
   lines.push('');
   lines.push('Respond ONLY with a JSON array:');

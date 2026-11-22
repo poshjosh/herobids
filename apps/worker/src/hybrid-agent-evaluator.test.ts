@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { callLlmProvider } from '@herobids/llm';
 import { runHybridEvaluator, canRouteToHybridEvaluator } from './hybrid-agent-evaluator.js';
-import { createRuntimeCompositionState, type HybridPricingIdentity, type RuntimeVenueSignal, type TechnicalScanState } from './runtime-composition.js';
+import { createRuntimeCompositionState, type HybridPricingIdentity, type RuntimePortfolioSummary, type RuntimeVenueSignal, type TechnicalScanState } from './runtime-composition.js';
 import { buildHybridPrompt } from './hybrid-agent-prompt.js';
 
 vi.mock('@herobids/llm', async (importOriginal) => {
@@ -82,6 +82,30 @@ function makeScan(): TechnicalScanState {
   };
 }
 
+function makePortfolio(overrides: Partial<RuntimePortfolioSummary> = {}): RuntimePortfolioSummary {
+  return {
+    exposureUsd: 0,
+    realizedPnlUsd: 0,
+    unrealizedPnlUsd: 0,
+    drawdownPct: 0,
+    availableCapitalUsd: 10_000,
+    netDelta: 0,
+    freshness: { state: 'fresh' },
+    initialCapitalUsd: 10_000,
+    equityUsd: 10_000,
+    marginUsedUsd: 0,
+    returnPct: 0,
+    peakEquityUsd: 10_000,
+    lifetimeRealizedPnlUsd: 0,
+    pnlSinceCapitalChangeUsd: 0,
+    capitalChangedAt: null,
+    unrealizedComplete: true,
+    fundingIncluded: true,
+    asOf: '2026-11-21T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
 function makeState() {
   const state = createRuntimeCompositionState(baseDescriptor);
   state.metrics.portfolio.availableCapitalUsd = 10_000;
@@ -141,7 +165,7 @@ describe('runHybridEvaluator', () => {
     });
 
     const prompt = mockedCallLlmProvider.mock.calls[0]?.[1].messages[0]?.content;
-    expect(prompt).toContain('Available capital: $10.0K');
+    expect(prompt).toContain('Available capital (equity minus margin used): $10.0K');
     expect(prompt).toContain('| BTC-PERP | BTC | 0.92 |');
   });
 
@@ -495,15 +519,7 @@ describe('runHybridEvaluator', () => {
 
 describe('buildHybridPrompt enrichments', () => {
   const scan = makeScan();
-  const portfolio = {
-    exposureUsd: 0,
-    realizedPnlUsd: 0,
-    unrealizedPnlUsd: 0,
-    drawdownPct: 0,
-    availableCapitalUsd: 10_000,
-    netDelta: 0,
-    freshness: { state: 'fresh' as const },
-  };
+  const portfolio = makePortfolio();
   const openPositions: Array<{
     instrumentId: string; side: string; size: string; entryPrice: string | null;
     unrealizedPnlUsd: number | null; openedAt: string | null;
@@ -897,10 +913,7 @@ describe('scanner wake routes to single-shot hybrid evaluator', () => {
 
 describe('buildHybridPrompt venue intelligence (Phase 1)', () => {
   const scan = makeScan();
-  const portfolio = {
-    exposureUsd: 0, realizedPnlUsd: 0, unrealizedPnlUsd: 0, drawdownPct: 0,
-    availableCapitalUsd: 10_000, netDelta: 0, freshness: { state: 'fresh' as const },
-  };
+  const portfolio = makePortfolio();
   const openPositions: Array<{
     instrumentId: string; side: string; size: string; entryPrice: string | null;
     unrealizedPnlUsd: number | null; openedAt: string | null;
@@ -1234,10 +1247,7 @@ describe('buildHybridPrompt venue intelligence (Phase 1)', () => {
 
 describe('buildHybridPrompt exit review enrichment (Phase 2)', () => {
   const baseScan = makeScan();
-  const portfolio = {
-    exposureUsd: 0, realizedPnlUsd: 0, unrealizedPnlUsd: 0, drawdownPct: 0,
-    availableCapitalUsd: 10_000, netDelta: 0, freshness: { state: 'fresh' as const },
-  };
+  const portfolio = makePortfolio();
 
   it('renders P&L, hold duration, and current price for matched open positions', () => {
     const scan: TechnicalScanState = {
@@ -1322,10 +1332,7 @@ describe('buildHybridPrompt exit review enrichment (Phase 2)', () => {
 // ── Phase 3: Scanner Rejection Landscape ─────────────────────────────────────
 
 describe('buildHybridPrompt rejection landscape (Phase 3)', () => {
-  const portfolio = {
-    exposureUsd: 0, realizedPnlUsd: 0, unrealizedPnlUsd: 0, drawdownPct: 0,
-    availableCapitalUsd: 10_000, netDelta: 0, freshness: { state: 'fresh' as const },
-  };
+  const portfolio = makePortfolio();
   const openPositions: Array<{
     instrumentId: string; side: string; size: string; entryPrice: string | null;
     unrealizedPnlUsd: number | null; openedAt: string | null;
@@ -1385,6 +1392,82 @@ describe('buildHybridPrompt rejection landscape (Phase 3)', () => {
 
     expect(prompt).toContain('20 instruments scanned, 17 rejected (3 passed filters)');
     expect(prompt).not.toContain('Rejection breakdown:');
+  });
+});
+
+// ── Account block: initial capital vs equity vs available capital ────────────
+
+describe('buildHybridPrompt account block', () => {
+  const NOW = Date.parse('2026-11-21T10:03:00.000Z');
+  const lossPortfolio = makePortfolio({
+    initialCapitalUsd: 1000,
+    equityUsd: 850,
+    marginUsedUsd: 300,
+    availableCapitalUsd: 550,
+    returnPct: -15,
+    drawdownPct: -15,
+    peakEquityUsd: 1000,
+    lifetimeRealizedPnlUsd: -200,
+    pnlSinceCapitalChangeUsd: -120,
+    capitalChangedAt: '2026-11-20T08:00:00.000Z',
+    unrealizedPnlUsd: 50,
+  });
+  const build = (portfolio: RuntimePortfolioSummary, maxPositions = 5) =>
+    buildHybridPrompt({ scan: makeScan(), portfolio, openPositions: [], maxPositions, now: NOW });
+
+  it('shows initial capital and equity separately so a loss is visible', () => {
+    const prompt = build(lossPortfolio);
+
+    expect(prompt).toContain('Initial capital (configured allocation): $1000.00');
+    expect(prompt).toContain('Equity (as of 2026-11-21T10:00:00.000Z, 3m ago): $850.00');
+    expect(prompt).toContain('Drawdown: -15.00% (peak equity $1000.00)');
+  });
+
+  it('labels available capital as equity minus margin used', () => {
+    const prompt = build(lossPortfolio);
+
+    expect(prompt).toContain('Available capital (equity minus margin used): $550.00');
+    expect(prompt).toContain('Margin used: $300.00');
+  });
+
+  it('shows lifetime realized P&L and P&L since capital change as separate lines', () => {
+    const prompt = build(lossPortfolio);
+
+    expect(prompt).toContain('Lifetime realized P&L (all time');
+    expect(prompt).toContain('Lifetime realized P&L (all time): -$200.00');
+    expect(prompt).toContain('Realized P&L since capital change (since 2026-11-20T08:00:00.000Z): -$120.00');
+  });
+
+  it('timestamps unrealized P&L as point-in-time and flags it when incomplete', () => {
+    const prompt = build({ ...lossPortfolio, unrealizedComplete: false });
+
+    expect(prompt).toContain('Unrealized P&L (point-in-time, as of 2026-11-21T10:00:00.000Z, 3m ago; incomplete, some open positions have no mark): $50.00');
+  });
+
+  it('labels P&L as excluding funding only when funding is not included', () => {
+    expect(build({ ...lossPortfolio, fundingIncluded: false })).toContain('Lifetime realized P&L (all time, excluding funding)');
+    expect(build({ ...lossPortfolio, fundingIncluded: true })).not.toContain('excluding funding');
+    expect(build({ ...lossPortfolio, fundingIncluded: null })).not.toContain('excluding funding');
+  });
+
+  it('sizes the suggested per-position amount from available capital, not initial capital', () => {
+    const prompt = build(lossPortfolio, 5);
+
+    expect(prompt).toContain('Suggested ~$110 per position (available capital ÷ 5 max positions)');
+    expect(prompt).not.toContain('~$200 per position');
+  });
+
+  it('falls back to equity for sizing when available capital is unavailable', () => {
+    const prompt = build({ ...lossPortfolio, availableCapitalUsd: null }, 5);
+
+    expect(prompt).toContain('Available capital (equity minus margin used): unavailable');
+    expect(prompt).toContain('Suggested ~$170 per position (equity ÷ 5 max positions)');
+  });
+
+  it('omits the suggested size when neither available capital nor equity is known', () => {
+    const prompt = build({ ...lossPortfolio, availableCapitalUsd: null, equityUsd: null });
+
+    expect(prompt).not.toContain('per position');
   });
 });
 

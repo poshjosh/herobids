@@ -1047,7 +1047,7 @@ export const messages: Record<string, string> = {
   'capability.trading.attr.connection': 'कनेक्शन',
   'capability.trading.attr.executionMode': 'निष्पादन मोड',
   'capability.trading.attr.authorization': 'प्राधिकरण',
-  'capability.trading.attr.capital': 'पूंजी',
+  'capability.trading.attr.capital': 'प्रारंभिक पूंजी',
   'capability.trading.attr.openPositions': 'खुले ट्रेड',
   'capability.trading.attr.positionSizeMode': 'पोज़िशन साइज़ मोड',
   'capability.trading.attr.warnings': 'चेतावनियाँ',

@@ -1052,7 +1052,7 @@ export const messages: Record<string, string> = {
   'capability.trading.attr.connection': 'Connection',
   'capability.trading.attr.executionMode': 'Execution mode',
   'capability.trading.attr.authorization': 'Authorization',
-  'capability.trading.attr.capital': 'Capital',
+  'capability.trading.attr.capital': 'Initial capital',
   'capability.trading.attr.openPositions': 'Open trades',
   'capability.trading.attr.positionSizeMode': 'Position size mode',
   'capability.trading.attr.warnings': 'Warnings',

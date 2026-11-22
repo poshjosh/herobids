@@ -601,7 +601,7 @@ export async function tradingCapabilityRoutes(
       if (summary.capitalAvailable === false) {
         attributes.push({
           key: 'capital',
-          label: 'Capital',
+          label: 'Initial capital',
           labelKey: 'capability.trading.attr.capital',
           value: summary.capital ?? 'Not set',
           valueKey: summary.capital === null ? 'capability.trading.value.notSet' : undefined,
@@ -663,7 +663,7 @@ export async function tradingCapabilityRoutes(
       if (summary.capitalAvailable !== false) {
         attributes.push({
           key: 'capital',
-          label: 'Capital',
+          label: 'Initial capital',
           labelKey: 'capability.trading.attr.capital',
           value: summary.capital ?? 'Not set',
           valueKey: summary.capital === null ? 'capability.trading.value.notSet' : undefined,

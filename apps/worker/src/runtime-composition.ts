@@ -10,6 +10,7 @@ import { isAwaitingEntry, truncateHeadTail, type ConversationWindowEntry } from 
 import { parseDocumentNoticeText } from '@herobids/documents/agent-document-notice';
 import { isUserMessageType } from './tick-gate-state.js';
 import { fmtUsd } from './fmt.js';
+import { buildAccountLines } from './portfolio-lines.js';
 import type { ReminderRecord } from './reminders/reminder-record.js';
 
 type FreshnessState = 'fresh' | 'stale' | 'unavailable';
@@ -789,13 +790,6 @@ function formatCurrency(value: number | null | undefined): string {
   return `$${value.toFixed(2)}`;
 }
 
-function formatPercent(value: number | null | undefined): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) {
-    return 'unavailable';
-  }
-  return `${value.toFixed(2)}%`;
-}
-
 function formatUsdAmount(raw: string | null | undefined): string {
   if (!raw) return '$0.00';
   const n = Number(raw);
@@ -1535,10 +1529,7 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
       provider: 'portfolio-summary',
       content: [
         `Exposure: ${formatCurrency(state.metrics.portfolio.exposureUsd)}`,
-        `Realized P&L: ${formatCurrency(state.metrics.portfolio.realizedPnlUsd)}`,
-        `Unrealized P&L: ${formatCurrency(state.metrics.portfolio.unrealizedPnlUsd)}`,
-        `Drawdown: ${formatPercent(state.metrics.portfolio.drawdownPct)}`,
-        `Available capital: ${formatCurrency(state.metrics.portfolio.availableCapitalUsd)}`,
+        ...buildAccountLines(state.metrics.portfolio, Date.now()),
         `Net delta: ${state.metrics.portfolio.netDelta === null ? 'unavailable' : state.metrics.portfolio.netDelta.toFixed(2)}`,
         `Freshness: ${formatFreshness(state.metrics.portfolio.freshness)}`,
       ].join('\n'),

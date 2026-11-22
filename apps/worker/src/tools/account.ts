@@ -29,11 +29,11 @@ async function invokeSelectedAccountRead(ctx: TradingToolContext, toolName: stri
 
 const getAccountSummaryTool: AgentTool<TradingToolContext> = {
   name: 'get_account_summary',
-  description: 'Get a summary of the agent\'s trading account including usable capital, equity, open positions, P&L, and risk limits. Use this to compute appropriate position sizes (targetSize) before calling submit_decision, or to determine sizing for position sizing configuration.',
+  description: 'Get a summary of the agent\'s trading account including initial capital (the configured allocation), equity, available capital (equity minus margin used), open positions, realized and unrealized P&L, and risk limits. Use this to compute appropriate position sizes (targetSize) before calling submit_decision, or to determine sizing for position sizing configuration.',
   parametersSchema: GetAccountSummaryParamsSchema,
   parameters: convertZodToJsonSchema(GetAccountSummaryParamsSchema),
   category: 'read-database',
-  promptGuidance: 'Call get_account_summary before submit_decision to see available capital and open positions. targetSize is in base units — the amount of the asset being bought or sold. If capital is unavailable, omit targetSize to let the engine use a safe default.',
+  promptGuidance: 'Call get_account_summary before submit_decision to see equity, available capital (equity minus margin used) and open positions. targetSize is in base units — the amount of the asset being bought or sold. If equity is unavailable, omit targetSize to let the engine use a safe default.',
   // c4.9i: the Traderton boundary is the sole source; it returns the same
   // `data` shape this tool used to build locally.
   async execute(_params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
