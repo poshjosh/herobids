@@ -13,6 +13,7 @@ export const CREATE_AGENT_OUTCOMES = [
   'limiter_unavailable',
   'grant_refused',
   'field_refused',
+  'live_refused',
   'duplicate',
   'other',
 ] as const;

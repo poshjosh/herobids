@@ -327,7 +327,7 @@ const AgentNameSchema = z.string().min(1).max(100).refine((value) => {
   message: 'Agent name is reserved for Telegram broadcast targeting',
 });
 
-const CreateAgentSchema = z.object({
+const CreateAgentBaseSchema = z.object({
   name: AgentNameSchema,
   prompt: z.string().max(8000).optional(),
   technical: TechnicalConfigSchema.optional(),
@@ -384,35 +384,43 @@ const CreateAgentSchema = z.object({
   risk: RiskPostureSchema.nullable().optional(),
   // Canonical execution defaults (replaces executionMode + maxSlippageBps)
   executionDefaults: ExecutionDefaultsSchema.nullable().optional(),
-}).superRefine((data, ctx) => {
-  // A blank prompt is allowed: a no-job agent stays on duty and responds to
-  // user messages (see the employee prompt model / EMPTY_JOB_DEFAULT_TEXT).
-  // 004: capabilityMode='hybrid' requires technical config (or a strategy preset)
-  if (data.capabilityMode === 'hybrid' && !data.technical && !data.strategyPreset) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['capabilityMode'],
-      message: '"technical" config is required when capabilityMode is "hybrid"',
-    });
-  }
-  // 004: capabilityMode='intelligence' must not set hybridMode
-  if (data.capabilityMode === 'intelligence' && data.hybridMode !== undefined) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['hybridMode'],
-      message: '"hybridMode" must not be set when capabilityMode is not "hybrid"',
-    });
-  }
-  // Canonical field cross-validation: strategy implies the agent is trading-capable
-  const isTradingCapable = hasSkillCapabilityFamily(data.skillIds, 'trading') || data.capabilityMode === 'hybrid';
-  if (isTradingCapable && !data.executionDefaults) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['executionDefaults'],
-      message: 'executionDefaults is required for trading-capable agents',
-    });
-  }
 });
+
+// Agent callers may omit executionDefaults for a trading child: resolveExecutionModeForSkills supplies paper.
+function refineCreateAgent(requireExecutionDefaults: boolean) {
+  return (data: z.infer<typeof CreateAgentBaseSchema>, ctx: z.RefinementCtx): void => {
+    // A blank prompt is allowed: a no-job agent stays on duty and responds to
+    // user messages (see the employee prompt model / EMPTY_JOB_DEFAULT_TEXT).
+    // 004: capabilityMode='hybrid' requires technical config (or a strategy preset)
+    if (data.capabilityMode === 'hybrid' && !data.technical && !data.strategyPreset) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['capabilityMode'],
+        message: '"technical" config is required when capabilityMode is "hybrid"',
+      });
+    }
+    // 004: capabilityMode='intelligence' must not set hybridMode
+    if (data.capabilityMode === 'intelligence' && data.hybridMode !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['hybridMode'],
+        message: '"hybridMode" must not be set when capabilityMode is not "hybrid"',
+      });
+    }
+    // Canonical field cross-validation: strategy implies the agent is trading-capable
+    const isTradingCapable = hasSkillCapabilityFamily(data.skillIds, 'trading') || data.capabilityMode === 'hybrid';
+    if (requireExecutionDefaults && isTradingCapable && !data.executionDefaults) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['executionDefaults'],
+        message: 'executionDefaults is required for trading-capable agents',
+      });
+    }
+  };
+}
+
+const CreateAgentSchema = CreateAgentBaseSchema.superRefine(refineCreateAgent(true));
+const CreateChildAgentSchema = CreateAgentBaseSchema.superRefine(refineCreateAgent(false));
 
 const UpdateTechnicalConfigSchema = TechnicalConfigSchema.partial();
 
@@ -864,9 +872,18 @@ export async function agentRoutes(
       }
     }
 
-    const parsed = CreateAgentSchema.safeParse(request.body);
+    const parsed = (parentAgentId ? CreateChildAgentSchema : CreateAgentSchema).safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
+    }
+
+    // Live is not supported for agent-created children yet. Fixed rule: no parent data is read.
+    if (parentAgentId && parsed.data.executionDefaults?.mode === 'live') {
+      setCreateAgentOutcome(request, 'live_refused');
+      return reply.status(403).send(errorPayload(
+        'agent.create.live_not_supported',
+        'Live execution is not yet supported for agent-created children. Create the child in paper or shadow mode; the user can change the mode once the child exists.',
+      ));
     }
 
     if (hasModelFieldsWithoutProvider(parsed.data)) {
@@ -1226,7 +1243,7 @@ export async function agentRoutes(
             actorId: parentAgentId,
             action: 'agent.child_created',
             targetId: agentId,
-            detail: { parentAgentId, depth: lineage.depth },
+            detail: { parentAgentId, depth: lineage.depth, executionMode: executionMode.value },
           });
         } else {
           await recordAgentAuditEvent(tx, {

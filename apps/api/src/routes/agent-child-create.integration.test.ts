@@ -23,6 +23,7 @@ import { AgentCreationConfigSchema } from '@herobids/domain';
 import type { ExternalBackendClientResult } from '@herobids/domain/external-backend';
 import { authPlugin, createSessionToken } from '../plugins/auth.js';
 import { agentRoutes } from './agents.js';
+import { registerBackendRefFamilies } from './agent-config-helpers.js';
 import { startAgent } from '../services/agent-lifecycle-service.js';
 
 // The start is spied on with its real implementation, so a test can assert whether a create started a child.
@@ -374,7 +375,7 @@ describe.skipIf(SKIP)('agent-created child agents (integration)', () => {
       expect(await childrenOf(db, parent.agentId)).toHaveLength(0);
     });
 
-    it('an agent caller sending toolPolicy, chatAddresses or executionDefaults gets 400 with agent.create.field_not_allowed', async () => {
+    it('an agent caller sending toolPolicy or chatAddresses gets 400 with agent.create.field_not_allowed', async () => {
       const userId = await seedUser(db);
       const parent = await seedAgent(db, userId, { childAgentLimit: 1 });
       const app = await appWith({});
@@ -384,13 +385,12 @@ describe.skipIf(SKIP)('agent-created child agents (integration)', () => {
         prompt: 'Help.',
         toolPolicy: { allow: ['*'] },
         chatAddresses: [{ provider: 'telegram', address: '12345' }],
-        executionDefaults: { mode: 'live' },
       });
 
       expect(res.statusCode).toBe(400);
       expect(res.json<{ error: string; params: { fields: string[] } }>()).toMatchObject({
         error: 'agent.create.field_not_allowed',
-        params: { fields: ['toolPolicy', 'chatAddresses', 'executionDefaults'] },
+        params: { fields: ['toolPolicy', 'chatAddresses'] },
       });
       expect(await childrenOf(db, parent.agentId)).toHaveLength(0);
     });
@@ -786,6 +786,231 @@ describe.skipIf(SKIP)('agent-created child agents (integration)', () => {
       expect(res.json<{ error: string }>().error).toBe('agent.create.grant_not_held');
       expect(invoke).not.toHaveBeenCalled();
       expect(await childrenOf(db, parent.agentId)).toHaveLength(0);
+    });
+  });
+
+  describe('execution mode', () => {
+    /** Registers a seeded skill as trading-family, as API startup does for the configured backend refs. */
+    async function seedTradingSkill(): Promise<SeededSkill> {
+      const skill = await seedSystemSkill(db);
+      registerBackendRefFamilies([{ refs: [skill.skillId], family: 'trading' }]);
+      return skill;
+    }
+
+    function boundarySpy() {
+      const invoke = vi.fn(async (input: { requestId: string }): Promise<ExternalBackendClientResult> => ({
+        kind: 'transport_error',
+        requestId: input.requestId,
+        retryable: true,
+        message: 'boundary write attempted',
+      }));
+      return { invoke, saga: new TradingProfileReconciliationSaga(new TradingProfileReconciliationOutboxRepository(db), { invoke }) };
+    }
+
+    /** The mode stamped on the child's unified config; undefined for a non-trading child. */
+    async function childMode(parentId: string): Promise<unknown> {
+      const [child] = await childrenOf(db, parentId);
+      const config = child?.unifiedConfig as { execution?: { mode?: string } } | null | undefined;
+      return config?.execution;
+    }
+
+    /** A saga standing in for the boundary: it plans the profile, records what would be written, and commits locally. */
+    function recordingSaga() {
+      const written: Array<{ mode?: string | undefined; slippageBps?: number | null | undefined }> = [];
+      const executeStaged = vi.fn(async (input: {
+        preparePlannerInput: () => Promise<{ proposed: { profiles: ReadonlyMap<string, { executionDefaults: { mode?: string; slippageBps?: number | null } | null }> } }>;
+        commitLocal: (tx: unknown, afterCommit: () => Promise<void>) => Promise<unknown>;
+      }) => {
+        const planner = await input.preparePlannerInput();
+        for (const profile of planner.proposed.profiles.values()) {
+          if (profile.executionDefaults) written.push(profile.executionDefaults);
+        }
+        return db.transaction(async (tx) => input.commitLocal(tx, async () => undefined));
+      });
+      const saga = { executeStaged, readCurrentProfiles: vi.fn(async () => new Map()) } as unknown as TradingProfileReconciliationSaga;
+      return { saga, written };
+    }
+
+    afterEach(() => {
+      registerBackendRefFamilies([]);
+    });
+
+    it('a parent holding a trading skill creates a trading child with no executionDefaults and the child gets paper', async () => {
+      const userId = await seedUser(db);
+      const trading = await seedTradingSkill();
+      const parent = await seedAgent(db, userId, { childAgentLimit: 1 });
+      await grantSkillToAgent(db, parent.agentId, trading);
+      const app = await appWith({});
+
+      const res = await postAsAgent(app, parent.rawKey, { name: 'Trader', prompt: 'Trade.', skillIds: [trading.skillId], start: false });
+
+      expect(res.statusCode).toBe(201);
+      expect(await childMode(parent.agentId)).toMatchObject({ mode: 'paper' });
+    });
+
+    it('a trading parent creates a non-trading child', async () => {
+      const userId = await seedUser(db);
+      const trading = await seedTradingSkill();
+      const plain = await seedSystemSkill(db);
+      const parent = await seedAgent(db, userId, { childAgentLimit: 1 });
+      await grantSkillToAgent(db, parent.agentId, trading);
+      await grantSkillToAgent(db, parent.agentId, plain);
+      const app = await appWith({});
+
+      const res = await postAsAgent(app, parent.rawKey, { name: 'Helper', prompt: 'Help.', skillIds: [plain.skillId], start: false });
+
+      expect(res.statusCode).toBe(201);
+      expect(await childMode(parent.agentId)).toBeUndefined();
+    });
+
+    it('executionDefaults shadow with a granted connection creates a shadow child, a paper parent notwithstanding', async () => {
+      const userId = await seedUser(db);
+      const trading = await seedTradingSkill();
+      const connectionId = await seedConnection(db, userId, { venueAccountId: `venue-${crypto.randomUUID().slice(0, 8)}` });
+      const parent = await seedAgent(db, userId, { childAgentLimit: 1 });
+      await grantSkillToAgent(db, parent.agentId, trading);
+      await assignConnectionToAgent(db, parent.agentId, connectionId, userId);
+      const { saga, written } = recordingSaga();
+      const app = await appWith({ profileReconciliationSaga: saga });
+
+      const res = await postAsAgent(app, parent.rawKey, {
+        name: 'Shadow',
+        prompt: 'Trade.',
+        skillIds: [trading.skillId],
+        connectionIds: [connectionId],
+        executionDefaults: { mode: 'shadow' },
+        start: false,
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(await childMode(parent.agentId)).toMatchObject({ mode: 'shadow' });
+      expect(written).toEqual([expect.objectContaining({ mode: 'shadow' })]);
+    });
+
+    it('executionDefaults shadow without a connection is refused with 400 and no child', async () => {
+      const userId = await seedUser(db);
+      const trading = await seedTradingSkill();
+      const parent = await seedAgent(db, userId, { childAgentLimit: 1 });
+      await grantSkillToAgent(db, parent.agentId, trading);
+      const app = await appWith({});
+
+      const res = await postAsAgent(app, parent.rawKey, {
+        name: 'Shadow',
+        prompt: 'Trade.',
+        skillIds: [trading.skillId],
+        executionDefaults: { mode: 'shadow' },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(JSON.stringify(res.json())).toMatch(/connection/i);
+      expect(await childrenOf(db, parent.agentId)).toHaveLength(0);
+    });
+
+    it('slippageBps set by the parent is written to the child profile', async () => {
+      const userId = await seedUser(db);
+      const trading = await seedTradingSkill();
+      const connectionId = await seedConnection(db, userId, { venueAccountId: `venue-${crypto.randomUUID().slice(0, 8)}` });
+      const parent = await seedAgent(db, userId, { childAgentLimit: 1 });
+      await grantSkillToAgent(db, parent.agentId, trading);
+      await assignConnectionToAgent(db, parent.agentId, connectionId, userId);
+      const { saga, written } = recordingSaga();
+      const app = await appWith({ profileReconciliationSaga: saga });
+
+      const res = await postAsAgent(app, parent.rawKey, {
+        name: 'Slip',
+        prompt: 'Trade.',
+        skillIds: [trading.skillId],
+        connectionIds: [connectionId],
+        executionDefaults: { mode: 'paper', slippageBps: 25 },
+        start: false,
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(written).toEqual([expect.objectContaining({ mode: 'paper', slippageBps: 25 })]);
+    });
+
+    it('executionDefaults live is refused with 403 agent.create.live_not_supported, no child row and no boundary write', async () => {
+      const userId = await seedUser(db);
+      const trading = await seedTradingSkill();
+      const parent = await seedAgent(db, userId, { childAgentLimit: 1 });
+      await grantSkillToAgent(db, parent.agentId, trading);
+      const { invoke, saga } = boundarySpy();
+      const app = await appWith({ profileReconciliationSaga: saga });
+
+      const res = await postAsAgent(app, parent.rawKey, {
+        name: 'Live',
+        prompt: 'Trade.',
+        skillIds: [trading.skillId],
+        executionDefaults: { mode: 'live' },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json<{ error: string }>().error).toBe('agent.create.live_not_supported');
+      expect(invoke).not.toHaveBeenCalled();
+      expect(await childrenOf(db, parent.agentId)).toHaveLength(0);
+    });
+
+    it('executionDefaults live is refused for a non-trading child too, before any other check', async () => {
+      const userId = await seedUser(db);
+      const parent = await seedAgent(db, userId, { childAgentLimit: 1 });
+      const app = await appWith({});
+
+      const res = await postAsAgent(app, parent.rawKey, { name: 'Live', prompt: 'Help.', executionDefaults: { mode: 'live' } });
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json<{ error: string }>().error).toBe('agent.create.live_not_supported');
+    });
+
+    it('executionDefaults on a non-trading child keeps the existing 400', async () => {
+      const userId = await seedUser(db);
+      const parent = await seedAgent(db, userId, { childAgentLimit: 1 });
+      const app = await appWith({});
+
+      const res = await postAsAgent(app, parent.rawKey, { name: 'Plain', prompt: 'Help.', executionDefaults: { mode: 'paper' } });
+
+      expect(res.statusCode).toBe(400);
+      expect(JSON.stringify(res.json())).toContain('Execution mode is only valid for agents with trading skills');
+      expect(await childrenOf(db, parent.agentId)).toHaveLength(0);
+    });
+
+    it('capital, risk and authorizationMode are still refused with field_not_allowed alongside executionDefaults', async () => {
+      const userId = await seedUser(db);
+      const parent = await seedAgent(db, userId, { childAgentLimit: 1 });
+      const app = await appWith({});
+
+      const res = await postAsAgent(app, parent.rawKey, {
+        name: 'Child',
+        prompt: 'Help.',
+        executionDefaults: { mode: 'paper' },
+        capital: '1000',
+        risk: { stopLossPct: 5 },
+        authorizationMode: 'direct',
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json<{ error: string; params: { fields: string[] } }>()).toMatchObject({
+        error: 'agent.create.field_not_allowed',
+        params: { fields: ['capital', 'risk', 'authorizationMode'] },
+      });
+    });
+
+    it('a user creation can still create a live agent', async () => {
+      const userId = await seedUser(db, { isAdmin: true });
+      const trading = await seedTradingSkill();
+      const connectionId = await seedConnection(db, userId, { venueAccountId: `venue-${crypto.randomUUID().slice(0, 8)}` });
+      const token = await userToken(db, userId);
+      const { saga, written } = recordingSaga();
+      const app = await appWith({ profileReconciliationSaga: saga });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/agents',
+        headers: { Authorization: `Bearer ${token}` },
+        payload: { name: 'Mine', prompt: 'Trade.', skillIds: [trading.skillId], connectionIds: [connectionId], executionDefaults: { mode: 'live' } },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(written).toEqual([expect.objectContaining({ mode: 'live' })]);
     });
   });
 

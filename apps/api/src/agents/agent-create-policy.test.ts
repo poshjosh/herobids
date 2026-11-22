@@ -9,6 +9,7 @@ import {
   AgentChildDuplicateError,
   AgentCreatePolicyError,
   consumeAgentCreateToken,
+  disallowedAgentCreateFields,
   evaluateAgentCreatePolicy,
   type AgentCreatePolicyInput,
   type AgentPolicyReader,
@@ -491,5 +492,16 @@ describe('agent create policy: duplicate child window', () => {
     const lineage = await evaluateAgentCreatePolicy(readerOf(store), userInput({ childName: 'Scout', duplicateChildWindowSeconds: WINDOW_SECONDS }), true);
 
     expect(lineage).toMatchObject({ creatorType: 'user', parentAgentId: null });
+  });
+});
+
+describe('disallowedAgentCreateFields', () => {
+  it('accepts executionDefaults from an agent key', () => {
+    expect(disallowedAgentCreateFields({ name: 'Child', executionDefaults: { mode: 'paper' } })).toEqual([]);
+  });
+
+  it('still refuses capital, risk and authorizationMode', () => {
+    expect(disallowedAgentCreateFields({ name: 'Child', capital: '1', risk: {}, authorizationMode: 'direct' }))
+      .toEqual(['capital', 'risk', 'authorizationMode']);
   });
 });

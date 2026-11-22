@@ -277,7 +277,7 @@ describe.skipIf(SKIP)('agent audit events (integration)', () => {
       targetType: 'agent',
       targetId: child!.id,
     });
-    expect(events[0]!.detail).toEqual({ parentAgentId: parent.agentId, depth: 2 });
+    expect(events[0]!.detail).toEqual({ parentAgentId: parent.agentId, depth: 2, executionMode: null });
     const serialized = JSON.stringify(events[0]!.detail);
     expect(serialized).not.toContain(PROMPT_MARKER);
     expect(serialized).not.toContain(parent.rawKey);

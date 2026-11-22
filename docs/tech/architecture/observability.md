@@ -154,7 +154,7 @@ emits one structured line per attempt from its `onResponse` hook, whatever branc
 
 - Event tag: `evt: 'agent.create_attempt'`, field `outcome`.
 - `outcome` is a closed set: `success`, `rate`, `allowance`, `depth`, `plan_total`,
-  `limiter_unavailable`, `grant_refused`, `field_refused`, `duplicate`, `other`. Ids and free text are never labels.
+  `limiter_unavailable`, `grant_refused`, `field_refused`, `live_refused`, `duplicate`, `other`. Ids and free text are never labels.
 - Source: `apps/api/src/agents/agent-create-metrics.ts`. A value outside the set is dropped, not logged.
 
 Counting is done offline from these lines. Audit events for creations, child-limit changes, creator

@@ -34,6 +34,8 @@ export interface AgentAuditDetail {
   step?: string;
   /** Why a child limit changed: a user assigned the children skill. */
   source?: 'skill_assigned';
+  /** The execution mode a created child resolved to; null for a non-trading child. */
+  executionMode?: 'paper' | 'shadow' | 'live' | null;
 }
 
 export interface AgentAuditEventInput {

@@ -18,6 +18,14 @@ describe('create_child_agent attempt metrics', () => {
     expect(info).toHaveBeenCalledWith({ evt: 'agent.create_attempt', outcome: 'limiter_unavailable' }, 'create_child_agent attempt');
   });
 
+  it('includes live_refused in the closed set and records it once per attempt', () => {
+    const info = vi.fn();
+    expect(CREATE_AGENT_OUTCOMES).toContain('live_refused');
+    expect(recordCreateAgentAttempt({ info }, 'live_refused')).toBe(true);
+    expect(info).toHaveBeenCalledTimes(1);
+    expect(info).toHaveBeenCalledWith({ evt: 'agent.create_attempt', outcome: 'live_refused' }, 'create_child_agent attempt');
+  });
+
   it('does not record an outcome outside the closed set', () => {
     const info = vi.fn();
 

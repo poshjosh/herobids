@@ -93,7 +93,7 @@ export interface AgentCreateCaller {
 }
 
 /** The only body fields an agent key may send to create a child. The server sets everything else. */
-export const AGENT_CHILD_CREATE_FIELDS = ['name', 'prompt', 'skillIds', 'connectionIds', 'start'] as const;
+export const AGENT_CHILD_CREATE_FIELDS = ['name', 'prompt', 'skillIds', 'connectionIds', 'executionDefaults', 'start'] as const;
 
 const agentChildCreateFieldSet = new Set<string>(AGENT_CHILD_CREATE_FIELDS);
 

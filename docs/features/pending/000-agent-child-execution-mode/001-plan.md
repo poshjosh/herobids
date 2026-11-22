@@ -99,7 +99,7 @@ No change to `AllowanceResponseSchema` or the allowance route.
 ## 8. Rollout
 
 1. DONE — Pass the refusal body through for all 4xx (shared with the grant-scope plan).
-2. PENDING — Route change: allowlist, schema requirement for agent callers, live refusal, metrics outcome, audit field.
+2. DONE — Route change: allowlist, schema requirement for agent callers, live refusal, metrics outcome, audit field.
 3. PENDING — Worker tool schema and description, skill text.
 4. PENDING — Docs: [agent-creation-tools.md](/Users/chinomso.ikwuagwu/dev_ai/herobids/docs/tech/agents/tools/agent-creation-tools.md) (tool inputs, the allowlist, the live refusal), the parent plan §5 note, CHANGELOG.
 
@@ -143,3 +143,19 @@ Grouped by rollout item. Items shared with the grant-scope plan are recorded onc
 - Low: consider an allowlist of validation-detail fields (`path`, `message`, `code`).
 - Low: `Details` repeats `apiError`, which duplicates `errorCode`.
 - Low: replace the `params as Record<string, unknown>` cast in `grantNotHeldHint` with a small Zod parse.
+
+### Item 2 — Route change
+
+- Medium: no test that a live parent is refused the same way (§7).
+- Medium: the "paper parent" no-cap test does not seed a paper parent, so it pins no-cap only vacuously.
+- Medium: no test that the audit row carries a non-null `executionMode` for a trading child.
+- Medium: `live_refused` is only unit-tested; no route-level assertion that the outcome is set.
+- Medium: test name "before any other check" is inaccurate (the live check runs after allowlist and schema checks).
+- Low: tool text (item 3) should state that `mode` defaults to `paper`.
+- Low: `slippageBps` test asserts the staged profile write, not the stored child.
+- Low: shadow-without-connection test matches only `/connection/i`; assert code/path.
+- Low: `executionMode` union in `packages/db/src/agent-audit.ts` duplicates the domain type.
+- Low: `refineCreateAgent(boolean)`; consider an options object if more caller variants appear.
+- Low: test helper `recordingSaga` uses `as unknown as`; prefer a typed stub.
+- Not verified: default-capital provisioning for agent-created trading children; whether the web agent page shows a child's execution mode (§9).
+- Note: `agent-child-create.integration.test.ts` is not in the `test:integration` script's file list.
