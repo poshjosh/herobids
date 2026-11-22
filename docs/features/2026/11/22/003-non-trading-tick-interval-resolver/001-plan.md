@@ -291,7 +291,7 @@ Changes:
   on the resolved value, not the raw stored null. Ensure non-trading + null still
   validates as 24 h for the max-hold invariant.
 
-### 4. Frontend: stop pre-filling, display effective default — PENDING
+### 4. Frontend: stop pre-filling, display effective default — DONE
 
 Files:
 - `apps/web/src/features/agents/style-mapping.ts`
@@ -552,3 +552,15 @@ Grouped by plan item.
 - Low: `nonTradingDefaultTickIntervalMs` is a trailing positional parameter on `agentInteractivityRoutes` (fragile).
 - Not done: worker warn log for API/worker classification disagreement (worker cannot see the API's backend-ref registry). Optional info log of classification and tick source at launch.
 - Not verified: M4, blueprint snapshots/instantiation now carry `null` ticks more often (non-trading blueprints used to carry 86400000); a PATCH with `tickIntervalMs: null` test was not confirmed.
+
+### Item 4 — Frontend
+
+- Medium: `formatStyleSummary` still estimates cost from the trading style cadence when the tick field is empty (create and edit), so a non-trading agent with an empty tick can show a wrong "~$X/day". Omit the cost clause when the tick is empty.
+- Medium: edit OAuth restore can discard a typed tick: `tickIntervalTouched` is not saved in or restored from the draft, so after OAuth return the field shows the typed value while the payload resends the stored one. Pre-existing; set touched on restore when the draft differs from the stored value, and test.
+- Medium: edit can resend a legacy stored auto-derived `maxHoldDurationMs` (written by the old form) as if user-chosen. No migration by plan; the API's field-mapped 400 surfaces it.
+- Low: dead-ish code `resolveStyleTickIntervalMs` / `resolveDefaultSkipUnchangedTicks` in `style-mapping.ts` (latter only used by its own test).
+- Low: confirm `EditAgentModal` onError switches to the Advanced tab for the max-hold field (reviewer saw tab mapping but not the switch); add a test for an empty-and-touched tick payload.
+- Low: `mapApiErrorToFieldErrors` recomputed each render; optional memoisation.
+- Low: `.tickInterval.placeholder` strings in hi/ar say ms where en says minutes (pre-existing).
+- Behaviour notes: old (v1) OAuth drafts for create and edit are discarded after deploy (unsaved edits lost mid-upgrade). The effective-default notice is hidden once skills change in the edit form.
+- Not verified: no browser/visual check (helper text, inline max-hold error, Advanced-tab switch, OAuth return).

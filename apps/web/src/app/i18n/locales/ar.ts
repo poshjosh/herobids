@@ -422,6 +422,8 @@ export const messages: Record<string, string> = {
   'agents.controls.dailySpendBudget.help': 'هدف إنفاق يومي اختياري. عند عدم تحديد فترة تفعيل صريحة، يُشتق إيقاع الإعداد المخصص من هذه الميزانية.',
   'agents.controls.tickInterval': 'فترة التفعيل (مللي ثانية)',
   'agents.controls.tickInterval.placeholder': 'مثال: 900000 لـ 15 دقيقة',
+  'agents.controls.tickInterval.defaultHint': 'اتركه فارغًا لاستخدام الإعداد الافتراضي لمهارات هذا الوكيل.',
+  'agents.controls.tickInterval.effectiveDefaultNotice': 'يُستخدم الإعداد الافتراضي لمهارات هذا الوكيل: {cadence}. أدخل قيمة لتجاوزه.',
   'agents.controls.tickInterval.validation.minimum': 'يجب أن تكون فترة التفعيل دقيقة واحدة على الأقل.',
   'agents.controls.tickInterval.validation.wholeMinutes': 'يجب أن تكون فترة التفعيل عددًا صحيحًا من الدقائق.',
   'agents.controls.tickInterval.legacyNotice': 'يستخدم هذا الوكيل إيقاعًا قديمًا غير منسجم مع الدقائق الكاملة. احفظ بدون تغيير هذا الحقل للحفاظ على القيمة الدقيقة.',

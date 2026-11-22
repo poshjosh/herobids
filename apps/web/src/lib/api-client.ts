@@ -1058,6 +1058,9 @@ export interface Agent {
   stopLossPct: string | null;
   stopLossCooldownMs: number | null;
   tickIntervalMs: number | null;
+  /** Server-resolved tick (explicit value, or the non-trading default). Null when source is 'unset'. Display only; never write back into the form. */
+  effectiveTickIntervalMs?: number | null;
+  tickIntervalSource?: 'user' | 'non_trading_default' | 'unset';
   capital: string | null;
   /** false when the Traderton trading profile could not be read: capital/risk/executionDefaults are then absent and must not be written back. Absent = available. */
   tradingProfileAvailable?: boolean;

@@ -420,6 +420,8 @@ export const messages: Record<string, string> = {
   'agents.controls.dailySpendBudget.help': 'Optional daily spend target. Custom preset cadence is derived from this budget when no explicit tick interval is set.',
   'agents.controls.tickInterval': 'Tick interval (min)',
   'agents.controls.tickInterval.placeholder': 'e.g. 15',
+  'agents.controls.tickInterval.defaultHint': 'Leave blank to use the default for this agent\'s skills.',
+  'agents.controls.tickInterval.effectiveDefaultNotice': 'Using the default for this agent\'s skills: {cadence}. Type a value to override it.',
   'agents.controls.tickInterval.validation.minimum': 'Tick interval must be at least 1 minute.',
   'agents.controls.tickInterval.validation.wholeMinutes': 'Tick interval must be a whole number of minutes.',
   'agents.controls.tickInterval.legacyNotice': 'This agent uses a legacy cadence that is not an exact whole minute. Save without changing this field to preserve the exact value.',

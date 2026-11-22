@@ -12,6 +12,8 @@ interface RuntimePolicySectionProps {
   alwaysExpanded?: boolean;
   /** When true, shows trading-session preset shortcuts above the hour grid. */
   showTradingSessionPresets?: boolean;
+  /** Server-side validation message for the max-hold field (e.g. API 400 on submit). */
+  maxHoldDurationError?: string | null;
 }
 
 type NumericField = Exclude<keyof RuntimePolicyOverrides, 'allowedHoursUtc' | 'weekendPause' | 'tradingSessions' | 'scoutReasoning' | 'judgeReasoning' | 'adaptScoutReasoning' | 'adaptJudgeReasoning' | 'skipUnchangedTicks'>;
@@ -155,7 +157,7 @@ function HourGrid({
   );
 }
 
-export function RuntimePolicySection({ style, overrides, onChange, alwaysExpanded, showTradingSessionPresets }: RuntimePolicySectionProps) {
+export function RuntimePolicySection({ style, overrides, onChange, alwaysExpanded, showTradingSessionPresets, maxHoldDurationError = null }: RuntimePolicySectionProps) {
   const intl = useIntl();
   const [open, setOpen] = useState(alwaysExpanded ?? false);
 
@@ -262,14 +264,24 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
               min={0}
               step={field === 'maxHoldDurationMs' ? 'any' : undefined}
               style={inputStyle}
+              aria-invalid={field === 'maxHoldDurationMs' && maxHoldDurationError ? true : undefined}
+              aria-describedby={field === 'maxHoldDurationMs'
+                ? (maxHoldDurationError ? 'rp-maxHoldDurationMs-error' : 'rp-maxHoldDurationMs-help')
+                : undefined}
               value={getNumericValue(field)}
               placeholder={getNumericPlaceholder(field)}
               onChange={(e) => handleNumericChange(field, e.target.value)}
             />
             {field === 'maxHoldDurationMs' && (
-              <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', marginTop: '4px' }}>
-                {intl.formatMessage({ id: 'agents.runtimePolicy.maxHoldDurationHelp' })}
-              </div>
+              maxHoldDurationError ? (
+                <div id="rp-maxHoldDurationMs-error" role="alert" style={{ fontSize: '0.6875rem', color: 'var(--color-danger)', marginTop: '4px' }}>
+                  {maxHoldDurationError}
+                </div>
+              ) : (
+                <div id="rp-maxHoldDurationMs-help" style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                  {intl.formatMessage({ id: 'agents.runtimePolicy.maxHoldDurationHelp' })}
+                </div>
+              )
             )}
             {field === 'maxToolResultChars' && (
               <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', marginTop: '4px' }}>

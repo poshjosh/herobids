@@ -48,6 +48,7 @@ export const ADVANCED_FIELD_TAB: Record<string, number> = {
   goal: 0,
   connectionIds: 0,
   tickIntervalMins: 0,
+  maxHoldDurationMs: 0,
   dailySpendBudgetUsd: 0,
   permissionLevel: 0,
   // Capabilities (trading family: setup + strategy)

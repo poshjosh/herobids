@@ -11,7 +11,10 @@ import type { AgentStyleValue, RuntimePolicyOverrides } from './style-mapping.js
 // edits the user made before starting the OAuth flow.
 // ---------------------------------------------------------------------------
 
-const EDIT_AGENT_OAUTH_DRAFT_KEY = 'edit-agent-oauth-draft-v1';
+// v2: v1 drafts could hold an old auto-derived tick/max hold that would now be
+// resent as explicit user values, so v1 is never read.
+const EDIT_AGENT_OAUTH_DRAFT_KEY = 'edit-agent-oauth-draft-v2';
+const LEGACY_EDIT_AGENT_OAUTH_DRAFT_KEY = 'edit-agent-oauth-draft-v1';
 
 export interface EditAgentOAuthDraft {
   agentId: string;
@@ -37,6 +40,7 @@ export function saveEditAgentOAuthDraft(draft: EditAgentOAuthDraft): void {
 
 export function loadEditAgentOAuthDraft(): EditAgentOAuthDraft | null {
   try {
+    window.sessionStorage.removeItem(LEGACY_EDIT_AGENT_OAUTH_DRAFT_KEY);
     const raw = window.sessionStorage.getItem(EDIT_AGENT_OAUTH_DRAFT_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as EditAgentOAuthDraft;
@@ -52,6 +56,7 @@ export function loadEditAgentOAuthDraft(): EditAgentOAuthDraft | null {
 export function clearEditAgentOAuthDraft(): void {
   try {
     window.sessionStorage.removeItem(EDIT_AGENT_OAUTH_DRAFT_KEY);
+    window.sessionStorage.removeItem(LEGACY_EDIT_AGENT_OAUTH_DRAFT_KEY);
   } catch {
     // Ignore storage failures.
   }

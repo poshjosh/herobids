@@ -125,6 +125,7 @@ function renderModal(options: {
 describe('EditAgentModal rendering', () => {
   it('renders the shared controls and derived summaries for existing values', () => {
     const html = renderModal({
+      tickIntervalMs: 14_400_000,
       capabilityReadiness: {
         family: 'trading',
         state: 'ready',
@@ -139,7 +140,7 @@ describe('EditAgentModal rendering', () => {
     expect(html).toContain(messages['agents.controls.dailySpendBudget']);
     // Capital controls are now inside the (collapsed) generic Capabilities advanced tab.
     expect(html).toContain(messages['agents.advanced.capabilities']);
-    expect(html).toContain('Expected cadence: every 4h');
+    expect(html).toContain('Base cadence: every 4h');
     expect(html).toContain('Estimated daily LLM spend: ~$0.50');
     expect(html).not.toContain(messages['agents.controls.dailyLlmTokenBudget']);
   });

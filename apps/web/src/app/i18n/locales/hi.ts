@@ -422,6 +422,8 @@ export const messages: Record<string, string> = {
   'agents.controls.dailySpendBudget.help': 'वैकल्पिक दैनिक व्यय लक्ष्य। यदि स्पष्ट टिक अंतराल नहीं दिया गया है तो कस्टम प्रीसेट की गति इसी बजट से निकाली जाती है।',
   'agents.controls.tickInterval': 'टिक अंतराल (ms)',
   'agents.controls.tickInterval.placeholder': 'जैसे 900000 = 15 मिनट',
+  'agents.controls.tickInterval.defaultHint': 'इस एजेंट के कौशल के लिए डिफ़ॉल्ट उपयोग करने हेतु खाली छोड़ें।',
+  'agents.controls.tickInterval.effectiveDefaultNotice': 'इस एजेंट के कौशल के लिए डिफ़ॉल्ट उपयोग हो रहा है: {cadence}। बदलने के लिए मान दर्ज करें।',
   'agents.controls.tickInterval.validation.minimum': 'टिक अंतराल कम से कम 1 मिनट होना चाहिए।',
   'agents.controls.tickInterval.validation.wholeMinutes': 'टिक अंतराल पूर्ण मिनटों की संख्या होनी चाहिए।',
   'agents.controls.tickInterval.legacyNotice': 'यह एजेंट एक पुरानी गति का उपयोग करता है जो पूर्ण मिनट नहीं है। मूल्य बनाए रखने के लिए इस फ़ील्ड को बदले बिना सहेजें।',

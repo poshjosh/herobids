@@ -7,13 +7,15 @@ import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui
 import { formatExecutionMode, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills, resolvePromptTemplate, resolveGoalPlaceholderKey, selectedSkillsHaveCapabilityFamily } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
+import { mapApiErrorToFieldErrors } from './api-field-errors.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
 import { buildUpdateAgentPayload, normalizeEscalationPolicy } from './agent-payloads.js';
 import { validateCreateAgentForm, validateEditAgentConnections, type ValidationConstraints } from './form-validation.js';
 import { TradingGuardrailsFields } from './AgentControlsSection.js';
+import { formatCadence } from './agent-cadence.js';
 import { getTickIntervalValidationMessageId, isWholeMinuteTickInterval, parseTickIntervalMinutesInput } from './tick-interval.js';
 import { type CapabilityMode } from './CapabilitySelector.js';
-import { applyAutoMaxHoldOverride, reconcileMaxHoldOverride, type AgentStyleValue, resolveStyleDefaults, resolveStyleTickIntervalMins, resolveEffectiveSkipUnchangedTicks, formatStyleSummary, resolveModelPricing, type RuntimePolicyOverrides } from './style-mapping.js';
+import { type AgentStyleValue, resolveStyleDefaults, formatStyleSummary, resolveModelPricing, type RuntimePolicyOverrides } from './style-mapping.js';
 
 const STYLE_LABEL_KEYS: Record<AgentStyleValue, string> = {
   careful: 'agents.style.careful.label',
@@ -68,9 +70,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   const initialTickIntervalIsLegacy = initialData.tickIntervalMs != null && !isWholeMinuteTickInterval(initialData.tickIntervalMs);
 
   const policyManuallySetRef = useRef(false);
-  const maxHoldDurationManuallySetRef = useRef(
-    Object.prototype.hasOwnProperty.call((initialData.runtimePolicyOverrides as RuntimePolicyOverrides | null) ?? {}, 'maxHoldDurationMs'),
-  );
   const [form, setForm] = useState<AgentFormState>(() => agentToFormState(initialData));
   const [style, setStyle] = useState<AgentStyleValue>(
     (initialData.style as AgentStyleValue) ?? 'balanced',
@@ -299,15 +298,29 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   const tickIntervalError = tickIntervalValidationMessageId
     ? intl.formatMessage({ id: tickIntervalValidationMessageId })
     : null;
+  // Server-resolved default, shown as helper text only (never written into the field).
+  // Hidden once the skills change, since the server classifies by skills and the
+  // value may no longer apply.
+  const skillsUnchanged = form.skillIds.length === (initialData.skillIds ?? []).length
+    && form.skillIds.every((skillId) => (initialData.skillIds ?? []).includes(skillId));
+  const serverDefaultTickIntervalMs = initialData.tickIntervalSource === 'non_trading_default'
+    && skillsUnchanged
+    && form.tickIntervalMins.trim() === ''
+    ? (initialData.effectiveTickIntervalMs ?? null)
+    : null;
   const tickIntervalNotice = initialTickIntervalIsLegacy && !tickIntervalTouched && tickIntervalError == null
     ? intl.formatMessage({ id: 'agents.controls.tickInterval.legacyNotice' })
-    : null;
+    : serverDefaultTickIntervalMs != null
+      ? intl.formatMessage(
+          { id: 'agents.controls.tickInterval.effectiveDefaultNotice' },
+          { cadence: formatCadence(serverDefaultTickIntervalMs) },
+        )
+      : null;
   const effectiveTickIntervalMs = initialTickIntervalIsLegacy && !tickIntervalTouched
     ? (initialData.tickIntervalMs ?? null)
-    : null;
-
-  function resolveEditedTickIntervalMs(tickIntervalMins: string, forceExplicit = false): number | null {
-    if (initialTickIntervalIsLegacy && !tickIntervalTouched && !forceExplicit) {
+    : null; // server-resolved defaults feed the notice only, never the cadence estimate
+  function resolveEditedTickIntervalMs(tickIntervalMins: string): number | null {
+    if (initialTickIntervalIsLegacy && !tickIntervalTouched) {
       return initialData.tickIntervalMs ?? null;
     }
 
@@ -394,9 +407,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
       executionMode: form.executionMode,
       // Capital is optional in edit mode (blank = unlimited)
       requiresTradingSetup: false,
-      style,
-      runtimePolicyOverrides,
-      skipUnchangedTicks: resolveEffectiveSkipUnchangedTicks(runtimePolicyOverrides?.skipUnchangedTicks, requiresTradingSetup),
     }, validationConstraints);
 
     setFormErrors((prev) => {
@@ -484,6 +494,10 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
       void qc.invalidateQueries({ queryKey: ['agent-documents', agentId] });
       onClose();
     },
+    onError: (error) => {
+      const { fieldErrors } = mapApiErrorToFieldErrors(error);
+      if (Object.keys(fieldErrors).length > 0) setFormErrors((prev) => ({ ...prev, ...fieldErrors }));
+    },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -501,9 +515,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
       venueType: '',
       executionMode: form.executionMode,
       requiresTradingSetup: false,
-      style,
-      runtimePolicyOverrides,
-      skipUnchangedTicks: resolveEffectiveSkipUnchangedTicks(runtimePolicyOverrides?.skipUnchangedTicks, requiresTradingSetup),
     }, validationConstraints);
     if (!result.valid || tickIntervalError != null) {
       setFormErrors(result.errors);
@@ -569,14 +580,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             style={style}
             onStyleChange={(nextStyle) => {
               const defaults = resolveStyleDefaults(nextStyle);
-              // D10: a non-trading agent keeps the 24 h default across style
-              // changes; only trading agents take the style's interval.
-              const nextTickIntervalMins = resolveStyleTickIntervalMins(
-                nextStyle,
-                selectedSkillsHaveCapabilityFamily(form.skillIds, selectableSkills, 'trading'),
-              );
-              const newTickMs = Number(nextTickIntervalMins) * 60_000;
-              setTickIntervalTouched(true);
               setStyle(nextStyle);
               const tradingSources = ['watch_threshold', 'discovery_delta', 'regime_change'];
               setForm((prev) => {
@@ -586,7 +589,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                 return {
                   ...prev,
                   costPreset: defaults.costPreset,
-                  tickIntervalMins: nextTickIntervalMins,
                   dailySpendBudgetUsd: defaults.dailySpendBudgetUsd,
                   subscribedSources: styleSources,
                   ...(policyManuallySetRef.current
@@ -594,21 +596,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                     : { openPositionEscalationToJudgePolicy: defaults.openPositionEscalationToJudgePolicy }),
                 };
               });
-              if (!maxHoldDurationManuallySetRef.current) {
-                setRuntimePolicyOverrides((current) => applyAutoMaxHoldOverride(
-                  nextStyle,
-                  current,
-                  newTickMs,
-                ));
-              } else {
-                setRuntimePolicyOverrides((current) => {
-                  const effectiveMaxHold = current?.maxHoldDurationMs
-                    ?? resolveStyleDefaults(nextStyle).maxHoldDurationMs;
-                  return effectiveMaxHold !== 0 && effectiveMaxHold < newTickMs
-                    ? applyAutoMaxHoldOverride(nextStyle, current, newTickMs)
-                    : current;
-                });
-              }
             }}
           />
 
@@ -663,8 +650,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
               const nextForm = { ...form, ...patch };
               if (patch.tickIntervalMins !== undefined) {
                 setTickIntervalTouched(true);
-                const newTickMs = resolveEditedTickIntervalMs(nextForm.tickIntervalMins, true);
-                setRuntimePolicyOverrides((current) => reconcileMaxHoldOverride(style, current, newTickMs));
+                clearFieldError('maxHoldDurationMs');
               }
               setForm(nextForm);
             }}
@@ -704,21 +690,10 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                 style={style}
                 overrides={runtimePolicyOverrides}
                 onChange={(overrides) => {
-                  const hasManualMaxHoldOverride = Object.prototype.hasOwnProperty.call(overrides ?? {}, 'maxHoldDurationMs');
-                  maxHoldDurationManuallySetRef.current = hasManualMaxHoldOverride;
-                  if (hasManualMaxHoldOverride) {
-                    clearFieldError('tickIntervalMins');
-                  }
-                  setRuntimePolicyOverrides(
-                    hasManualMaxHoldOverride
-                      ? overrides
-                      : reconcileMaxHoldOverride(
-                          style,
-                          overrides,
-                          resolveEditedTickIntervalMs(form.tickIntervalMins),
-                        ),
-                  );
+                  clearFieldError('maxHoldDurationMs');
+                  setRuntimePolicyOverrides(overrides);
                 }}
+                maxHoldDurationError={formErrors.maxHoldDurationMs ?? null}
                 alwaysExpanded
                 showTradingSessionPresets={showTradingControls}
               />
@@ -951,7 +926,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
 
         </form>
 
-        {mutation.isError && <ErrorBanner message={localizeApiError(intl, mutation.error, 'common.errorTitle')} />}
+        {mutation.isError && !mapApiErrorToFieldErrors(mutation.error).fullyMapped && <ErrorBanner message={localizeApiError(intl, mutation.error, 'common.errorTitle')} />}
 
         {advancedOpen && (
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>

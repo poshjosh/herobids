@@ -1,16 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { deriveStyleMaxHoldDurationMs } from '@herobids/domain';
 import {
-  applyAutoMaxHoldOverride,
   formatStyleSummary,
-  reconcileMaxHoldOverride,
   resolveModelPricing,
   resolveStyleDefaults,
   resolveStyleTickIntervalMs,
-  resolveStyleTickIntervalMins,
   resolveDefaultSkipUnchangedTicks,
-  resolveEffectiveSkipUnchangedTicks,
-  NON_TRADING_DEFAULT_TICK_INTERVAL_MINS,
   STYLE_CONFIG,
   type AgentStyleValue,
 } from './style-mapping.js';
@@ -189,42 +184,6 @@ describe('resolveStyleDefaults', () => {
     it('derives max hold from the effective tick interval', () => {
       // balanced max-hold multiplier is 3× its tick.
       expect(deriveStyleMaxHoldDurationMs('balanced', 900_000)).toBe(2_700_000);
-    });
-
-    it('clears the max-hold override when the derived value matches the style default', () => {
-      expect(applyAutoMaxHoldOverride('balanced', { scoutMaxTurns: 50 })).toEqual({ scoutMaxTurns: 50 });
-    });
-
-    it('stores an auto max-hold override when cadence differs from the style default', () => {
-      expect(applyAutoMaxHoldOverride('balanced', { scoutMaxTurns: 50 }, 900_000)).toEqual({
-        scoutMaxTurns: 50,
-        maxHoldDurationMs: 2_700_000,
-      });
-    });
-  });
-
-  describe('reconcileMaxHoldOverride', () => {
-    it('keeps a stored max hold that still covers the tick', () => {
-      expect(reconcileMaxHoldOverride('balanced', { maxHoldDurationMs: 7_200_000 }, 1_800_000)).toEqual({
-        maxHoldDurationMs: 7_200_000,
-      });
-    });
-
-    it('re-derives max hold when the tick outgrows a stored max hold', () => {
-      // balanced max-hold multiplier is 3×, so re-derivation is 3 × the tick.
-      expect(reconcileMaxHoldOverride('balanced', { scoutMaxTurns: 50, maxHoldDurationMs: 600_000 }, 3_600_000)).toEqual({
-        scoutMaxTurns: 50,
-        maxHoldDurationMs: 10_800_000,
-      });
-    });
-
-    it('stores no max-hold override when the style default already covers the tick', () => {
-      // balanced's default max hold (90 min) covers its 30-min style tick.
-      expect(reconcileMaxHoldOverride('balanced', null, 1_800_000)).toBeNull();
-    });
-
-    it('leaves overrides unchanged when the tick is unknown', () => {
-      expect(reconcileMaxHoldOverride('balanced', { scoutMaxTurns: 50 }, null)).toEqual({ scoutMaxTurns: 50 });
     });
   });
 
@@ -429,35 +388,11 @@ describe('adaptive reasoning style defaults', () => {
   });
 });
 
-// ── D10/D9: non-trading tick default and skip-unchanged default ──────────────
-
-describe('resolveStyleTickIntervalMins (D10)', () => {
-  it('keeps the style interval for a trading agent', () => {
-    expect(resolveStyleTickIntervalMins('careful', true)).toBe('90');
-    expect(resolveStyleTickIntervalMins('balanced', true)).toBe('30');
-    expect(resolveStyleTickIntervalMins('bold', true)).toBe('10');
-  });
-
-  it('uses the 24 h (1440 min) default for a non-trading agent regardless of style', () => {
-    expect(resolveStyleTickIntervalMins('careful', false)).toBe(NON_TRADING_DEFAULT_TICK_INTERVAL_MINS);
-    expect(resolveStyleTickIntervalMins('balanced', false)).toBe('1440');
-    expect(resolveStyleTickIntervalMins('bold', false)).toBe('1440');
-  });
-});
+// ── D9: skip-unchanged default ───────────────────────────────────────────────
 
 describe('skip-unchanged defaults (D9)', () => {
   it('defaults to true for a trading agent and false otherwise', () => {
     expect(resolveDefaultSkipUnchangedTicks(true)).toBe(true);
     expect(resolveDefaultSkipUnchangedTicks(false)).toBe(false);
-  });
-
-  it('follows the skills-derived default when no override is set', () => {
-    expect(resolveEffectiveSkipUnchangedTicks(null, true)).toBe(true);
-    expect(resolveEffectiveSkipUnchangedTicks(undefined, false)).toBe(false);
-  });
-
-  it('lets an explicit override win over the skills default', () => {
-    expect(resolveEffectiveSkipUnchangedTicks(false, true)).toBe(false);
-    expect(resolveEffectiveSkipUnchangedTicks(true, false)).toBe(true);
   });
 });

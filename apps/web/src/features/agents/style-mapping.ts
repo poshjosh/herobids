@@ -1,7 +1,5 @@
 import {
   AGENT_STYLE_RUNTIME_DEFAULTS,
-  NON_TRADING_DEFAULT_TICK_INTERVAL_MS,
-  deriveStyleMaxHoldDurationMs,
   resolveStyleTradingTickIntervalMs,
   type ReasoningLevel,
   type TradingSessionName,
@@ -9,8 +7,6 @@ import {
 
 export type { TradingSessionName };
 export type AgentStyleValue = 'careful' | 'balanced' | 'bold';
-
-const MS_PER_MINUTE = 60_000;
 
 type StyleDefaults = (typeof AGENT_STYLE_RUNTIME_DEFAULTS)[AgentStyleValue];
 
@@ -51,21 +47,6 @@ export function resolveStyleDefaults(style: AgentStyleValue): StyleDefaults {
   return config;
 }
 
-/** D10: non-trading default tick in minutes (24 h), pre-filled by the form. */
-export const NON_TRADING_DEFAULT_TICK_INTERVAL_MINS = String(NON_TRADING_DEFAULT_TICK_INTERVAL_MS / MS_PER_MINUTE);
-
-/**
- * The tick-interval minutes to pre-fill when a style is selected. Non-trading
- * agents (no selected skill with the 'trading' capability family) default to
- * 24 h; trading agents keep the style's interval.
- */
-export function resolveStyleTickIntervalMins(style: AgentStyleValue, hasTradingCapability: boolean): string {
-  if (!hasTradingCapability) {
-    return NON_TRADING_DEFAULT_TICK_INTERVAL_MINS;
-  }
-  return resolveStyleDefaults(style).tickIntervalMins;
-}
-
 /**
  * D9: the effective skip-unchanged default for the form, following the selected
  * skills — on for trading agents, off otherwise. Mirrors the resolver default in
@@ -73,18 +54,6 @@ export function resolveStyleTickIntervalMins(style: AgentStyleValue, hasTradingC
  */
 export function resolveDefaultSkipUnchangedTicks(hasTradingCapability: boolean): boolean {
   return hasTradingCapability;
-}
-
-/**
- * D9: resolve the effective skip-unchanged value from the form's override and
- * the trading capability of the selected skills. `null`/`undefined` override =
- * follow the skills (trading → true, otherwise false).
- */
-export function resolveEffectiveSkipUnchangedTicks(
-  override: boolean | null | undefined,
-  hasTradingCapability: boolean,
-): boolean {
-  return override ?? resolveDefaultSkipUnchangedTicks(hasTradingCapability);
 }
 
 function isPositiveFiniteNumber(value: number | null | undefined): value is number {
@@ -97,41 +66,6 @@ export function resolveStyleTickIntervalMs(style: AgentStyleValue, tickIntervalM
   }
 
   return resolveStyleTradingTickIntervalMs(style);
-}
-
-export function applyAutoMaxHoldOverride(
-  style: AgentStyleValue,
-  overrides: RuntimePolicyOverrides | null,
-  tickIntervalMsOverride?: number | null,
-): RuntimePolicyOverrides | null {
-  const defaults = resolveStyleDefaults(style);
-  const derivedMaxHoldDurationMs = deriveStyleMaxHoldDurationMs(style, resolveStyleTickIntervalMs(style, tickIntervalMsOverride));
-  const next: RuntimePolicyOverrides = { ...(overrides ?? {}) };
-
-  if (derivedMaxHoldDurationMs === defaults.maxHoldDurationMs) {
-    delete next.maxHoldDurationMs;
-  } else {
-    next.maxHoldDurationMs = derivedMaxHoldDurationMs;
-  }
-
-  return Object.keys(next).length > 0 ? next : null;
-}
-
-/** Keeps a stored max hold that still covers the tick; re-derives it only when it does not. */
-export function reconcileMaxHoldOverride(
-  style: AgentStyleValue,
-  overrides: RuntimePolicyOverrides | null,
-  tickIntervalMs: number | null,
-): RuntimePolicyOverrides | null {
-  if (tickIntervalMs == null) {
-    return overrides;
-  }
-  // 0 disables hold expiry, so it always covers the tick.
-  const effectiveMaxHoldMs = overrides?.maxHoldDurationMs ?? resolveStyleDefaults(style).maxHoldDurationMs;
-  if (effectiveMaxHoldMs === 0 || effectiveMaxHoldMs >= tickIntervalMs) {
-    return overrides;
-  }
-  return applyAutoMaxHoldOverride(style, overrides, tickIntervalMs);
 }
 
 /** Pricing info for the selected economy and premium models. Pass to formatStyleSummary for computed estimates. */

@@ -15,7 +15,7 @@ const EMPTY_GUARDRAILS: TradingGuardrailsFormValue = {
   openPositionEscalationToJudgePolicy: 'uncovered_or_triggered',
 };
 
-function renderControls(value: Partial<AgentControlsFormValue> = {}): string {
+function renderControls(value: Partial<AgentControlsFormValue> = {}, hasTradingCapability = false): string {
   const state: AgentControlsFormValue = {
     costPreset: 'standard',
     dailySpendBudgetUsd: '',
@@ -31,7 +31,7 @@ function renderControls(value: Partial<AgentControlsFormValue> = {}): string {
 
   return renderToStaticMarkup(
     <IntlProvider locale="en" messages={messages}>
-      <AgentControlsSection value={state} onChange={() => undefined} showBotControls />
+      <AgentControlsSection value={state} onChange={() => undefined} showBotControls hasTradingCapability={hasTradingCapability} />
     </IntlProvider>,
   );
 }
@@ -44,10 +44,16 @@ describe('AgentControlsSection rendering', () => {
     expect(html).not.toContain(messages['agents.controls.dailyLlmTokenBudget']);
   });
 
-  it('shows preset-derived cadence and daily spend when no explicit tick interval exists', () => {
-    const html = renderControls({ costPreset: 'minimal' });
+  it('shows preset-derived cadence and daily spend for a trading agent with no explicit tick interval', () => {
+    const html = renderControls({ costPreset: 'minimal' }, true);
     expect(html).toContain('Expected cadence: every 90 min');
     expect(html).toContain('Estimated daily LLM spend: ~$3.00');
+  });
+
+  it('suppresses the preset-derived cadence and spend for a non-trading agent with no tick interval', () => {
+    const html = renderControls({ costPreset: 'minimal' });
+    expect(html).not.toContain('Expected cadence');
+    expect(html).not.toContain('Estimated daily LLM spend');
   });
 
   it('shows explicit cadence override messaging when tick interval is set', () => {

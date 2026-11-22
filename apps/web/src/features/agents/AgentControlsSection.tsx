@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { useIntl } from 'react-intl';
 import { FieldLabel, inputStyle } from '../../lib/ui.js';
 import { deriveExpectedCadence, estimateDailySpend, hasExplicitTickInterval } from './agent-cadence.js';
@@ -78,6 +79,7 @@ export function AgentControlsSection({
   onBlurField,
 }: AgentControlsSectionProps) {
   const intl = useIntl();
+  const tickIntervalHelpId = useId();
   const parsedTickInterval = parseTickIntervalMinutesInput(value.tickIntervalMins);
   const tickIntervalMsValue = effectiveTickIntervalMs != null
     ? String(effectiveTickIntervalMs)
@@ -85,16 +87,24 @@ export function AgentControlsSection({
       ? String(parsedTickInterval.tickIntervalMs)
       : '';
   const explicitCadence = hasExplicitTickInterval(tickIntervalMsValue || null);
-  const cadence = deriveExpectedCadence(
-    tickIntervalMsValue || null,
-    value.costPreset || null,
-    value.dailySpendBudgetUsd || null,
-  );
-  const estimatedDailySpend = estimateDailySpend(
-    tickIntervalMsValue || null,
-    value.costPreset || null,
-    value.dailySpendBudgetUsd ? Number(value.dailySpendBudgetUsd) : null,
-  );
+  // With no tick value the cadence would come from the style/preset (a trading
+  // default) and can contradict the "default for this agent's skills" hint for a
+  // non-trading agent, so only estimate then when the skills are trading.
+  const showCadenceEstimate = tickIntervalMsValue !== '' || hasTradingCapability;
+  const cadence = showCadenceEstimate
+    ? deriveExpectedCadence(
+      tickIntervalMsValue || null,
+      value.costPreset || null,
+      value.dailySpendBudgetUsd || null,
+    )
+    : null;
+  const estimatedDailySpend = showCadenceEstimate
+    ? estimateDailySpend(
+      tickIntervalMsValue || null,
+      value.costPreset || null,
+      value.dailySpendBudgetUsd ? Number(value.dailySpendBudgetUsd) : null,
+    )
+    : null;
 
   // D9: the effective skip-unchanged value shown by the checkbox — the override
   // when set, otherwise the skills-derived default (on for trading agents).
@@ -110,6 +120,15 @@ export function AgentControlsSection({
     ? Math.round(MINUTES_PER_DAY / parsedTickInterval.minutes)
     : null;
 
+  // One helper element per state, always the field's aria-describedby target:
+  // validation error > server error > notice (legacy / effective default) > generic hint.
+  const tickIntervalHelpIsError = Boolean(tickIntervalError ?? fieldErrors?.tickIntervalMins);
+  const tickIntervalHelp = tickIntervalError
+    ?? fieldErrors?.tickIntervalMins
+    ?? tickIntervalNotice
+    ?? (value.tickIntervalMins.trim() === ''
+      ? intl.formatMessage({ id: 'agents.controls.tickInterval.defaultHint' })
+      : null);
   const sectionStyle: React.CSSProperties = {
     display: 'flex',
     flexDirection: 'column',
@@ -172,7 +191,8 @@ export function AgentControlsSection({
           type="number"
           min={1}
           step={1}
-          aria-invalid={tickIntervalError != null}
+          aria-invalid={tickIntervalError != null || Boolean(fieldErrors?.tickIntervalMins)}
+          aria-describedby={tickIntervalHelp ? tickIntervalHelpId : undefined}
           value={value.tickIntervalMins}
           onBlur={() => onBlurField?.('tickIntervalMins')}
           onChange={(event) => {
@@ -181,9 +201,7 @@ export function AgentControlsSection({
           }}
           placeholder={intl.formatMessage({ id: 'agents.controls.tickInterval.placeholder' })}
         />
-        {tickIntervalError && <div style={errorTextStyle}>{tickIntervalError}</div>}
-        {!tickIntervalError && fieldErrors?.tickIntervalMins && <div style={errorTextStyle}>{fieldErrors.tickIntervalMins}</div>}
-        {!tickIntervalError && !fieldErrors?.tickIntervalMins && tickIntervalNotice && <div style={helperTextStyle}>{tickIntervalNotice}</div>}
+        {tickIntervalHelp && <div id={tickIntervalHelpId} role={tickIntervalHelpIsError ? 'alert' : undefined} style={tickIntervalHelpIsError ? errorTextStyle : helperTextStyle}>{tickIntervalHelp}</div>}
         {!tickIntervalError && cadence && (
           <div style={{ marginTop: '6px', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
             {explicitCadence

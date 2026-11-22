@@ -117,7 +117,7 @@ describe('edit-agent-oauth-draft storage', () => {
   });
 
   it('returns null for corrupted JSON', () => {
-    store.set('edit-agent-oauth-draft-v1', 'not valid json');
+    store.set('edit-agent-oauth-draft-v2', 'not valid json');
 
     const loaded = loadEditAgentOAuthDraft();
     expect(loaded).toBeNull();
@@ -126,21 +126,21 @@ describe('edit-agent-oauth-draft storage', () => {
   it('returns null when agentId is missing', () => {
     const draft = makeDraft();
     const { agentId: _, ...withoutAgentId } = draft;
-    store.set('edit-agent-oauth-draft-v1', JSON.stringify(withoutAgentId));
+    store.set('edit-agent-oauth-draft-v2', JSON.stringify(withoutAgentId));
 
     const loaded = loadEditAgentOAuthDraft();
     expect(loaded).toBeNull();
   });
 
   it('returns null when form object is missing', () => {
-    store.set('edit-agent-oauth-draft-v1', JSON.stringify({ agentId: 'agent-123' }));
+    store.set('edit-agent-oauth-draft-v2', JSON.stringify({ agentId: 'agent-123' }));
 
     const loaded = loadEditAgentOAuthDraft();
     expect(loaded).toBeNull();
   });
 
   it('returns null when stored value is not an object', () => {
-    store.set('edit-agent-oauth-draft-v1', '"just a string"');
+    store.set('edit-agent-oauth-draft-v2', '"just a string"');
 
     const loaded = loadEditAgentOAuthDraft();
     expect(loaded).toBeNull();
@@ -157,6 +157,14 @@ describe('edit-agent-oauth-draft storage', () => {
     expect(loaded).toEqual(draft);
   });
 
+  it('ignores and removes a legacy v1 draft carrying an old tick interval and max hold', () => {
+    store.set('edit-agent-oauth-draft-v1', JSON.stringify(makeDraft({
+      form: { tickIntervalMins: '1440' },
+      runtimePolicyOverrides: { maxHoldDurationMs: 86_400_000 },
+    })));
+    expect(loadEditAgentOAuthDraft()).toBeNull();
+    expect(store.has('edit-agent-oauth-draft-v1')).toBe(false);
+  });
   it('handles empty connectionIds in form', () => {
     const draft = makeDraft({ form: { connectionIds: [] } });
     saveEditAgentOAuthDraft(draft);

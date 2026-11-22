@@ -226,39 +226,21 @@ describe('validateCreateAgentForm', () => {
     expect(result.errors.goal).toBeUndefined();
   });
 
-  // ── D9: skip-unchanged relaxes the maxHold-vs-tickInterval check ──────────
-  describe('skip-unchanged (D9)', () => {
-    // careful style's maxHold is 90 min; a 24 h (1440 min) interval exceeds it.
-    const careful24h = {
-      style: 'careful',
-      requiresTradingSetup: false,
-      venue: '',
-      capital: '',
-      tickIntervalMins: '1440',
-      runtimePolicyOverrides: { maxHoldDurationMs: 5_400_000 },
-    } as const;
-
-    it('rejects a 24 h interval against careful max hold when skip-unchanged is on', () => {
+  // The max-hold vs tick-interval invariant is owned by the API (validated on the
+  // effective tick); the form only checks the tick field's own format.
+  describe('max hold vs tick interval', () => {
+    it('does not check the tick interval against max hold client-side', () => {
       const result = validateCreateAgentForm(
-        validIntent({ ...careful24h, skipUnchangedTicks: true }),
-        DEFAULT_CONSTRAINTS,
-      );
-      expect(result.valid).toBe(false);
-      expect(result.errors.tickIntervalMins).toBeDefined();
-    });
-
-    it('accepts the same 24 h interval when skip-unchanged is off', () => {
-      const result = validateCreateAgentForm(
-        validIntent({ ...careful24h, skipUnchangedTicks: false }),
+        validIntent({ requiresTradingSetup: false, venue: '', capital: '', tickIntervalMins: '1440' }),
         DEFAULT_CONSTRAINTS,
       );
       expect(result.valid).toBe(true);
       expect(result.errors.tickIntervalMins).toBeUndefined();
     });
 
-    it('still validates the integer tick interval when skip-unchanged is off', () => {
+    it('still rejects a non-integer tick interval', () => {
       const result = validateCreateAgentForm(
-        validIntent({ ...careful24h, skipUnchangedTicks: false, tickIntervalMins: '1.5' }),
+        validIntent({ requiresTradingSetup: false, venue: '', capital: '', tickIntervalMins: '1.5' }),
         DEFAULT_CONSTRAINTS,
       );
       expect(result.valid).toBe(false);

@@ -26,16 +26,6 @@ export interface CreateAgentFormIntent {
   requiresTradingSetup: boolean;
   /** Whether at least one connection is granted for the selected venue. */
   hasConnection?: boolean;
-  style?: string;
-  runtimePolicyOverrides?: { maxHoldDurationMs?: number | null } | null;
-  /**
-   * D9: the resolved skip-unchanged setting (form override + trading capability
-   * of the selected skills). When `false`, max hold never applies — no tick is
-   * skipped for being unchanged — so the maxHold-vs-tickInterval check is moot
-   * (e.g. a 24 h interval on a careful non-trading agent is valid). Defaults to
-   * `true` (the historical behaviour) when the caller omits it.
-   */
-  skipUnchangedTicks?: boolean;
 }
 
 export function validateCreateAgentForm(
@@ -61,23 +51,14 @@ export function validateCreateAgentForm(
     }
   }
 
-  // tickIntervalMins: if provided, ≥ 1 minute, whole number; and maxHoldDurationMs must be ≥ tickIntervalMs
+  // tickIntervalMins: if provided, ≥ 1 minute, whole number. The max-hold invariant is
+  // validated by the API against the effective tick (the web does not classify agents).
   if (intent.tickIntervalMins.trim()) {
     const tickNum = Number(intent.tickIntervalMins);
     if (!Number.isFinite(tickNum) || tickNum < 1 || !Number.isInteger(tickNum)) {
       errors.tickIntervalMins = 'Tick interval must be at least 1 minute.';
-    } else if (intent.skipUnchangedTicks !== false) {
-      // D9: only enforce maxHold >= tickInterval when skip-unchanged is on. With
-      // it off, ticks are never skipped as unchanged, so a long interval is fine.
-      const tickIntervalMs = tickNum * 60_000;
-      const maxHoldMs = intent.runtimePolicyOverrides?.maxHoldDurationMs;
-      if (maxHoldMs != null && maxHoldMs !== 0 && maxHoldMs < tickIntervalMs) {
-        const maxHoldMins = Math.round(maxHoldMs / 60_000);
-        errors.tickIntervalMins = `Tick interval (${tickNum} min) exceeds max hold duration (${maxHoldMins} min). Reduce tick interval or increase Max Hold Duration in Advanced Settings.`;
-      }
     }
   }
-
   // maxOpenPositions: if provided, must be a valid positive integer, ≤ constraints.maxOpenPositions
   if (intent.maxOpenPositions.trim()) {
     const maxOpen = Number(intent.maxOpenPositions);
