@@ -587,3 +587,8 @@ Grouped by plan item.
 - Medium: removing the last trading skill leaves an explicit fast tick in place (documented in `docs/tech/agents/runtime-policy-and-reasoning.md`, no new behaviour).
 - Low: `runtime-policy-propagation.integration.test.ts` not extended; `TRUNCATE ... CASCADE` NOTICE noise and an obscure `'9999_all.sql'` sentinel in the new integration test.
 - Not verified: no browser/visual check of the edit form.
+
+### Second final review
+
+- No critical or high issues remain.
+- Medium (new): `PUT /agents/:id` in `agent-interactivity.ts` still accepts `tickIntervalMs` and `skillIds` with no add-trading-skill tick replacement and no max-hold invariant check, so a legacy 86400000 agent gaining a trading skill through PUT keeps 24h. API-only (no web or worker caller found), not a regression. Reuse the PATCH logic via a shared helper or document it, and add a test.
