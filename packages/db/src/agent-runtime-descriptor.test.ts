@@ -209,6 +209,30 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
     expect(customSkill.capabilityFamilies).toEqual(['trading']);
   });
 
+  it('keeps the stored trading family on a backend-approved external skill row (worker tick classification input)', async () => {
+    // The worker decides the cadence of an unset tick from resolvedSkills[].capabilityFamilies,
+    // so the stored family on the external row must survive resolution verbatim.
+    let selectCount = 0;
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount++;
+        return makeChain(selectCount === 1 ? [createSkillRow({
+          skillId: 'ext_crypto_bot_management',
+          name: 'crypto-bot-management',
+          requiredTools: [],
+          capabilityFamilies: ['trading'],
+          sourceRef: 'traderton/skills/crypto-bot-management',
+        })] : []);
+      }),
+    } as unknown as Database;
+
+    const descriptor = await resolveRuntimeCapabilityDescriptor(db, 'agent-with-external-trading-skill');
+    const external = descriptor.resolvedSkills.find((skill) => skill.id === 'ext_crypto_bot_management')!;
+
+    expect(external.capabilityFamilies).toContain('trading');
+    expect(external.sourceRef).toBe('traderton/skills/crypto-bot-management');
+  });
+
   it('does not infer a trading family (nor throw) for a custom skill with unscoped account tools', async () => {
     // Step 12 T3.2: the trading-account guard and the tool-name inference were
     // removed. The DB resolver keeps the row's STORED capabilityFamilies verbatim

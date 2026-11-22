@@ -1,5 +1,13 @@
 import { z } from 'zod';
-import { Decimal, SYSTEM_SKILLS, resolveAgentRuntimePolicy } from '@herobids/domain';
+import {
+  AgentStyleSchema,
+  Decimal,
+  SYSTEM_SKILLS,
+  resolveAgentRuntimePolicy,
+  resolveEffectiveTickIntervalMs,
+  resolveStyleTradingTickIntervalMs,
+} from '@herobids/domain';
+import type { EffectiveTickIntervalSource } from '@herobids/domain';
 import { externalSkillIdForRef } from '@herobids/db';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { validateAiModelSelection, normalizeAgentModelPolicy } from '../llm-model-catalog.js';
@@ -459,7 +467,11 @@ export function resolveNotificationPolicy(
   };
 }
 
-export function decorateAgentResponse<T extends { modelPolicy?: Record<string, unknown> | null; style?: string | null; runtimePolicyOverrides?: Record<string, unknown> | null; maxDrawdown?: unknown; strategy?: unknown; risk?: unknown; executionDefaults?: unknown; skillIds?: string[] | null }>(agent: T): Omit<T, 'maxDrawdown'> & {
+export function decorateAgentResponse<T extends { modelPolicy?: Record<string, unknown> | null; style?: string | null; runtimePolicyOverrides?: Record<string, unknown> | null; maxDrawdown?: unknown; strategy?: unknown; risk?: unknown; executionDefaults?: unknown; skillIds?: string[] | null; tickIntervalMs?: number | null }>(
+  agent: T,
+  // Operator non-trading default; the response carries the effective tick and its source.
+  tickDefaults: { nonTradingDefaultTickIntervalMs: number },
+): Omit<T, 'maxDrawdown'> & {
   provider: string | null;
   lightModel: string | null;
   heavyModel: string | null;
@@ -469,6 +481,8 @@ export function decorateAgentResponse<T extends { modelPolicy?: Record<string, u
   dexWatchlistSymbols: string[] | null;
   resolvedRuntimePolicy: Record<string, unknown> | null;
   strategy: unknown;
+  effectiveTickIntervalMs: number | null;
+  tickIntervalSource: EffectiveTickIntervalSource;
 } {
   const modelPolicy = (agent.modelPolicy as Record<string, unknown> | null | undefined) ?? null;
   const result: Record<string, unknown> = {
@@ -491,6 +505,13 @@ export function decorateAgentResponse<T extends { modelPolicy?: Record<string, u
     ) as unknown as Record<string, unknown> | null,
     strategy: (agent as Record<string, unknown>)['strategy'] ?? null,
   };
+  const effective = resolveEffectiveTickIntervalMs({
+    storedTickIntervalMs: agent.tickIntervalMs ?? null,
+    hasTradingCapability: hasSkillCapabilityFamily(agent.skillIds, 'trading'),
+    nonTradingDefaultTickIntervalMs: tickDefaults.nonTradingDefaultTickIntervalMs,
+  });
+  result['effectiveTickIntervalMs'] = effective.tickIntervalMs;
+  result['tickIntervalSource'] = effective.source;
   delete result['maxDrawdown'];
   return result as Omit<T, 'maxDrawdown'> & {
     provider: string | null;
@@ -502,6 +523,8 @@ export function decorateAgentResponse<T extends { modelPolicy?: Record<string, u
     dexWatchlistSymbols: string[] | null;
     resolvedRuntimePolicy: Record<string, unknown> | null;
     strategy: unknown;
+    effectiveTickIntervalMs: number | null;
+    tickIntervalSource: EffectiveTickIntervalSource;
   };
 }
 
@@ -517,10 +540,26 @@ export function validateMaxHoldDurationInvariant(params: {
   style: string | null | undefined;
   runtimePolicyOverrides: Record<string, unknown> | null | undefined;
   skillIds?: string[] | null;
+  /**
+   * The invariant is checked on the EFFECTIVE tick: an unset (null) tick on a
+   * non-trading agent validates as this operator default; an unset tick on a
+   * trading agent validates as the style's trading tick.
+   */
+  nonTradingDefaultTickIntervalMs: number;
 }): Array<{ code: 'custom'; path: string[]; message: string }> {
-  const tickMs = typeof params.tickIntervalMs === 'string'
+  const storedTickMs = typeof params.tickIntervalMs === 'string'
     ? Number(params.tickIntervalMs)
     : (params.tickIntervalMs ?? null);
+  const effective = resolveEffectiveTickIntervalMs({
+    storedTickIntervalMs: storedTickMs,
+    hasTradingCapability: hasSkillCapabilityFamily(params.skillIds, 'trading'),
+    nonTradingDefaultTickIntervalMs: params.nonTradingDefaultTickIntervalMs,
+  });
+  // 'unset' means a trading agent with no stored tick: the style cadence is the baseline
+  // (same function the add-trading-skill path uses), so an override below it is rejected.
+  const tickMs = effective.source === 'unset'
+    ? resolveStyleTradingTickIntervalMs(AgentStyleSchema.catch('balanced').parse(params.style))
+    : effective.tickIntervalMs;
   if (tickMs == null || !Number.isFinite(tickMs) || tickMs <= 0) {
     return [];
   }

@@ -1915,6 +1915,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
       payload: { skillIds: ['traderton/skills/crypto-trading'], tickIntervalMs: 86_400_000 },
     });
 
+    expect(JSON.stringify(res.json())).toContain('maxHoldDurationMs (5400000ms) must be >= tickIntervalMs (86400000ms). Set maxHoldDurationMs to at least the tick interval, or reduce tickIntervalMs.');
     expect(res.statusCode).toBe(400);
   });
 
@@ -3614,6 +3615,108 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
 
     expect(res.statusCode).toBe(200);
     expect(updateSets).toContainEqual(expect.objectContaining({ tickIntervalMs: null }));
+    // Cleared non-trading agent resolves back to the operator default.
+    expect(res.json()).toMatchObject({ effectiveTickIntervalMs: 86_400_000, tickIntervalSource: 'non_trading_default' });
+  });
+
+  it('leaves the stored tickIntervalMs untouched when PATCH omits it', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const row = { id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null, tickIntervalMs: 900_000, capital: null, risk: null, executionDefaults: null };
+    const { db, updateSets } = buildDb({ agentRows: [row], activeLinkRows: [row] });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'PATCH', url: '/agents/agent-1', payload: { name: 'renamed' } });
+
+    expect(res.statusCode).toBe(200);
+    expect(updateSets.some((set: Record<string, unknown>) => 'tickIntervalMs' in set)).toBe(false);
+    expect(res.json()).toMatchObject({ effectiveTickIntervalMs: 900_000, tickIntervalSource: 'user' });
+  });
+
+  it('rejects adding a trading skill when a stored max hold override is below the style trading tick of an unset tick', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const row = {
+      id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null,
+      executionMode: 'paper', style: 'careful', tickIntervalMs: null,
+      runtimePolicyOverrides: { skipUnchangedTicks: true, maxHoldDurationMs: 600_000 },
+    };
+    const { db, updateSets } = buildDb({
+      agentRows: [row],
+      activeLinkRows: [{ ...row, skillIds: ['traderton/skills/crypto-trading'] }],
+      agentSkillRows: [],
+    });
+    const stagedSaga = makeStagedProfileSaga(db);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { skillIds: ['traderton/skills/crypto-trading'] },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(JSON.stringify(res.json())).toContain('maxHoldDurationMs (600000ms) must be >= tickIntervalMs (5400000ms)');
+    expect(updateSets.some((set: Record<string, unknown>) => 'tickIntervalMs' in set)).toBe(false);
+  });
+
+  it.each([0, -1000, 500])('rejects tickIntervalMs %i on PATCH', async (tickIntervalMs) => {
+    const { agentRoutes } = await import('./agents.js');
+    const row = { id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null, tickIntervalMs: 900_000, capital: null, risk: null, executionDefaults: null };
+    const { db } = buildDb({ agentRows: [row], activeLinkRows: [row] });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'PATCH', url: '/agents/agent-1', payload: { tickIntervalMs } });
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('validates a non-trading PATCH against the effective 24 h tick when none is stored', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const row = { id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null, tickIntervalMs: null, style: 'balanced', runtimePolicyOverrides: null, capital: null, risk: null, executionDefaults: null };
+    const { db } = buildDb({ agentRows: [row], activeLinkRows: [row] });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { runtimePolicyOverrides: { skipUnchangedTicks: true, maxHoldDurationMs: 600_000 } },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(JSON.stringify(res.json())).toContain('maxHoldDurationMs (600000ms) must be >= tickIntervalMs (86400000ms)');
+  });
+
+  it('keeps an unset tick unset when a trading skill is added', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const row = {
+      id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null,
+      executionMode: 'paper', style: 'balanced', tickIntervalMs: null, runtimePolicyOverrides: null,
+    };
+    const { db, updateSets } = buildDb({
+      agentRows: [row],
+      activeLinkRows: [{ ...row, skillIds: ['traderton/skills/crypto-trading'] }],
+      agentSkillRows: [],
+    });
+    const stagedSaga = makeStagedProfileSaga(db);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { skillIds: ['traderton/skills/crypto-trading'] },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(updateSets.some((set: Record<string, unknown>) => 'tickIntervalMs' in set)).toBe(false);
   });
 });
 
@@ -4143,7 +4246,7 @@ describe('openPositionEscalationToJudgePolicy', () => {
     expect(alwaysInsert?.openPositionEscalationToJudgePolicy).toBe('always');
   });
 
-  it('stores the 24 h default interval for a non-trading create without an explicit interval (D10)', async () => {
+  it('stores null for a non-trading create without an explicit interval and reports the 24 h effective default', async () => {
     const { agentRoutes } = await import('./agents.js');
     const { db, insertedValues } = buildDb({
       agentRows: [{ id: 'agent-refetch', status: 'stopped', userId: TEST_USER_ID, modelPolicy: null, executionMode: null }],
@@ -4162,11 +4265,13 @@ describe('openPositionEscalationToJudgePolicy', () => {
     expect(res.statusCode).toBe(201);
 
     const insert = insertedValues.find((v: any) => v.name === 'non-trading-default');
+    // The default is resolved at read/launch time, never written into the column.
+    expect(insert?.tickIntervalMs).toBeNull();
     // 24 h = 86_400_000 ms (operator agentRuntime.nonTradingDefaults.tickIntervalMs).
-    expect(insert?.tickIntervalMs).toBe(86_400_000);
+    expect(res.json()).toMatchObject({ effectiveTickIntervalMs: 86_400_000, tickIntervalSource: 'non_trading_default' });
   });
 
-  it('keeps an explicit interval on a non-trading create (D10)', async () => {
+  it('keeps an explicit interval on a non-trading create and reports source user', async () => {
     const { agentRoutes } = await import('./agents.js');
     const { db, insertedValues } = buildDb({
       agentRows: [{ id: 'agent-refetch', status: 'stopped', userId: TEST_USER_ID, modelPolicy: null, executionMode: null }],
@@ -4186,6 +4291,65 @@ describe('openPositionEscalationToJudgePolicy', () => {
 
     const insert = insertedValues.find((v: any) => v.name === 'non-trading-explicit');
     expect(insert?.tickIntervalMs).toBe(300_000);
+  });
+
+  it('stores null for a trading create without an interval and reports it unset', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const createdAgent = { id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null, unifiedConfig: null };
+    const { db, insertedValues } = buildDb({
+      agentRows: [createdAgent],
+      activeLinkRows: [createdAgent],
+      agentSkillRows: [{ skillId: 'traderton/skills/crypto-trading', orderIndex: 0 }],
+      skillRows: [
+        { id: 'traderton/skills/crypto-trading', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-crypto-trading' },
+      ],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'trading-no-tick',
+        prompt: 'trade BTC',
+        technical: { filters: { venue: 'hyperliquid', venueType: 'orderbook' } },
+        skillIds: ['traderton/skills/crypto-trading'],
+        capabilityMode: 'hybrid',
+        hybridMode: 'scanner_gated',
+        executionDefaults: { mode: 'paper' },
+      },
+    });
+    expect(res.statusCode).toBe(201);
+
+    const insert = insertedValues.find((v: any) => v.name === 'trading-no-tick');
+    expect(insert?.tickIntervalMs).toBeNull();
+    expect(res.json()).toMatchObject({ effectiveTickIntervalMs: null, tickIntervalSource: 'unset' });
+  });
+
+  it('rejects a non-trading create whose max hold override is below the effective 24 h tick', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'non-trading-short-hold',
+        prompt: 'summarise my inbox',
+        runtimePolicyOverrides: { skipUnchangedTicks: true, maxHoldDurationMs: 600_000 },
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.stringify(res.json())).toContain('maxHoldDurationMs (600000ms) must be >= tickIntervalMs (86400000ms)');
   });
 
   it('does not apply the non-trading default to a trading create — keeps the explicit interval (D10)', async () => {

@@ -259,7 +259,7 @@ Changes:
   so the preset/style cadence applies. Verify `effectiveTickIntervalMs` still
   seeds correctly.
 
-### 3. API: create/patch + response decoration — PENDING
+### 3. API: create/patch + response decoration — DONE
 
 Files:
 - `apps/api/src/routes/agents.ts`
@@ -540,3 +540,15 @@ Grouped by plan item.
 - Low: compute `deriveHasTradingCapability` once and reuse in `reconcileStartingSessions`.
 - Low: `as any` mocks in the new test file.
 - Note: implementer did not search `docs/bug-reports/`; reviewer checked bug report 2026/10/06/002 (guard in `deriveHasTradingCapability`) is in place.
+
+### Item 3 — API
+
+- Medium (M1): the API classifies "trading" through `hasSkillCapabilityFamily` (system skills + registered backend refs); the worker uses resolved skills' `capabilityFamilies`. A skill trading for the worker but missing from the API's maps is reported as 24h and validated against 24h (can falsely 400 an explicit small `maxHoldDurationMs` with skip-unchanged on). Runtime tick stays correct. Add a test or accept as known.
+- Medium (M2): the max-hold check for trading + null tick uses the style tick as a proxy for the worker's real cadence (preset/cost-profile). For `costPreset: custom` the real cadence (`deriveCustomTickIntervalMs`, 5 min to 24h) can differ; false 400 or false accept possible. Known limitation.
+- Medium (M3): adding a trading skill to a null-tick agent with an explicit max-hold override below the style tick is now a 400 (previously auto-derived). Behaviour change; the message is actionable.
+- Behaviour change: a trading create with a null tick and a small max-hold override is now rejected (accepted before).
+- Behaviour change: hybrid capability mode without a trading skill is classed non-trading by both API and worker, so its null tick resolves to 24h.
+- Low: `effectiveTickIntervalMs` is `null` for `source: 'unset'` (trading); UIs cannot show a cadence. Consider returning the style-derived value or documenting.
+- Low: `nonTradingDefaultTickIntervalMs` is a trailing positional parameter on `agentInteractivityRoutes` (fragile).
+- Not done: worker warn log for API/worker classification disagreement (worker cannot see the API's backend-ref registry). Optional info log of classification and tick source at launch.
+- Not verified: M4, blueprint snapshots/instantiation now carry `null` ticks more often (non-trading blueprints used to carry 86400000); a PATCH with `tickIntervalMs: null` test was not confirmed.

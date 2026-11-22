@@ -20,7 +20,7 @@ import {
   TradingProfileReconciliationSaga,
 } from '@herobids/db';
 import type { AuthConfig, PlansConfig } from '@herobids/domain';
-import { AgentCreationConfigSchema, CHILD_AGENT_MANAGEMENT_SKILL_ID } from '@herobids/domain';
+import { AgentCreationConfigSchema, CHILD_AGENT_MANAGEMENT_SKILL_ID, NON_TRADING_DEFAULT_TICK_INTERVAL_MS } from '@herobids/domain';
 import type { ExternalBackendClientResult } from '@herobids/domain/external-backend';
 import { authPlugin, createSessionToken } from '../plugins/auth.js';
 import { agentRoutes } from './agents.js';
@@ -338,6 +338,23 @@ describe.skipIf(SKIP)('agent-created child agents (integration)', () => {
         depth: 2,
         childAgentLimit: 0,
         status: 'stopped',
+      });
+    });
+
+    it('a child created by an agent key with no tick interval stores null and reports the effective tick and its source', async () => {
+      const userId = await seedUser(db);
+      const parent = await seedAgent(db, userId, { depth: 1, childAgentLimit: 1 });
+      const app = await appWith({});
+
+      const res = await postAsAgent(app, parent.rawKey, { name: 'Child', prompt: 'Help.' });
+
+      expect(res.statusCode).toBe(201);
+      const [child] = await childrenOf(db, parent.agentId);
+      expect(child?.tickIntervalMs).toBeNull();
+      expect(res.json()).toMatchObject({
+        tickIntervalMs: null,
+        effectiveTickIntervalMs: NON_TRADING_DEFAULT_TICK_INTERVAL_MS,
+        tickIntervalSource: 'non_trading_default',
       });
     });
 

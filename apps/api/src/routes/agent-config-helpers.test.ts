@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { resolveNotificationPolicy, resolveExecutionModeForSkills, resolveAuthorizationMode, validateConnectionRequirement, registerBackendRefFamilies, validateMaxHoldDurationInvariant } from './agent-config-helpers.js';
+import { resolveStyleTradingTickIntervalMs } from '@herobids/domain';
+import { resolveNotificationPolicy, resolveExecutionModeForSkills, resolveAuthorizationMode, validateConnectionRequirement, registerBackendRefFamilies, validateMaxHoldDurationInvariant, decorateAgentResponse } from './agent-config-helpers.js';
 
 describe('resolveNotificationPolicy', () => {
   beforeEach(() => {
@@ -586,6 +587,7 @@ describe('validateConnectionRequirement', () => {
 
 describe('validateMaxHoldDurationInvariant (D9)', () => {
   const TWENTY_FOUR_HOURS_MINS = 1440;
+  const NON_TRADING_DEFAULT_MS = 86_400_000;
   const CAREFUL_MAX_HOLD_MS = 27_000_000; // 450 min (careful default: 5 × its 90 min tick)
 
   it('rejects a 24 h interval on a careful trading agent when skip-unchanged is on', () => {
@@ -594,6 +596,7 @@ describe('validateMaxHoldDurationInvariant (D9)', () => {
       style: 'careful',
       runtimePolicyOverrides: { skipUnchangedTicks: true },
       skillIds: ['traderton/skills/crypto-trading'],
+      nonTradingDefaultTickIntervalMs: NON_TRADING_DEFAULT_MS,
     });
     expect(issues.length).toBeGreaterThan(0);
     expect(issues[0]?.path).toEqual(['runtimePolicyOverrides', 'maxHoldDurationMs']);
@@ -605,6 +608,7 @@ describe('validateMaxHoldDurationInvariant (D9)', () => {
       style: 'careful',
       runtimePolicyOverrides: { skipUnchangedTicks: false },
       skillIds: [],
+      nonTradingDefaultTickIntervalMs: NON_TRADING_DEFAULT_MS,
     });
     expect(issues).toEqual([]);
   });
@@ -615,6 +619,7 @@ describe('validateMaxHoldDurationInvariant (D9)', () => {
       style: 'careful',
       runtimePolicyOverrides: null,
       skillIds: [],
+      nonTradingDefaultTickIntervalMs: NON_TRADING_DEFAULT_MS,
     });
     expect(issues).toEqual([]);
   });
@@ -626,7 +631,142 @@ describe('validateMaxHoldDurationInvariant (D9)', () => {
       style: 'careful',
       runtimePolicyOverrides: { skipUnchangedTicks: true },
       skillIds: ['traderton/skills/crypto-trading'],
+      nonTradingDefaultTickIntervalMs: NON_TRADING_DEFAULT_MS,
     });
     expect(issues.length).toBeGreaterThan(0);
+  });
+
+  describe('on the effective tick', () => {
+    it('validates a non-trading agent with no stored tick as the 24 h default', () => {
+      const issues = validateMaxHoldDurationInvariant({
+        tickIntervalMs: null,
+        style: 'careful',
+        runtimePolicyOverrides: { skipUnchangedTicks: true, maxHoldDurationMs: 600_000 },
+        skillIds: [],
+        nonTradingDefaultTickIntervalMs: NON_TRADING_DEFAULT_MS,
+      });
+      expect(issues).toHaveLength(1);
+      expect(issues[0]?.message).toContain('maxHoldDurationMs (600000ms) must be >= tickIntervalMs (86400000ms)');
+    });
+
+    it('accepts a non-trading agent with no stored tick when skip-unchanged resolves off', () => {
+      const issues = validateMaxHoldDurationInvariant({
+        tickIntervalMs: null,
+        style: 'careful',
+        runtimePolicyOverrides: null,
+        skillIds: [],
+        nonTradingDefaultTickIntervalMs: NON_TRADING_DEFAULT_MS,
+      });
+      expect(issues).toEqual([]);
+    });
+
+    it('validates a trading agent with no stored tick against the style trading tick', () => {
+      const issues = validateMaxHoldDurationInvariant({
+        tickIntervalMs: null,
+        style: 'careful',
+        runtimePolicyOverrides: { skipUnchangedTicks: true, maxHoldDurationMs: 600_000 },
+        skillIds: ['traderton/skills/crypto-trading'],
+        nonTradingDefaultTickIntervalMs: NON_TRADING_DEFAULT_MS,
+      });
+      expect(issues).toHaveLength(1);
+      expect(issues[0]?.path).toEqual(['runtimePolicyOverrides', 'maxHoldDurationMs']);
+      expect(issues[0]?.message).toContain(`tickIntervalMs (${resolveStyleTradingTickIntervalMs('careful')}ms)`);
+    });
+
+    it('accepts a trading agent with no stored tick when max hold covers the style trading tick', () => {
+      const issues = validateMaxHoldDurationInvariant({
+        tickIntervalMs: null,
+        style: 'careful',
+        runtimePolicyOverrides: { skipUnchangedTicks: true, maxHoldDurationMs: resolveStyleTradingTickIntervalMs('careful') },
+        skillIds: ['traderton/skills/crypto-trading'],
+        nonTradingDefaultTickIntervalMs: NON_TRADING_DEFAULT_MS,
+      });
+      expect(issues).toEqual([]);
+    });
+
+    it('falls back to the balanced style tick for a trading agent with no style', () => {
+      const issues = validateMaxHoldDurationInvariant({
+        tickIntervalMs: null,
+        style: null,
+        runtimePolicyOverrides: { skipUnchangedTicks: true, maxHoldDurationMs: resolveStyleTradingTickIntervalMs('balanced') - 60_000 },
+        skillIds: ['traderton/skills/crypto-trading'],
+        nonTradingDefaultTickIntervalMs: NON_TRADING_DEFAULT_MS,
+      });
+      expect(issues).toHaveLength(1);
+    });
+
+    it('accepts a trading agent with no stored tick and no max hold override', () => {
+      const issues = validateMaxHoldDurationInvariant({
+        tickIntervalMs: null,
+        style: 'careful',
+        runtimePolicyOverrides: null,
+        skillIds: ['traderton/skills/crypto-trading'],
+        nonTradingDefaultTickIntervalMs: NON_TRADING_DEFAULT_MS,
+      });
+      expect(issues).toEqual([]);
+    });
+
+    it('uses the operator default rather than a hard-coded 24 h', () => {
+      const issues = validateMaxHoldDurationInvariant({
+        tickIntervalMs: null,
+        style: 'careful',
+        runtimePolicyOverrides: { skipUnchangedTicks: true, maxHoldDurationMs: 3_600_000 },
+        skillIds: [],
+        nonTradingDefaultTickIntervalMs: 1_800_000,
+      });
+      expect(issues).toEqual([]);
+    });
+
+    it('still lets an explicit stored tick win over the default', () => {
+      const issues = validateMaxHoldDurationInvariant({
+        tickIntervalMs: 300_000,
+        style: 'careful',
+        runtimePolicyOverrides: { skipUnchangedTicks: true, maxHoldDurationMs: 600_000 },
+        skillIds: [],
+        nonTradingDefaultTickIntervalMs: NON_TRADING_DEFAULT_MS,
+      });
+      expect(issues).toEqual([]);
+    });
+  });
+});
+
+describe('decorateAgentResponse effective tick', () => {
+  const tickDefaults = { nonTradingDefaultTickIntervalMs: 86_400_000 };
+
+  it('reports the non-trading default for an unset non-trading agent', () => {
+    expect(decorateAgentResponse({ tickIntervalMs: null, skillIds: [] }, tickDefaults)).toMatchObject({
+      effectiveTickIntervalMs: 86_400_000,
+      tickIntervalSource: 'non_trading_default',
+    });
+  });
+
+  it('reports unset for an unset trading agent', () => {
+    expect(decorateAgentResponse({ tickIntervalMs: null, skillIds: ['traderton/skills/crypto-trading'] }, tickDefaults)).toMatchObject({
+      effectiveTickIntervalMs: null,
+      tickIntervalSource: 'unset',
+    });
+  });
+
+  it('classifies a hybrid-capability agent without a trading skill as non-trading, as the worker does', () => {
+    // capabilityMode "hybrid" can be created with no trading skill. Both the API and the worker
+    // classify by skills only, so the two agree on the cadence for its unset tick.
+    expect(decorateAgentResponse({ tickIntervalMs: null, skillIds: [], unifiedConfig: { capabilityMode: 'hybrid' } } as { tickIntervalMs: null; skillIds: string[] }, tickDefaults)).toMatchObject({
+      effectiveTickIntervalMs: 86_400_000,
+      tickIntervalSource: 'non_trading_default',
+    });
+  });
+
+  it('reports a stored tick as user', () => {
+    expect(decorateAgentResponse({ tickIntervalMs: 300_000, skillIds: [] }, tickDefaults)).toMatchObject({
+      effectiveTickIntervalMs: 300_000,
+      tickIntervalSource: 'user',
+    });
+  });
+
+  it('honours the operator default passed in rather than a fixed 24 h', () => {
+    expect(decorateAgentResponse({ tickIntervalMs: null, skillIds: [] }, { nonTradingDefaultTickIntervalMs: 43_200_000 })).toMatchObject({
+      effectiveTickIntervalMs: 43_200_000,
+      tickIntervalSource: 'non_trading_default',
+    });
   });
 });

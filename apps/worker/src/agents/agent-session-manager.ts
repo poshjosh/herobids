@@ -10,7 +10,7 @@ import type {
   OperatorModelDefaults,
 } from '@herobids/domain';
 import {
-  AgentRuntimeNonTradingDefaultsSchema,
+  NON_TRADING_DEFAULT_TICK_INTERVAL_MS,
   readSkillPresetId,
   resolveAgentRuntimePolicy,
   resolveEffectiveTickIntervalMs,
@@ -42,11 +42,6 @@ const logger = createLogger('agent-session-manager');
 
 /** Per-agent timeout for Redis stream subscription during survived-session recovery. */
 const STREAM_SUBSCRIBE_TIMEOUT_MS = 10_000;
-
-// Fallback when the operator value is not threaded in (e.g. unit tests); sourced
-// from the schema default of agentRuntime.nonTradingDefaults.tickIntervalMs.
-const DEFAULT_NON_TRADING_TICK_INTERVAL_MS: number =
-  AgentRuntimeNonTradingDefaultsSchema.parse({}).tickIntervalMs;
 
 export interface AgentSessionManagerConfig {
   /** Heartbeat timeout in ms — mark runtime unhealthy after this. Default: 30000 */
@@ -510,7 +505,7 @@ export class AgentSessionManager {
           storedTickIntervalMs: agent.tickIntervalMs ?? null,
           hasTradingCapability: deriveHasTradingCapability(runtimeDescriptor.resolvedSkills),
           nonTradingDefaultTickIntervalMs:
-            this.config.nonTradingDefaultTickIntervalMs ?? DEFAULT_NON_TRADING_TICK_INTERVAL_MS,
+            this.config.nonTradingDefaultTickIntervalMs ?? NON_TRADING_DEFAULT_TICK_INTERVAL_MS,
         });
 
         const agentConfig: Record<string, unknown> = {

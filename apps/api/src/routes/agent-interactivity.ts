@@ -18,7 +18,7 @@ import { LocalDocumentStore } from '@herobids/documents/local-document-store';
 import { createDocumentTextExtractor } from '@herobids/documents/document-text-extractors';
 import { resolve } from 'node:path';
 import type { AgentApprovalsConfig, AgentCreationConfig, AuthConfig, ChatInboundAdapter, ChatWebhookRequest, ModelDefaults, PlanAgentsEntitlements, PlansConfig, ResolvedTelegramChatConfig, UnifiedAgentConfig } from '@herobids/domain';
-import { AgentCreationConfigSchema, AgentRuntimePolicyOverridesSchema, AGENT_STREAM_MAXLEN, AuthConfigSchema } from '@herobids/domain';
+import { AgentCreationConfigSchema, AgentRuntimePolicyOverridesSchema, AGENT_STREAM_MAXLEN, AuthConfigSchema, NON_TRADING_DEFAULT_TICK_INTERVAL_MS } from '@herobids/domain';
 import type { ConversationMessage, MessageSender } from '@herobids/domain';
 import {
   ConversationQuerySchema,
@@ -133,6 +133,8 @@ export async function agentInteractivityRoutes(
   profileReconciliationSaga?: TradingProfileReconciliationSaga,
   agentCreation: AgentCreationConfig = AgentCreationConfigSchema.parse({}),
   conversations: ConversationRouteDeps = createConversationRouteDeps(db),
+  // Operator non-trading default tick, used only to report the effective tick in responses.
+  nonTradingDefaultTickIntervalMs: number = NON_TRADING_DEFAULT_TICK_INTERVAL_MS,
 ): Promise<void> {
   const SendMessageSchema = buildSendMessageSchema(conversations.limits.userMessageMaxChars);
   const webChatDocumentRepo = new AgentDocumentsRepository(db);
@@ -426,7 +428,7 @@ export async function agentInteractivityRoutes(
 
     const [updated] = await db.select().from(agents).where(eq(agents.id, id));
     const skillIds = await listSkillIdsForAgent(id);
-    const [updatedOut] = await withAgentChatAddresses(db, request.userId, [decorateAgentResponse({ ...updated!, skillIds })]);
+    const [updatedOut] = await withAgentChatAddresses(db, request.userId, [decorateAgentResponse({ ...updated!, skillIds }, { nonTradingDefaultTickIntervalMs })]);
     return reply.send({ ...updatedOut, ...(childAllowance?.notice ? { childAgentLimitNotice: childAllowance.notice } : {}) });
   });
 

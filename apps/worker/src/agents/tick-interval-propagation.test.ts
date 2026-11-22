@@ -5,6 +5,8 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import type { RuntimeDescriptor } from '@herobids/domain';
+import { resolveRuntimeCapabilityDescriptor } from '@herobids/db';
+import type { Database } from '@herobids/db';
 import { AgentSessionManager } from './agent-session-manager.js';
 
 const TEST_RUNTIME_BUDGETS = {
@@ -68,10 +70,54 @@ function makeAgent(agentId: string, overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeChain(value: unknown[]) {
+  const chain: Record<string, unknown> = {};
+  for (const method of ['from', 'where', 'innerJoin', 'orderBy']) {
+    chain[method] = vi.fn(() => chain);
+  }
+  (chain as { then: unknown }).then = (
+    resolve: (v: unknown) => unknown,
+    reject?: (v: unknown) => unknown,
+  ) => Promise.resolve(value).then(resolve, reject);
+  return chain;
+}
+
+// Builds the capability descriptor through the real DB resolver (skill rows -> SkillDefinition),
+// not a hand-written SkillDefinition, so the worker classification input is the production shape.
+function resolveThroughDb(skillRows: Array<Record<string, unknown>>) {
+  let selectCount = 0;
+  const db = {
+    select: vi.fn().mockImplementation(() => {
+      selectCount++;
+      return makeChain(selectCount === 1 ? skillRows : []);
+    }),
+  } as unknown as Database;
+  return resolveRuntimeCapabilityDescriptor(db, 'agent-1');
+}
+
+function externalSkillRow(capabilityFamilies: string[]): Record<string, unknown> {
+  return {
+    skillId: 'ext_crypto_bot_management',
+    name: 'crypto-bot-management',
+    description: '',
+    instructions: '',
+    promptHint: null,
+    promptTemplate: null,
+    requiredTools: [],
+    contextRequirements: [],
+    requiredGuardrails: [],
+    capabilityFamilies,
+    suggestedTickIntervalMs: null,
+    sourceRef: 'traderton/skills/crypto-bot-management',
+  };
+}
+
 async function launchAgentConfig(opts: {
   hasTrading: boolean;
   stored: number | null | undefined;
   operatorDefault?: number;
+  capabilityDescriptor?: unknown;
+  agentOverrides?: Record<string, unknown>;
 }): Promise<Record<string, unknown>> {
   const agentRepo = {
     getLaunchableStartingSessions: vi.fn().mockResolvedValue([{ id: 'sess-1', agentId: 'agent-1' }]),
@@ -79,10 +125,10 @@ async function launchAgentConfig(opts: {
     updateSession: vi.fn().mockResolvedValue(undefined),
     updateAgent: vi.fn().mockResolvedValue(undefined),
     getAgent: vi.fn().mockResolvedValue(
-      makeAgent('agent-1', opts.stored === undefined ? {} : { tickIntervalMs: opts.stored }),
+      makeAgent('agent-1', { ...(opts.stored === undefined ? {} : { tickIntervalMs: opts.stored }), ...opts.agentOverrides }),
     ),
     getUserAiModelConfig: vi.fn().mockResolvedValue(null),
-    getRuntimeCapabilityDescriptor: vi.fn().mockResolvedValue(makeDescriptor('agent-1', opts.hasTrading)),
+    getRuntimeCapabilityDescriptor: vi.fn().mockResolvedValue(opts.capabilityDescriptor ?? makeDescriptor('agent-1', opts.hasTrading)),
     recordSessionStartedSkillUsage: vi.fn().mockResolvedValue(undefined),
     getSessionsByStatuses: vi.fn().mockResolvedValue([]),
   };
@@ -126,6 +172,16 @@ describe('AgentSessionManager tickIntervalMs resolution', () => {
     expect(config['tickIntervalMs']).toBe(SCHEMA_DEFAULT_NON_TRADING_TICK_MS);
   });
 
+  it('gives a hybrid-capability agent without a trading skill the operator default, matching the API classification', async () => {
+    const config = await launchAgentConfig({
+      hasTrading: false,
+      stored: null,
+      operatorDefault: OPERATOR_NON_TRADING_TICK_MS,
+      agentOverrides: { unifiedConfig: { capabilityMode: 'hybrid' } },
+    });
+    expect(config['tickIntervalMs']).toBe(OPERATOR_NON_TRADING_TICK_MS);
+  });
+
   it('omits tickIntervalMs for a trading agent with no stored tick so cost-profile cadence applies', async () => {
     const config = await launchAgentConfig({
       hasTrading: true,
@@ -133,6 +189,28 @@ describe('AgentSessionManager tickIntervalMs resolution', () => {
       operatorDefault: OPERATOR_NON_TRADING_TICK_MS,
     });
     expect(config).not.toHaveProperty('tickIntervalMs');
+  });
+
+  it('omits tickIntervalMs for an external backend-approved trading skill row (capability_families={trading}) with a null stored tick', async () => {
+    const capabilityDescriptor = await resolveThroughDb([externalSkillRow(['trading'])]);
+    const config = await launchAgentConfig({
+      hasTrading: false,
+      stored: null,
+      operatorDefault: OPERATOR_NON_TRADING_TICK_MS,
+      capabilityDescriptor,
+    });
+    expect(config).not.toHaveProperty('tickIntervalMs');
+  });
+
+  it('gives the operator default to the same external skill row when its stored families are empty', async () => {
+    const capabilityDescriptor = await resolveThroughDb([externalSkillRow([])]);
+    const config = await launchAgentConfig({
+      hasTrading: false,
+      stored: null,
+      operatorDefault: OPERATOR_NON_TRADING_TICK_MS,
+      capabilityDescriptor,
+    });
+    expect(config['tickIntervalMs']).toBe(OPERATOR_NON_TRADING_TICK_MS);
   });
 
   it.each([

@@ -39,7 +39,7 @@ import {
 import { loadOperatorRiskDefaults } from '../traderton-operator-defaults.js';
 import {
   AgentRiskDefaultsSchema,
-  AgentRuntimeNonTradingDefaultsSchema,
+  NON_TRADING_DEFAULT_TICK_INTERVAL_MS,
   AgentRuntimePolicyOverridesSchema,
   CapabilityModeSchema,
   ExecutionDefaultsSchema,
@@ -575,12 +575,6 @@ function enrichAgentResponse(agent: typeof agents.$inferSelect & { skillIds?: st
 }
 
 
-// D10: fallback for the non-trading default tick interval when the operator
-// config is not threaded in (e.g. unit tests). Sourced from the schema default
-// (agentRuntime.nonTradingDefaults.tickIntervalMs = 24 h) — no magic literal.
-const DEFAULT_NON_TRADING_TICK_INTERVAL_MS: number =
-  AgentRuntimeNonTradingDefaultsSchema.parse({}).tickIntervalMs;
-
 class ConnectionValidationError extends Error {
   constructor(readonly status: number, readonly body: Record<string, unknown>) {
     super('connection validation failed');
@@ -653,14 +647,16 @@ export async function agentRoutes(
   tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
   profileReconciliationSaga?: TradingProfileReconciliationSaga,
-  // D10: operator default tick interval for non-trading agents created without
-  // an explicit interval. Threaded from appConfig.agentRuntime.nonTradingDefaults.
-  nonTradingDefaultTickIntervalMs: number = DEFAULT_NON_TRADING_TICK_INTERVAL_MS,
+  // Operator default tick interval for non-trading agents with no stored tick. Never written
+  // to the column; used to resolve the effective tick for validation and responses.
+  // Threaded from appConfig.agentRuntime.nonTradingDefaults.
+  nonTradingDefaultTickIntervalMs: number = NON_TRADING_DEFAULT_TICK_INTERVAL_MS,
   // Agent-created agents (001-agent-creating-agents §3): rate, depth and the child-create ceiling.
   agentCreation: AgentCreationConfig = AgentCreationConfigSchema.parse({}),
   startupProgressGate: StartupProgressGate | null = null,
 ): Promise<void> {
   const approvalRepo = new DecisionApprovalRepository(db);
+  const tickDefaults = { nonTradingDefaultTickIntervalMs };
   const stagedProfileReconciliationSaga = profileReconciliationSaga ?? new TradingProfileReconciliationSaga(
     new TradingProfileReconciliationOutboxRepository(db),
     {
@@ -995,6 +991,7 @@ export async function agentRoutes(
       style: parsed.data.style,
       runtimePolicyOverrides: parsed.data.runtimePolicyOverrides ?? null,
       skillIds: parsed.data.skillIds,
+      nonTradingDefaultTickIntervalMs,
     });
     if (holdInvariantIssues.length > 0) {
       return reply.status(400).send({ error: 'validation_error', details: holdInvariantIssues });
@@ -1120,13 +1117,6 @@ export async function agentRoutes(
     // remains authoritative; this is only the unbound fallback snapshot.
     const isTradingCapable = hasSkillCapabilityFamily(parsed.data.skillIds ?? [], 'trading') || capabilityMode === 'hybrid';
 
-    // D10: a non-trading agent created without an explicit tick interval defaults
-    // to the operator non-trading interval (24 h). Trading agents keep the
-    // style-derived interval (null here means "use the style default downstream").
-    // PATCH never recomputes this (see the update handler).
-    const resolvedTickIntervalMs = parsed.data.tickIntervalMs
-      ?? (isTradingCapable ? null : nonTradingDefaultTickIntervalMs);
-
     if (isTradingCapable && (executionDefaultsJsonb?.mode != null || parsed.data.capital != null)) {
       const uc = (createFields.unifiedConfig ?? {}) as Record<string, unknown>;
       if (executionDefaultsJsonb?.mode != null) {
@@ -1241,7 +1231,8 @@ export async function agentRoutes(
           modelPolicy: effectiveModelPolicy,
           notificationPolicy: createFields.notificationPolicy,
           maxBots: createFields.maxBots,
-          tickIntervalMs: resolvedTickIntervalMs,
+          // Unset stays null for trading and non-trading alike; the effective tick is resolved at read/launch time.
+          tickIntervalMs: parsed.data.tickIntervalMs ?? null,
           style: parsed.data.style ?? null,
           permissionLevel: lineage.permissionLevel,
           runtimePolicyOverrides: createFields.runtimePolicyOverrides,
@@ -1377,7 +1368,7 @@ export async function agentRoutes(
           return reply.status(409).send(errorPayload('agent.create.duplicate_gone', 'The child created moments ago was removed. Retry the create.'));
         }
         const existingSkillIds = await listSkillIdsForAgent(db, error.childId);
-        const [existingOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...existing, skillIds: existingSkillIds }), ...enrichAgentResponse(existing) }]);
+        const [existingOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...existing, skillIds: existingSkillIds }, tickDefaults), ...enrichAgentResponse(existing) }]);
         return reply.status(200).send({ ...existingOut, duplicate: true, started: false, startError: null });
       }
       if (error instanceof ConnectionValidationError) return reply.status(error.status).send(error.body);
@@ -1398,7 +1389,7 @@ export async function agentRoutes(
     const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
     const skillIds = await listSkillIdsForAgent(db, agentId);
     setCreateAgentOutcome(request, 'success');
-    const [createdOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...agent!, skillIds }), ...enrichAgentResponse(agent!) }]);
+    const [createdOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...agent!, skillIds }, tickDefaults), ...enrichAgentResponse(agent!) }]);
     return reply.status(201).send({
       ...createdOut,
       ...(childAllowance?.notice ? { childAgentLimitNotice: childAllowance.notice } : {}),
@@ -1417,7 +1408,7 @@ export async function agentRoutes(
       ...decorateAgentResponse({
         ...agent,
         skillIds: skillIdsByAgentId.get(agent.id) ?? [],
-      }),
+      }, tickDefaults),
       ...enrichAgentResponse(agent),
     }))));
   });
@@ -1536,7 +1527,7 @@ export async function agentRoutes(
 
     const skillIds = await listSkillIdsForAgent(db, id);
     const tradingState = await readTradingStateForResponse(request, agent);
-    const [agentOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...agent, ...tradingState, skillIds }), ...enrichAgentResponse(agent), activeSession: session ? toPublicRuntimeSession(session, startupProgressGate) : null }]);
+    const [agentOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...agent, ...tradingState, skillIds }, tickDefaults), ...enrichAgentResponse(agent), activeSession: session ? toPublicRuntimeSession(session, startupProgressGate) : null }]);
     return reply.send(agentOut);
   });
 
@@ -1705,9 +1696,10 @@ export async function agentRoutes(
     }
 
     // Adding a trading skill moves a non-trading default tick to the style's trading tick.
-    // A tick sent in the request is never replaced.
+    // A tick sent in the request is never replaced, and an unset (null) tick stays unset:
+    // the style cadence applies at launch, and writing it would turn a default into a user value.
     const addsTradingSkill = mergedIsTradingCapable && !hasSkillCapabilityFamily(existingSkillIds, 'trading');
-    if (addsTradingSkill && parsed.data.tickIntervalMs === undefined) {
+    if (addsTradingSkill && parsed.data.tickIntervalMs === undefined && agent.tickIntervalMs !== null) {
       const scheduleStyle = AgentStyleSchema.catch('balanced').parse(parsed.data.style ?? agent.style);
       const tradingTickIntervalMs = resolveTradingTickIntervalMs({
         style: scheduleStyle,
@@ -1740,6 +1732,7 @@ export async function agentRoutes(
         ? (parsed.data.runtimePolicyOverrides as Record<string, unknown> | null)
         : (agent.runtimePolicyOverrides as Record<string, unknown> | null),
       skillIds: mergedSkillIds,
+      nonTradingDefaultTickIntervalMs,
     });
     if (holdInvariantIssues.length > 0) {
       return reply.status(400).send({ error: 'validation_error', details: holdInvariantIssues });
@@ -2490,7 +2483,7 @@ export async function agentRoutes(
 
     const [updated] = await db.select().from(agents).where(eq(agents.id, id));
     const skillIds = await listSkillIdsForAgent(db, id);
-    const [updatedOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...updated!, skillIds }), ...enrichAgentResponse(updated!) }]);
+    const [updatedOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...updated!, skillIds }, tickDefaults), ...enrichAgentResponse(updated!) }]);
     return reply.send({ ...updatedOut, ...(childAllowance?.notice ? { childAgentLimitNotice: childAllowance.notice } : {}) });
   });
 
@@ -3708,7 +3701,7 @@ export async function agentRoutes(
 
     const [newAgent] = await db.select().from(agents).where(eq(agents.id, result.agentId));
     const skillIds = await listSkillIdsForAgent(db, result.agentId);
-    const [newAgentOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...newAgent!, skillIds }), ...enrichAgentResponse(newAgent!) }]);
+    const [newAgentOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...newAgent!, skillIds }, tickDefaults), ...enrichAgentResponse(newAgent!) }]);
     return reply.status(201).send(newAgentOut);
   });
 
