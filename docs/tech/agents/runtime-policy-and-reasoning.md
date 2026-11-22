@@ -69,6 +69,51 @@ budget.
 
 A missing or invalid style falls back to **balanced**.
 
+### Tick interval for non-trading agents
+
+The style tick interval above applies to agents with a trading skill. For an
+agent without one, the tick is resolved by `resolveEffectiveTickIntervalMs`
+(`packages/domain/src/config/agent-schedule.ts`) with this precedence:
+
+1. **Stored value** (`agents.tick_interval_ms` not null): used as is, source `user`.
+2. **Non-trading and unset**: the operator default
+   `agentRuntime.nonTradingDefaults.tickIntervalMs` (24 h by default), source
+   `non_trading_default`.
+3. **Trading and unset**: no value (source `unset`); the style / cost-preset
+   cadence applies.
+
+How it behaves:
+
+- The API stores `null` when `tickIntervalMs` is omitted on create. It never
+  writes the default into the column.
+- Agent responses carry `effectiveTickIntervalMs` and `tickIntervalSource`, so
+  clients show the effective cadence without owning the rule. The web form does
+  not pre-fill or classify.
+- The worker resolves the non-trading default at launch
+  (`apps/worker/src/agents/agent-session-manager.ts`) and passes it to the
+  container as `agentConfig.tickIntervalMs`. Changing the operator default takes
+  effect for unset agents on their next launch.
+- The API and worker both derive trading capability from the agent's skills: the
+  API from the skill ids, the worker from the resolved skill descriptor. They can
+  disagree for a skill whose stored capability families are missing; the worker's
+  answer decides the launch cadence.
+
+Existing agents (no data migration):
+
+- Non-trading agents created before this change have `tick_interval_ms = 86400000`
+  stored. That reads as an explicit `user` value and gives the same 24 h cadence,
+  even if the operator default is later changed.
+- Adding a trading skill later replaces a stored tick with the style cadence only
+  if it still equals the current operator default. A legacy 24 h kept after the
+  operator default changed is not replaced and stays as an explicit tick.
+- Their edit form shows 24 h as a filled value. A new non-trading agent has
+  `null`, so its edit form shows an empty field with the effective default notice.
+- Old non-trading agents with a null tick now get the operator default at launch
+  (a change from running the preset cadence). Trading agents with a null tick keep
+  the style / preset cadence.
+- A migration that nulls old 24 h values was rejected because it could
+  reinterpret a deliberate 24 h choice.
+
 ### Output token limits: `scoutMaxTokens`, `judgeMaxTokens` and the operator `llm.maxTokens`
 
 `scoutMaxTokens` and `judgeMaxTokens` are the output-token limit of each scout and judge model call.

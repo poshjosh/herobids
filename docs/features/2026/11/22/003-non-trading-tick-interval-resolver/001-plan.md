@@ -353,7 +353,7 @@ the user typed one.
 - **Hydration of max hold:** show only a stored explicit max-hold override. Never
   fill it from the tick interval. See "Remove client-side max-hold logic" above.
 
-### 5. Migration / back-compat for existing ~1440 agents — PENDING
+### 5. Migration / back-compat for existing ~1440 agents — DONE
 
 Files:
 - `docs/features/.../000-...` note; no data migration required (recommended).
@@ -564,3 +564,9 @@ Grouped by plan item.
 - Low: `.tickInterval.placeholder` strings in hi/ar say ms where en says minutes (pre-existing).
 - Behaviour notes: old (v1) OAuth drafts for create and edit are discarded after deploy (unsaved edits lost mid-upgrade). The effective-default notice is hidden once skills change in the edit form.
 - Not verified: no browser/visual check (helper text, inline max-hold error, Advanced-tab switch, OAuth return).
+
+### Item 5 — Back-compat
+
+- Low: add a regression test for a trading agent with a legacy stored 86400000 (current tests cover non-trading only).
+- Low: optional domain test for `resolveTradingTickIntervalMs` with stored 24h and a changed (12h) operator default; docs now state that a legacy 24h kept after the operator default changes is not replaced when a trading skill is added.
+- Note: the "zero behaviour change" claim holds for cadence; the add-trading-skill replacement rule depends on the current operator default.

@@ -763,6 +763,13 @@ describe('decorateAgentResponse effective tick', () => {
     });
   });
 
+  it('keeps a legacy stored 24 h on a non-trading agent as an explicit user value even when the operator default differs', () => {
+    expect(decorateAgentResponse({ tickIntervalMs: 86_400_000, skillIds: [] }, { nonTradingDefaultTickIntervalMs: 43_200_000 })).toMatchObject({
+      effectiveTickIntervalMs: 86_400_000,
+      tickIntervalSource: 'user',
+    });
+  });
+
   it('honours the operator default passed in rather than a fixed 24 h', () => {
     expect(decorateAgentResponse({ tickIntervalMs: null, skillIds: [] }, { nonTradingDefaultTickIntervalMs: 43_200_000 })).toMatchObject({
       effectiveTickIntervalMs: 43_200_000,

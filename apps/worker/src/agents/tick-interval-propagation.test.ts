@@ -213,6 +213,15 @@ describe('AgentSessionManager tickIntervalMs resolution', () => {
     expect(config['tickIntervalMs']).toBe(OPERATOR_NON_TRADING_TICK_MS);
   });
 
+  it('keeps a legacy stored 24 h on a non-trading agent even when the operator default differs', async () => {
+    const config = await launchAgentConfig({
+      hasTrading: false,
+      stored: SCHEMA_DEFAULT_NON_TRADING_TICK_MS,
+      operatorDefault: OPERATOR_NON_TRADING_TICK_MS,
+    });
+    expect(config['tickIntervalMs']).toBe(SCHEMA_DEFAULT_NON_TRADING_TICK_MS);
+  });
+
   it.each([
     ['non-trading', false],
     ['trading', true],
