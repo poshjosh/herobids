@@ -1243,7 +1243,7 @@ export async function agentRoutes(
             actorId: parentAgentId,
             action: 'agent.child_created',
             targetId: agentId,
-            detail: { parentAgentId, depth: lineage.depth, executionMode: executionMode.value },
+            detail: { parentAgentId, depth: lineage.depth, executionMode: executionMode.value, grantedNotHeld: lineage.grantedNotHeld },
           });
         } else {
           await recordAgentAuditEvent(tx, {

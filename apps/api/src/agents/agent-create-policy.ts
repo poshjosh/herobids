@@ -124,6 +124,13 @@ export interface AgentLineage {
   parentAgentId: string | null;
   depth: number;
   permissionLevel: PermissionLevel;
+  /** Requested ids the parent did not hold that the parent's grant settings let through. Empty for user callers. */
+  grantedNotHeld: GrantedNotHeld;
+}
+
+export interface GrantedNotHeld {
+  skills: string[];
+  connections: string[];
 }
 
 const PERMISSION_RANK = new Map<string, number>([
@@ -164,7 +171,7 @@ export async function evaluateAgentCreatePolicy(
     if (planError) {
       throw new AgentCreatePolicyError(403, 'plan_total', errorPayload(planError.code, planError.message, planError.params));
     }
-    return { creatorType: 'user', creatorId: caller.userId, parentAgentId: null, depth: 0, permissionLevel: input.permissionLevel ?? 'standard' };
+    return { creatorType: 'user', creatorId: caller.userId, parentAgentId: null, depth: 0, permissionLevel: input.permissionLevel ?? 'standard', grantedNotHeld: { skills: [], connections: [] } };
   }
 
   // Only the user may give a child the children skill. A parent that holds it cannot pass it on.
@@ -201,10 +208,10 @@ export async function evaluateAgentCreatePolicy(
     throw agentPolicyError(403, 'plan_total', 'agent.create.plan_limit_exceeded', planError.message, planError.params);
   }
 
-  await assertGrantsHeldByParent(q, parent, input);
+  const grantedNotHeld = await assertGrantsHeldByParent(q, parent, input);
 
   const permissionLevel = resolveChildPermission(parent.permissionLevel, input.permissionLevel);
-  return { creatorType: 'agent', creatorId: parent.id, parentAgentId: parent.id, depth: childDepth, permissionLevel };
+  return { creatorType: 'agent', creatorId: parent.id, parentAgentId: parent.id, depth: childDepth, permissionLevel, grantedNotHeld };
 }
 
 const MS_PER_SECOND = 1000;
@@ -237,6 +244,8 @@ async function lockParentAgent(q: AgentPolicyReader, userId: string, parentAgent
       depth: agents.depth,
       childAgentLimit: agents.childAgentLimit,
       permissionLevel: agents.permissionLevel,
+      grantAnySkillToChildren: agents.grantAnySkillToChildren,
+      grantAnyConnectionToChildren: agents.grantAnyConnectionToChildren,
     })
     .from(agents)
     .where(and(eq(agents.id, parentAgentId), eq(agents.userId, userId)));
@@ -260,26 +269,31 @@ async function checkPlanTotal(
 }
 
 /**
- * Every requested skill and connection must be held by the parent now.
+ * Every requested skill and connection must be held by the parent now, unless the user's grant setting on the
+ * parent waives the check for that kind (the owner checks in the create route still apply). Returns the requested
+ * ids the parent did not hold that the settings let through.
  * Known gap (accepted, plan §5): these grant rows are read in the insert's transaction but not locked.
  * A skill or connection revoked from the parent while this creation runs can still pass. The parent row
  * lock serialises creations from the same parent only, so no further lock is taken here.
  */
 async function assertGrantsHeldByParent(
   q: AgentPolicyReader,
-  parent: { id: string },
+  parent: { id: string; grantAnySkillToChildren: boolean; grantAnyConnectionToChildren: boolean },
   input: AgentCreatePolicyInput,
-): Promise<void> {
+): Promise<GrantedNotHeld> {
+  const grantedNotHeld: GrantedNotHeld = { skills: [], connections: [] };
+
   if (input.skillIds.length > 0) {
     const held = await q.select({ skillId: agentSkills.skillId }).from(agentSkills).where(eq(agentSkills.agentId, parent.id));
     const heldIds = new Set(held.map((row) => row.skillId));
     const missing = input.skillIds.filter((skillId) => !heldIds.has(skillId));
-    if (missing.length > 0) {
+    if (missing.length > 0 && !parent.grantAnySkillToChildren) {
       throw agentPolicyError(403, 'grant', 'agent.create.grant_not_held', 'The creating agent does not hold every requested skill.', {
         kind: 'skill',
         missing,
       });
     }
+    grantedNotHeld.skills = missing;
   }
 
   if (input.connectionIds.length > 0) {
@@ -289,13 +303,16 @@ async function assertGrantsHeldByParent(
       .where(and(eq(agentConnections.agentId, parent.id), eq(agentConnections.status, 'active')));
     const assignedIds = new Set(assigned.map((row) => row.connectionId));
     const missing = input.connectionIds.filter((connectionId) => !assignedIds.has(connectionId));
-    if (missing.length > 0) {
+    if (missing.length > 0 && !parent.grantAnyConnectionToChildren) {
       throw agentPolicyError(403, 'grant', 'agent.create.grant_not_held', 'The creating agent does not hold every requested connection.', {
         kind: 'connection',
         missing,
       });
     }
+    grantedNotHeld.connections = missing;
   }
+
+  return grantedNotHeld;
 }
 
 /**

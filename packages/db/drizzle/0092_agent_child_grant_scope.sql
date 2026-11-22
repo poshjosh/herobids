@@ -1,0 +1,2 @@
+ALTER TABLE "agents" ADD COLUMN "grant_any_skill_to_children" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "agents" ADD COLUMN "grant_any_connection_to_children" boolean DEFAULT false NOT NULL;

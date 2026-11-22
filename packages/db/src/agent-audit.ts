@@ -36,6 +36,8 @@ export interface AgentAuditDetail {
   source?: 'skill_assigned';
   /** The execution mode a created child resolved to; null for a non-trading child. */
   executionMode?: 'paper' | 'shadow' | 'live' | null;
+  /** Requested ids the creating agent did not hold and the user's grant settings let through. Ids only. */
+  grantedNotHeld?: { skills: string[]; connections: string[] };
 }
 
 export interface AgentAuditEventInput {

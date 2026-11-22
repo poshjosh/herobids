@@ -139,7 +139,7 @@ Check before coding:
 ## 11. Rollout
 
 1. DONE — Refusal detail in the tool result (§4). Safe on its own and useful at once. Pass the response body through for all 4xx responses, not only grant refusals. A 400 `validation_error` was also reduced to "HTTP 400" and hid its cause. The [Agent Child Execution Mode](../000-agent-child-execution-mode/001-plan.md) plan shares this step. Do it once.
-2. PENDING — Migration, policy change and the `grantedNotHeld` audit field, flags default off. No behavior change.
+2. DONE — Migration, policy change and the `grantedNotHeld` audit field, flags default off. No behavior change.
 3. PENDING — User-only route, audit and allowance read.
 4. PENDING — Worker client and tool text. Add `list_owner_connections` only if the connection flag ships.
 5. PENDING — UI: card, then create flow.
@@ -160,3 +160,15 @@ Decided 2026-11-22:
 4. Add `grantedNotHeld: { skills, connections }` to the detail of the existing `agent.child_created` audit row (see §4, Audit). Effort: about 15 lines and two tests, no schema change. The `agent.child_grant_scope_set` row on the new PUT is separate and stays. It copies `agent.child_limit_set`.
 
 Open: none.
+
+## Outstanding Issues
+
+Refusal-body passthrough (rollout step 1) issues are recorded in the execution-mode plan.
+
+### Item 2 — Migration, policy, `grantedNotHeld`
+
+- Medium: no migration test proving existing rows read `false`/`false` (current test seeds through the new schema). Add one like `ext-prefixed-skills-migration.integration.test.ts`.
+- Low: owner-check and permission-cap integration tests assert only `>= 400`; pin status and code.
+- Low: `grantedNotHeld` may list duplicate ids if request arrays are not deduped; dedupe or confirm.
+- Low: §10 lists `grant_user_only` and permission-cap with a flag on as unit tests; they exist only as integration tests.
+- Low: add the "agent key sends `grantAnySkillToChildren` → `field_not_allowed`" test (planned for step 3).

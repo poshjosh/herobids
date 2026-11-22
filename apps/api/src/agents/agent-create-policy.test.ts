@@ -102,6 +102,8 @@ interface ParentOverrides {
   depth?: number;
   childAgentLimit?: number;
   permissionLevel?: string;
+  grantAnySkillToChildren?: boolean;
+  grantAnyConnectionToChildren?: boolean;
 }
 
 /** A store with one parent of USER_ID, optional children, one held skill and one active connection. */
@@ -120,6 +122,8 @@ function storeWith(parent: ParentOverrides = {}, options: { children?: number; o
         depth: parent.depth ?? 1,
         childAgentLimit: parent.childAgentLimit ?? 2,
         permissionLevel: parent.permissionLevel ?? 'standard',
+        grantAnySkillToChildren: parent.grantAnySkillToChildren ?? false,
+        grantAnyConnectionToChildren: parent.grantAnyConnectionToChildren ?? false,
       },
       ...childRows,
     ],
@@ -178,7 +182,7 @@ describe('agent create policy: user creation', () => {
   it('a user creation within the plan total gets a user-owned lineage at depth zero with standard permission', async () => {
     const lineage = await evaluateAgentCreatePolicy(readerOf(storeWith()), userInput(), false);
 
-    expect(lineage).toEqual({ creatorType: 'user', creatorId: USER_ID, parentAgentId: null, depth: 0, permissionLevel: 'standard' });
+    expect(lineage).toEqual({ creatorType: 'user', creatorId: USER_ID, parentAgentId: null, depth: 0, permissionLevel: 'standard', grantedNotHeld: { skills: [], connections: [] } });
   });
 
   it('a user creation at the plan total is refused by the plan_total rule with the plan error code', async () => {
@@ -306,7 +310,90 @@ describe('agent create policy: each rule in isolation', () => {
       parentAgentId: PARENT_ID,
       depth: 3,
       permissionLevel: 'standard',
+      grantedNotHeld: { skills: [], connections: [] },
     });
+  });
+});
+
+describe('agent create policy: grant settings', () => {
+  const BOTH_OFF = {};
+  const SKILL_ON = { grantAnySkillToChildren: true };
+  const CONNECTION_ON = { grantAnyConnectionToChildren: true };
+  const BOTH_ON = { grantAnySkillToChildren: true, grantAnyConnectionToChildren: true };
+
+  it('refuses a skill the parent does not hold when both settings are off', async () => {
+    const refusal = await ruleOf(evaluateAgentCreatePolicy(readerOf(storeWith(BOTH_OFF)), childInput({ skillIds: ['skill-b'] }), false));
+
+    expect(refusal.body).toMatchObject({ error: 'agent.create.grant_not_held', params: { kind: 'skill', missing: ['skill-b'] } });
+  });
+
+  it('admits a skill the parent does not hold when the skill setting is on and reports it', async () => {
+    const lineage = await evaluateAgentCreatePolicy(readerOf(storeWith(SKILL_ON)), childInput({ skillIds: ['skill-a', 'skill-b'] }), false);
+
+    expect(lineage.grantedNotHeld).toEqual({ skills: ['skill-b'], connections: [] });
+  });
+
+  it('still refuses a connection the parent does not hold when only the skill setting is on', async () => {
+    const refusal = await ruleOf(evaluateAgentCreatePolicy(readerOf(storeWith(SKILL_ON)), childInput({ connectionIds: ['conn-b'] }), false));
+
+    expect(refusal.body).toMatchObject({ error: 'agent.create.grant_not_held', params: { kind: 'connection', missing: ['conn-b'] } });
+  });
+
+  it('admits a connection the parent does not hold when the connection setting is on and reports it', async () => {
+    const lineage = await evaluateAgentCreatePolicy(readerOf(storeWith(CONNECTION_ON)), childInput({ connectionIds: ['conn-a', 'conn-b'] }), false);
+
+    expect(lineage.grantedNotHeld).toEqual({ skills: [], connections: ['conn-b'] });
+  });
+
+  it('still refuses a skill the parent does not hold when only the connection setting is on', async () => {
+    const refusal = await ruleOf(evaluateAgentCreatePolicy(readerOf(storeWith(CONNECTION_ON)), childInput({ skillIds: ['skill-b'] }), false));
+
+    expect(refusal.body).toMatchObject({ error: 'agent.create.grant_not_held', params: { kind: 'skill', missing: ['skill-b'] } });
+  });
+
+  it('treats a connection the parent holds only inactively as not held', async () => {
+    const store = storeWith(CONNECTION_ON);
+    store.agentConnections.push({ agentId: PARENT_ID, connectionId: 'conn-off', status: 'paused' });
+
+    const lineage = await evaluateAgentCreatePolicy(readerOf(store), childInput({ connectionIds: ['conn-off'] }), false);
+
+    expect(lineage.grantedNotHeld.connections).toEqual(['conn-off']);
+  });
+
+  it.each([['skill setting', SKILL_ON], ['connection setting', CONNECTION_ON], ['both settings', BOTH_ON]])(
+    'still refuses the user-only children skill with the %s on',
+    async (_label, settings) => {
+      const refusal = await ruleOf(evaluateAgentCreatePolicy(readerOf(storeWith(settings)), childInput({ skillIds: ['child-agent-management'] }), false));
+
+      expect(refusal.body).toMatchObject({ error: 'agent.create.grant_user_only' });
+    },
+  );
+
+  it.each([['skill setting', SKILL_ON], ['connection setting', CONNECTION_ON], ['both settings', BOTH_ON]])(
+    'still refuses a permission level above the parent with the %s on',
+    async (_label, settings) => {
+      const refusal = await ruleOf(evaluateAgentCreatePolicy(readerOf(storeWith({ ...settings, permissionLevel: 'standard' })), childInput({ permissionLevel: 'full' }), false));
+
+      expect(refusal.rule).toBe('permission');
+    },
+  );
+
+  it.each([['both off', BOTH_OFF], ['both on', BOTH_ON]])('reports nothing let through when the parent holds everything requested with %s', async (_label, settings) => {
+    const lineage = await evaluateAgentCreatePolicy(readerOf(storeWith(settings)), childInput({ skillIds: ['skill-a'], connectionIds: ['conn-a'] }), false);
+
+    expect(lineage.grantedNotHeld).toEqual({ skills: [], connections: [] });
+  });
+
+  it('reports ids split by kind when both settings let ids through', async () => {
+    const lineage = await evaluateAgentCreatePolicy(readerOf(storeWith(BOTH_ON)), childInput({ skillIds: ['skill-b', 'skill-a'], connectionIds: ['conn-b', 'conn-c'] }), false);
+
+    expect(lineage.grantedNotHeld).toEqual({ skills: ['skill-b'], connections: ['conn-b', 'conn-c'] });
+  });
+
+  it('keeps the allowance rule with the settings on', async () => {
+    const refusal = await ruleOf(evaluateAgentCreatePolicy(readerOf(storeWith({ ...BOTH_ON, childAgentLimit: 0 })), childInput({ skillIds: ['skill-b'] }), false));
+
+    expect(refusal.rule).toBe('allowance');
   });
 });
 

@@ -11,6 +11,7 @@ import {
   agentRuntimeSessions,
   agentSkills,
   agentConnections,
+  agentAuditEvents,
   connections,
   skills,
   skillRevisions,
@@ -19,7 +20,7 @@ import {
   TradingProfileReconciliationSaga,
 } from '@herobids/db';
 import type { AuthConfig, PlansConfig } from '@herobids/domain';
-import { AgentCreationConfigSchema } from '@herobids/domain';
+import { AgentCreationConfigSchema, CHILD_AGENT_MANAGEMENT_SKILL_ID } from '@herobids/domain';
 import type { ExternalBackendClientResult } from '@herobids/domain/external-backend';
 import { authPlugin, createSessionToken } from '../plugins/auth.js';
 import { agentRoutes } from './agents.js';
@@ -153,6 +154,8 @@ async function seedAgent(
     depth?: number;
     childAgentLimit?: number;
     permissionLevel?: 'restricted' | 'standard' | 'full';
+    grantAnySkillToChildren?: boolean;
+    grantAnyConnectionToChildren?: boolean;
   } = {},
 ): Promise<SeededAgent> {
   const suffix = crypto.randomUUID().slice(0, 8);
@@ -170,6 +173,8 @@ async function seedAgent(
     depth: options.depth ?? 0,
     childAgentLimit: options.childAgentLimit ?? 0,
     permissionLevel: options.permissionLevel ?? 'standard',
+    grantAnySkillToChildren: options.grantAnySkillToChildren ?? false,
+    grantAnyConnectionToChildren: options.grantAnyConnectionToChildren ?? false,
     createdAt: now,
     updatedAt: now,
   });
@@ -197,9 +202,9 @@ async function seedMarketplaceSkill(db: Db): Promise<SeededSkill> {
   return skill;
 }
 
-async function seedSystemSkill(db: Db): Promise<SeededSkill> {
+async function seedSystemSkill(db: Db, fixedSkillId?: string): Promise<SeededSkill> {
   const suffix = crypto.randomUUID().slice(0, 8);
-  const skillId = `skill-${suffix}`;
+  const skillId = fixedSkillId ?? `skill-${suffix}`;
   const revisionId = `rev-${suffix}`;
   const now = new Date();
   await db.insert(skills).values({
@@ -741,6 +746,174 @@ describe.skipIf(SKIP)('agent-created child agents (integration)', () => {
       expect(res.statusCode).toBe(201);
       const [child] = await childrenOf(db, parent.agentId);
       expect(child?.permissionLevel).toBe('standard');
+    });
+  });
+
+  describe('grant settings', () => {
+    async function childCreatedDetail(userId: string) {
+      const events = await db.select().from(agentAuditEvents).where(and(eq(agentAuditEvents.userId, userId), eq(agentAuditEvents.action, 'agent.child_created')));
+      expect(events).toHaveLength(1);
+      return events[0]!.detail;
+    }
+
+    it('new agents read both settings as false', async () => {
+      const userId = await seedUser(db);
+      const parent = await seedAgent(db, userId);
+
+      const [row] = await db.select().from(agents).where(eq(agents.id, parent.agentId));
+
+      expect(row).toMatchObject({ grantAnySkillToChildren: false, grantAnyConnectionToChildren: false });
+    });
+
+    it('with the skill setting on, a skill the parent does not hold is granted and listed in grantedNotHeld', async () => {
+      const userId = await seedUser(db);
+      const held = await seedSystemSkill(db);
+      const notHeld = await seedSystemSkill(db);
+      const parent = await seedAgent(db, userId, { childAgentLimit: 1, grantAnySkillToChildren: true });
+      await grantSkillToAgent(db, parent.agentId, held);
+      const app = await appWith({});
+
+      const res = await postAsAgent(app, parent.rawKey, { name: 'Child', prompt: 'Help.', skillIds: [held.skillId, notHeld.skillId] });
+
+      expect(res.statusCode).toBe(201);
+      const [child] = await childrenOf(db, parent.agentId);
+      const childSkills = await db.select().from(agentSkills).where(eq(agentSkills.agentId, child!.id));
+      expect(childSkills.map((row) => row.skillId).sort()).toEqual([held.skillId, notHeld.skillId].sort());
+      expect(await childCreatedDetail(userId)).toMatchObject({ grantedNotHeld: { skills: [notHeld.skillId], connections: [] } });
+    });
+
+    it('with only the skill setting on, a connection the parent does not hold is still refused', async () => {
+      const userId = await seedUser(db);
+      const connectionId = await seedConnection(db, userId);
+      const parent = await seedAgent(db, userId, { childAgentLimit: 1, grantAnySkillToChildren: true });
+      const app = await appWith({});
+
+      const res = await postAsAgent(app, parent.rawKey, { name: 'Child', prompt: 'Help.', connectionIds: [connectionId] });
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json<{ error: string }>().error).toBe('agent.create.grant_not_held');
+      expect(await childrenOf(db, parent.agentId)).toHaveLength(0);
+    });
+
+    it('with the connection setting on, an active owner connection the parent does not hold is granted and listed', async () => {
+      const userId = await seedUser(db);
+      const connectionId = await seedConnection(db, userId);
+      const parent = await seedAgent(db, userId, { childAgentLimit: 1, grantAnyConnectionToChildren: true });
+      const app = await appWith({});
+
+      const res = await postAsAgent(app, parent.rawKey, { name: 'Child', prompt: 'Help.', connectionIds: [connectionId] });
+
+      expect(res.statusCode).toBe(201);
+      const [child] = await childrenOf(db, parent.agentId);
+      const childConnections = await db.select().from(agentConnections).where(eq(agentConnections.agentId, child!.id));
+      expect(childConnections.map((row) => row.connectionId)).toEqual([connectionId]);
+      expect(await childCreatedDetail(userId)).toMatchObject({ grantedNotHeld: { skills: [], connections: [connectionId] } });
+    });
+
+    it('with only the connection setting on, a skill the parent does not hold is still refused', async () => {
+      const userId = await seedUser(db);
+      const notHeld = await seedSystemSkill(db);
+      const parent = await seedAgent(db, userId, { childAgentLimit: 1, grantAnyConnectionToChildren: true });
+      const app = await appWith({});
+
+      const res = await postAsAgent(app, parent.rawKey, { name: 'Child', prompt: 'Help.', skillIds: [notHeld.skillId] });
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json<{ error: string }>().error).toBe('agent.create.grant_not_held');
+    });
+
+    it('with the skill setting on, a skill the owner cannot select is still refused and no child is written', async () => {
+      const userId = await seedUser(db);
+      const skill = await seedMarketplaceSkill(db);
+      const parent = await seedAgent(db, userId, { childAgentLimit: 1, grantAnySkillToChildren: true });
+      const app = await appWith({ canViewMarketplaceSkills: false });
+
+      const res = await postAsAgent(app, parent.rawKey, { name: 'Child', prompt: 'Help.', skillIds: [skill.skillId] });
+
+      expect(res.statusCode).toBe(400);
+      expect(await childrenOf(db, parent.agentId)).toHaveLength(0);
+    });
+
+    it.each([['skill setting', { grantAnySkillToChildren: true }], ['both settings', { grantAnySkillToChildren: true, grantAnyConnectionToChildren: true }]])(
+      'the user-only children skill is still refused with the %s on',
+      async (_label, settings) => {
+        const userId = await seedUser(db);
+        const parent = await seedAgent(db, userId, { childAgentLimit: 1, ...settings });
+        await seedSystemSkill(db, CHILD_AGENT_MANAGEMENT_SKILL_ID);
+        const app = await appWith({});
+
+        const res = await postAsAgent(app, parent.rawKey, { name: 'Child', prompt: 'Help.', skillIds: [CHILD_AGENT_MANAGEMENT_SKILL_ID] });
+
+        expect(res.statusCode).toBe(403);
+        expect(res.json<{ error: string }>().error).toBe('agent.create.grant_user_only');
+        expect(await childrenOf(db, parent.agentId)).toHaveLength(0);
+      },
+    );
+
+    it('a connection owned by another user is refused with both settings on', async () => {
+      const userId = await seedUser(db);
+      const otherUserId = await seedUser(db);
+      const connectionId = await seedConnection(db, otherUserId);
+      const parent = await seedAgent(db, userId, { childAgentLimit: 1, grantAnySkillToChildren: true, grantAnyConnectionToChildren: true });
+      const app = await appWith({});
+
+      const res = await postAsAgent(app, parent.rawKey, { name: 'Child', prompt: 'Help.', connectionIds: [connectionId] });
+
+      expect(res.statusCode).toBeGreaterThanOrEqual(400);
+      expect(res.statusCode).toBeLessThan(500);
+      expect(await childrenOf(db, parent.agentId)).toHaveLength(0);
+    });
+
+    it('an inactive connection is refused with both settings on', async () => {
+      const userId = await seedUser(db);
+      const connectionId = await seedConnection(db, userId);
+      await db.update(connections).set({ status: 'revoked' }).where(eq(connections.id, connectionId));
+      const parent = await seedAgent(db, userId, { childAgentLimit: 1, grantAnySkillToChildren: true, grantAnyConnectionToChildren: true });
+      const app = await appWith({});
+
+      const res = await postAsAgent(app, parent.rawKey, { name: 'Child', prompt: 'Help.', connectionIds: [connectionId] });
+
+      expect(res.statusCode).toBeGreaterThanOrEqual(400);
+      expect(res.statusCode).toBeLessThan(500);
+      expect(await childrenOf(db, parent.agentId)).toHaveLength(0);
+    });
+
+    it('a permission level above the parent is still refused with both settings on', async () => {
+      const userId = await seedUser(db);
+      const parent = await seedAgent(db, userId, { childAgentLimit: 1, permissionLevel: 'standard', grantAnySkillToChildren: true, grantAnyConnectionToChildren: true });
+      const app = await appWith({});
+
+      const res = await postAsAgent(app, parent.rawKey, { name: 'Child', prompt: 'Help.', permissionLevel: 'full' });
+
+      expect(res.statusCode).toBeGreaterThanOrEqual(400);
+      expect(await childrenOf(db, parent.agentId)).toHaveLength(0);
+    });
+
+    it('a child created with both settings on has both settings false', async () => {
+      const userId = await seedUser(db);
+      const parent = await seedAgent(db, userId, { childAgentLimit: 1, grantAnySkillToChildren: true, grantAnyConnectionToChildren: true });
+      const app = await appWith({});
+
+      const res = await postAsAgent(app, parent.rawKey, { name: 'Child', prompt: 'Help.' });
+
+      expect(res.statusCode).toBe(201);
+      const [child] = await childrenOf(db, parent.agentId);
+      expect(child).toMatchObject({ grantAnySkillToChildren: false, grantAnyConnectionToChildren: false });
+    });
+
+    it('grantedNotHeld is empty when the parent holds everything, with the settings on or off', async () => {
+      const userId = await seedUser(db);
+      const held = await seedSystemSkill(db);
+      const connectionId = await seedConnection(db, userId);
+      const parent = await seedAgent(db, userId, { childAgentLimit: 2, grantAnySkillToChildren: true, grantAnyConnectionToChildren: true });
+      await grantSkillToAgent(db, parent.agentId, held);
+      await assignConnectionToAgent(db, parent.agentId, connectionId, userId);
+      const app = await appWith({});
+
+      const res = await postAsAgent(app, parent.rawKey, { name: 'Child', prompt: 'Help.', skillIds: [held.skillId], connectionIds: [connectionId] });
+
+      expect(res.statusCode).toBe(201);
+      expect(await childCreatedDetail(userId)).toMatchObject({ grantedNotHeld: { skills: [], connections: [] } });
     });
   });
 

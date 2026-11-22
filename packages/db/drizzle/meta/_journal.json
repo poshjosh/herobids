@@ -645,6 +645,13 @@
       "when": 1794698985134,
       "tag": "0091_merge_ext_prefixed_skills",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1795354485433,
+      "tag": "0092_agent_child_grant_scope",
+      "breakpoints": true
     }
   ]
 }

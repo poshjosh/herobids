@@ -1,4 +1,4 @@
-import { pgTable, text, varchar, timestamp, jsonb, integer, index, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { pgTable, text, varchar, timestamp, jsonb, integer, boolean, index, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { UnifiedAgentConfig, AgentRuntimePolicyOverrides, WakePreferences, StrategyIdentity } from '@herobids/domain';
 import { users } from './users.js';
 
@@ -66,6 +66,10 @@ export const agents = pgTable('agents', {
   depth: integer('depth').notNull().default(0),
   /** How many child agents this agent may create. User-set; starts at 0. */
   childAgentLimit: integer('child_agent_limit').notNull().default(0),
+  /** User-set. When true, this agent may give children skills it does not hold. Not inherited by children. */
+  grantAnySkillToChildren: boolean('grant_any_skill_to_children').notNull().default(false),
+  /** User-set. When true, this agent may give children any active connection of the owner. Not inherited by children. */
+  grantAnyConnectionToChildren: boolean('grant_any_connection_to_children').notNull().default(false),
   /** Why the last launch was refused (billing). Set by the worker on refusal, cleared on a successful launch. Read by the parent. */
   lastStartRefusal: jsonb('last_start_refusal').$type<AgentStartRefusal | null>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
