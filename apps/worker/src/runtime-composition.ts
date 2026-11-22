@@ -2087,7 +2087,11 @@ function recalculatePortfolioFromPositions(state: RuntimeCompositionState): void
     ? positions.reduce((total, position) => total + (position.unrealizedPnlUsd ?? 0), 0)
     : null;
   state.metrics.portfolio.exposureUsd = positions.length === 0 ? 0 : exposureUsd;
-  state.metrics.portfolio.unrealizedPnlUsd = positions.length === 0 ? 0 : unrealizedPnlUsd;
+  // Once an account summary has been applied it is the single source for
+  // unrealized P&L / equity; position-derived sums must not overwrite it.
+  if (!state.accountSummaryApplied) {
+    state.metrics.portfolio.unrealizedPnlUsd = positions.length === 0 ? 0 : unrealizedPnlUsd;
+  }
   refreshDerivedPerformanceInputs(state);
 }
 
@@ -2174,7 +2178,7 @@ function parseDecimal(value: unknown): number | null {
  * newer read. Traderton reports drawdown as a positive magnitude; herobids
  * stores it as a non-positive percent.
  */
-function accountSummaryToPortfolioUpdate(
+export function accountSummaryToPortfolioUpdate(
   data: Record<string, unknown>,
 ): Partial<Omit<RuntimePortfolioSummary, 'freshness'>> & { freshness?: RuntimeFreshness } {
   const drawdown = typeof data['drawdown'] === 'object' && data['drawdown'] !== null
@@ -2248,7 +2252,8 @@ export function applyRuntimeMessage(
   if (type === 'instance.context.snapshot') {
     const position = payload['position'] as Record<string, unknown> | undefined | null;
     const unrealizedPnl = parseNumber(payload['pnl']);
-    if (unrealizedPnl !== null) {
+    // After an account summary, it alone owns unrealized P&L and portfolio freshness.
+    if (unrealizedPnl !== null && !state.accountSummaryApplied) {
       updatePortfolioSummary(state, {
         unrealizedPnlUsd: unrealizedPnl,
         freshness: freshFreshness('runtime-snapshot'),
@@ -2462,7 +2467,7 @@ export function applyRuntimeMessage(
         side: String(position['side'] ?? 'unknown'),
         size: String(position['size'] ?? 'unknown'),
         entryPrice: position['entryPrice'] ? String(position['entryPrice']) : null,
-        unrealizedPnlUsd: parseNumber(position['unrealizedPnlUsd']),
+        unrealizedPnlUsd: parseNumber(position['unrealizedPnlUsd'] ?? position['unrealizedPnl']),
         openedAt: typeof position['openedAt'] === 'string' ? position['openedAt'] : null,
         holdDurationMinutes: null,
         venueType: inferVenueType(state, String(position['instrumentId'] ?? position['symbol'] ?? 'unknown')),

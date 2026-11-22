@@ -15,6 +15,7 @@ import {
   setCapabilityDegradation,
   setToolCapabilityDegradation,
   recordVenueSignals,
+  setOpenPositions,
   recordActiveWatches,
   recordActiveWatchSummary,
   trimDynamicBlocks,
@@ -825,6 +826,44 @@ describe('runtime composition helpers', () => {
     expect(portfolio.capitalChangedAt).toBe('2026-11-21T09:00:00.000Z');
     expect(state.metrics.performance.startingCapitalUsd).toBe(2000);
     expect(portfolio.drawdownPct).toBe(0);
+  });
+
+  it('keeps summary unrealized P&L and freshness when positions are set or a snapshot arrives afterwards', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    foldSummary(state, lossSummary);
+    const freshnessBefore = { ...state.metrics.portfolio.freshness };
+
+    setOpenPositions(state, [{
+      instrumentId: 'BTC-PERP',
+      side: 'long',
+      size: '0.5',
+      entryPrice: '60000',
+      unrealizedPnlUsd: 500,
+      openedAt: null,
+      holdDurationMinutes: null,
+      venueType: 'perps',
+      freshness: { state: 'fresh', provider: 'positions-tool', ageMs: 0 },
+    }]);
+    applyRuntimeMessage(state, {
+      type: 'instance.context.snapshot',
+      payload: { symbol: 'BTC-PERP', price: 61000, pnl: 777, position: { side: 'long', size: '0.5', entryPrice: '60000' } },
+    });
+
+    const { portfolio } = state.metrics;
+    expect(portfolio.unrealizedPnlUsd).toBe(50);
+    expect(portfolio.equityUsd).toBe(850);
+    expect(portfolio.freshness).toEqual(freshnessBefore);
+    expect(portfolio.exposureUsd).toBe(30000);
+  });
+
+  it('reads traderton list_positions rows that use the unrealizedPnl key', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    applyOwnToolResult(state, 'list_positions', {
+      ok: true,
+      positions: [{ symbol: 'BTC-PERP', side: 'long', size: '0.5', entryPrice: '60000', unrealizedPnl: '123.5' }],
+    });
+
+    expect(state.metrics.openPositions[0]?.unrealizedPnlUsd).toBe(123.5);
   });
 
   it('carries the funding flag so the prompt can label P&L as excluding funding', () => {

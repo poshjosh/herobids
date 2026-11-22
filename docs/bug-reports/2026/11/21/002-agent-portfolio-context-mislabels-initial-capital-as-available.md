@@ -1,5 +1,5 @@
 # Bug Report: agent portfolio context shows the initial capital as "Available capital" and derives equity, drawdown and starting capital from it
-- **Status:** OPEN. Not fixed. Documents the defect and the approved herobids-side plan. No work started; waiting for the owner's greenlight.
+- **Status:** FIXED (2026-11-21). All plan items DONE; see "Implementation Plan" and "Outstanding Issues" below. Depends on traderton report 001 (fixed in the same pass). Not verified live.
 - **Severity:** High. Agents see a wrong capital, equity, drawdown and P&L, and the prompt sizes positions off it.
 - **Date:** 2026-11-21
 - **Environment:** code analysis only. Not reproduced live.
@@ -62,3 +62,8 @@ Approved by the owner on 2026-11-21. Not started. Depends on traderton's new fie
 - Medium: confirm which wake kinds count as decision wakes (currently market wake and reminder only).
 - Low: the circuit-breaker loop in `agent.ts` (~2900) reads `message['resultType']`/`['journalType']` flat; same defect as the one fixed in the refresher, left as-is.
 - Low: `orders` non-empty guard on close detection (hold on a flat account does not trigger a read).
+### Final gap review
+- Fixed: after a summary is applied, position recalculation and `instance.context.snapshot` no longer overwrite portfolio unrealized P&L/freshness; positions parser accepts traderton's `unrealizedPnl`; golden-payload test (`apps/worker/src/fixtures/traderton-get-account-summary.golden.json`).
+- Medium: no shared contract schema in `@poshjosh/contracts` for the summary; golden fixture is hand-copied and can drift (consider a traderton-side key-set test). Fixture scenarios are slightly inconsistent (`neverEdited` warning, `capitalEdited` marginUsed with no positions); parser ignores those fields.
+- Medium: `accountSummaryApplied` is sticky for the session; unrealized P&L relies on the debounced refresh (fills, wakes) to stay current.
+- Not verified: live end-to-end run; visual check of the capability card.
