@@ -41,13 +41,13 @@ Approved by the owner on 2026-11-21. Not started. Depends on traderton's new fie
 - Tests cover each criterion (names describe behavior). `pnpm lint`, `pnpm build` and `pnpm test` pass.
 
 ## Not verified
-- Not reproduced live. Readers of the Redis `startingCapital` key were not checked.
+- Not reproduced live. Redis `startingCapital` readers: audited, none (see plan item 4).
 
 ## Implementation Plan (coordinator task list)
 1. DONE - Map traderton summary fields (initialCapital, equity, availableCapital, realized/unrealized P&L, drawdown, pnlSinceCapitalChange, fundingIncluded, asOf) into portfolio state; delete `available + exposure` equity derivation and infer-once startingCapital; stamp freshness with boundary `asOf`.
 2. DONE - Prompt/portfolio block: show equity, total P&L, lifetime realized, P&L since capital change, funding label; rename "Available capital"; size perPositionCap from real available capital.
-3. PENDING - Platform-side debounced account-summary refresh after fills/position close and at each decision wake.
-4. PENDING - Redis `startingCapital` readers aligned; update fixtures/tests (`runtime-composition.test.ts`, `hybrid-agent-evaluator.test.ts`, `venue-intelligence.test.ts`); CHANGELOG.
+3. DONE - Platform-side debounced account-summary refresh after fills/position close and at each decision wake (`apps/worker/src/portfolio-refresh.ts`, config `agentRuntime.portfolioRefresh.debounceMs`). Fill detection reads the real `instance.execution.result` payload (non-failed with `fills`, or `positionAfter` flat/closed after orders) and journal types `order.filled`/`order.partial`/`fill.recorded`; a fill noted during an in-flight read triggers one more read; each read is bounded by a timeout; a failed or timed-out read warns and keeps the previous state.
+4. DONE - Redis `startingCapital` audit: no readers existed (the key was only written by `InstanceEventPublisher.publishEquitySnapshot()`, which had no callers). The method and the `equity:{actorId}` hash are removed, so there is nothing to align. Fixtures/tests updated; update fixtures/tests (`runtime-composition.test.ts`, `hybrid-agent-evaluator.test.ts`, `venue-intelligence.test.ts`); CHANGELOG.
 
 ## Outstanding Issues
 ### Item 1
@@ -58,3 +58,7 @@ Approved by the owner on 2026-11-21. Not started. Depends on traderton's new fie
 - Item 1 label rename done for the UI label ("Initial capital", en/ar/hi - hi/ar translations need human check); API fields `capital`/`capitalAvailable` deliberately kept (rename to `initialCapital`/`initialCapitalSet` deferred). Tool descriptions in `apps/worker/src/tools/account.ts` and `tool-schemas.ts` fixed. `hybrid-agent-evaluator.test.ts` fixtures updated.
 - Medium: visual check of the capability card (en/ar/hi) not done.
 - Low: `buildAccountLines(..., Date.now())` makes tick context time-dependent (inject clock); unrealized line lacks "excluding funding" label; no boundary test at 9,999.99/10,000 for `usd()`; `portfolio-lines.ts`/`runtime-composition.ts` mutual (type-only) import.
+### Items 3-4
+- Medium: confirm which wake kinds count as decision wakes (currently market wake and reminder only).
+- Low: the circuit-breaker loop in `agent.ts` (~2900) reads `message['resultType']`/`['journalType']` flat; same defect as the one fixed in the refresher, left as-is.
+- Low: `orders` non-empty guard on close detection (hold on a flat account does not trigger a read).

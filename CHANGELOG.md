@@ -6,6 +6,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Trading agents' portfolio block now refreshes without the agent calling `get_account_summary`. The agent runtime reads the account summary from Traderton once after a burst of fills or position closes (after `agentRuntime.portfolioRefresh.debounceMs` of quiet, default 3000), and at each decision wake (at most once per that window). There is no per-tick polling. Freshness comes from the summary's `asOf`. A failed read logs a warning and keeps the previous figures. Bug report: docs/bug-reports/2026/11/21/002-agent-portfolio-context-mislabels-initial-capital-as-available.md.
+
+### Removed
+
+- Unused `InstanceEventPublisher.publishEquitySnapshot()` and the Redis `equity:{actorId}` hash it wrote (including `startingCapital`, which defaulted to `0`). Nothing called it and nothing read the key.
+
 ### Fixed
 
 - Agents with the `crypto-trading` skill can now use `list_strategy_presets`, `assess_strategy_preset` and `change_strategy_preset`. Herobids dropped all three on every start because it had no local tool for them (`not_in_local_registry`), so agents saw 19 of 22 tools while the review wake and the skill text told them to call tools they did not have. The three are now thin proxies to Traderton (reads for list and assess, a side-effecting write with a 30 s deadline and a fresh idempotency key per call for change). Assess and change send the agent's selected venue account and return `connection.missing` or `connection.provisioning` without calling Traderton when none is ready. `list_strategy_presets` and `change_strategy_preset` also need a Traderton build that includes the matching fix (see Traderton `docs/bug-reports/2026/11/21/002-list-and-change-strategy-preset-unavailable-without-venue-account.md`); until a Traderton with that fix is deployed they return Traderton's "preset assessment not available in this context" error.

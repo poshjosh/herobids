@@ -31,6 +31,7 @@ import {
 } from './runtime-composition.js';
 import { applyRuntimeMessage, pushMemoryTimelineEvent, takeConnectionWakes, type PendingWakeSignalBufferEntry } from './runtime-composition.js';
 import { createPromptTimingContext } from './prompt-timing-context.js';
+import { createPortfolioRefresher } from './portfolio-refresh.js';
 import {
   BASE_SKILL,
   EMAIL_SKILL,
@@ -705,6 +706,25 @@ describe('runtime composition helpers', () => {
     expect(performance.peakEquityUsd).toBe(1000);
     expect(performance.netPnlUsd).toBe(-150);
     expect(performance.riskAdjustedReturn).not.toBeNull();
+  });
+
+  it('updates the portfolio block after a fill without the agent calling a tool, stamping boundary asOf freshness', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-21T10:00:30.000Z'));
+    const state = createRuntimeCompositionState(baseDescriptor);
+    const refresher = createPortfolioRefresher({
+      debounceMs: 3_000,
+      logger: { warn: vi.fn() },
+      read: async () => ({ success: true, data: lossSummary }),
+      apply: (data) => applyOwnToolResult(state, 'get_account_summary', data),
+    });
+
+    refresher.noteFill();
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    expect(state.metrics.portfolio.equityUsd).toBe(850);
+    expect(state.metrics.portfolio.asOf).toBe(ASOF);
+    expect(state.metrics.portfolio.freshness.ageMs).toBe(33_000);
   });
 
   it('clears drawdown, peak and risk-adjusted return when the boundary reports them unavailable', () => {

@@ -13,7 +13,7 @@ import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { scannerGatedKey } from './redis-keys.js';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp, DEFAULT_PERMISSION_LEVEL } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp, DEFAULT_PERMISSION_LEVEL, DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS } from '@herobids/domain';
 import { createDatabase, AgentRepository, ConversationRepository, skills, skillRevisions, agentSkills, agentConnections, connections } from '@herobids/db';
 import { ConversationService, MessagingConversationsSchema, isFullMessageId } from '@herobids/domain';
 import { and, eq, ne, ilike, or, sql } from 'drizzle-orm';
@@ -26,7 +26,7 @@ import { compareStreamIds, OUTBOUND_READ_BLOCK_MS, OUTBOUND_READ_TIMEOUT_MS, Out
 import { createAgentPlatformClientFromEnv } from './agents/agent-platform-client.js';
 import { PeerReceiveGate, isPeerEnvelope } from './agents/peer-receive-gate.js';
 import { CREATE_CHILD_AGENT_TOOL_NAME, CREATOR_TOOL_NAMES, isCreateChildAgentExposed, isCreatorToolExposed } from './tools/agent-creation.js';
-import type { AgentAllowance } from '@herobids/domain';
+import type { AgentAllowance, SelectedVenueAccountResolution } from '@herobids/domain';
 import { buildIncrementalContext, estimateTokens } from './context-diff.js';
 import { resolveAgentCostProfile, type CostPreset } from './cost-profile.js';
 import { createPromptTimingContext } from './prompt-timing-context.js';
@@ -68,6 +68,8 @@ import {
   deriveActiveWatchSummaryFrom,
 } from './agent-watch-view.js';
 import { deriveHasTradingCapability, deriveTradingTickWorkPlan } from './agent-capabilities.js';
+import { createPortfolioRefresher, isFillOrCloseMessage } from './portfolio-refresh.js';
+import { mapReadResultToToolResult } from './tools/external-backend-result.js';
 import type { TradingSessionName } from '@herobids/domain';
 import { computeWakeSignalDigest, computeWatchSummaryDigest, computeRiskPlaybookDigest, computeDecisionContextHash, shouldSkipTick, msUntilNextAllowedHour, type TickSkipDecision, type TradingHoursConfig } from './tick-gates.js';
 import { buildScoutSystemPrompt, parseScoutDecision, type ScoutDecision } from './scout-dispatch.js';
@@ -1137,6 +1139,53 @@ interface AgentOpenPosition {
   hasTakeProfit: boolean;
 }
 
+/** The agent's CURRENT platform-selected venue account, read fresh from the grants (never cached). */
+async function resolveSelectedVenueAccount(): Promise<SelectedVenueAccountResolution> {
+  if (!db) return { status: 'missing' };
+  const rows = await db.select({
+    assignmentId: agentConnections.id,
+    grantedAt: agentConnections.grantedAt,
+    venueAccountId: connections.resolvedVenueAccountId,
+    connectionStatus: connections.status,
+  }).from(agentConnections)
+    .innerJoin(connections, eq(agentConnections.connectionId, connections.id))
+    .where(and(eq(agentConnections.agentId, AGENT_ID!), eq(agentConnections.status, 'active')));
+  const selected = rows
+    .filter((row) => row.connectionStatus === 'active' && row.venueAccountId !== null)
+    .sort((left, right) => {
+      const grantDelta = right.grantedAt.getTime() - left.grantedAt.getTime();
+      return grantDelta !== 0 ? grantDelta : right.assignmentId.localeCompare(left.assignmentId);
+    })[0];
+  if (selected?.venueAccountId) return { status: 'ready', venueAccountId: selected.venueAccountId };
+  // WP-A A1: distinguish "no connection granted" from "granted but the
+  // venue account is still provisioning" so the agent gets an accurate,
+  // actionable message instead of guessing "initializing".
+  const hasGrantedConnection = rows.some((row) => row.connectionStatus === 'active');
+  return hasGrantedConnection ? { status: 'provisioning' } : { status: 'missing' };
+}
+
+// Bug 2026-11-21/002 item 3: the platform reads the boundary account summary after
+// fills/closes (debounced) and at decision wakes, so the portfolio block does not
+// wait for the agent to call get_account_summary. Folds through the same path as
+// the agent's own read (`applyOwnToolResult`), stamping freshness from boundary asOf.
+const portfolioRefresher = createPortfolioRefresher({
+  debounceMs: agentRuntimePolicy.portfolioRefresh.debounceMs,
+  // Bounds the whole read (account lookup + boundary call incl. transport retries) at the default backend request timeout.
+  readTimeoutMs: DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS,
+  logger,
+  read: async () => {
+    if (!externalBackendRead || !deriveHasTradingCapability(runtimeState.runtimeDescriptor.resolvedSkills)) return null;
+    const resolution = await resolveSelectedVenueAccount();
+    // No ready account is an expected state (no grant yet), not a failed read.
+    if (resolution.status !== 'ready') return null;
+    return mapReadResultToToolResult(await externalBackendRead.invoke({
+      toolName: 'get_account_summary',
+      payload: { venueAccountId: resolution.venueAccountId },
+    }));
+  },
+  apply: (data) => applyOwnToolResult(runtimeState, 'get_account_summary', data),
+});
+
 /**
  * c4.9i: fetch the agent's currently-open positions over the Traderton read
  * boundary (`get_agent_positions`, the agent-scoped read the in-runtime paths
@@ -2063,28 +2112,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     // (get_risk_limits / get_account_summary) — fresh-read (current values, not
     // a snapshot), post-LLM; the LLM never sees or supplies these.
     selectedVenueAccountResolver: db
-      ? async () => {
-          const rows = await db.select({
-            assignmentId: agentConnections.id,
-            grantedAt: agentConnections.grantedAt,
-            venueAccountId: connections.resolvedVenueAccountId,
-            connectionStatus: connections.status,
-          }).from(agentConnections)
-            .innerJoin(connections, eq(agentConnections.connectionId, connections.id))
-            .where(and(eq(agentConnections.agentId, AGENT_ID!), eq(agentConnections.status, 'active')));
-          const selected = rows
-            .filter((row) => row.connectionStatus === 'active' && row.venueAccountId !== null)
-            .sort((left, right) => {
-              const grantDelta = right.grantedAt.getTime() - left.grantedAt.getTime();
-              return grantDelta !== 0 ? grantDelta : right.assignmentId.localeCompare(left.assignmentId);
-            })[0];
-          if (selected?.venueAccountId) return { status: 'ready', venueAccountId: selected.venueAccountId };
-          // WP-A A1: distinguish "no connection granted" from "granted but the
-          // venue account is still provisioning" so the agent gets an accurate,
-          // actionable message instead of guessing "initializing".
-          const hasGrantedConnection = rows.some((row) => row.connectionStatus === 'active');
-          return hasGrantedConnection ? { status: 'provisioning' } : { status: 'missing' };
-        }
+      ? resolveSelectedVenueAccount
       : undefined,
     db: db ?? undefined,
     externalSkillProvider,
@@ -2612,6 +2640,7 @@ async function shutdown(reason: string): Promise<void> {
   running = false;
   clearInterval(heartbeatTimer);
   clearTimeout(tickTimer);
+  portfolioRefresher.dispose();
   stopWakeSignalPolling();
   nextTickDueAt = 0;
 
@@ -2853,6 +2882,7 @@ async function runActiveTick(): Promise<void> {
 
     for (const message of incomingMessages) {
       applyRuntimeMessage(runtimeState, message);
+      if (isFillOrCloseMessage(message)) portfolioRefresher.noteFill();
     }
 
     // ── Feed session circuit breaker from observable message types ─────
@@ -2924,6 +2954,13 @@ async function runActiveTick(): Promise<void> {
         runtimeState.metrics.currentReminder = drained.reminder;
         hasBufferedWake = true;
       }
+    }
+
+    // ── Decision wake: refresh the portfolio block from the boundary ──────
+    // Only wake-driven ticks read (debounced, never per timer tick); a failure
+    // warns inside the refresher and keeps the previous state.
+    if (runtimeState.metrics.currentMarketWake !== null || runtimeState.metrics.currentReminder !== null) {
+      await portfolioRefresher.refreshForWake();
     }
 
     // ── Prompt context enrichment: drain queued wake signals ──────────────

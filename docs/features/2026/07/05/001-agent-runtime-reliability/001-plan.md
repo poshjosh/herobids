@@ -94,6 +94,7 @@ rejected), the worker writes the actor's current equity snapshot to a Redis key:
 ```
 equity:{actorId} → { startingCapital, realizedPnl, unrealizedPnl, peakEquity, currentDrawdown }
 ```
+> **Removed (2026-11-21, bug 2026-11-21/002 item 4):** this key and `publishEquitySnapshot()` no longer exist. Nothing called the writer or read the key.
 `get_risk_limits` reads from this key. The value is at most one decision stale — acceptable
 for a tool call.
 
@@ -355,6 +356,8 @@ layer to accept both shapes — see Issue 4 fix above.
 ## Outstanding Issues
 
 ### Issue 2a — Redis cache for live EquityTracker state ✅ RESOLVED (2026-07-05)
+
+> **Removed (2026-11-21):** the `equity:{actorId}` hash and `publishEquitySnapshot()` were deleted; they had no callers or readers (bug 2026-11-21/002 item 4). Text below is historical.
 
 The equity snapshot is now written to Redis key `equity:{actorId}` after every decision
 (via `InstanceEventPublisher.publishEquitySnapshot()`). The `get_risk_limits` tool reads

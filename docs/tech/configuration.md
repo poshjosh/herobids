@@ -109,6 +109,7 @@ Agents of one user can message each other with `message_peer_agent` (see [peer m
 
 | Key | Default | Meaning |
 |---|---|---|
+| `agentRuntime.portfolioRefresh.debounceMs` | `3000` | Quiet period after the last fill or position close before the runtime reads the boundary account summary once (one read per burst). A decision wake also reads it, at most once per this window. No per-tick polling. `0` reads without delay. Maximum `60000`. |
 | `agentRuntime.peer.rateLimitPerMinute` | `10` | Peer messages one user's agents may send in any rolling minute, across all their agents. Over the limit, a send is refused with `peer.rate_limited` and recorded as refused. Minimum `1`. |
 | `agentRuntime.peer.messageMaxChars` | `4000` | Longest peer message body. A longer one is refused with `peer.message_too_long` and not recorded. Minimum `1`, maximum `20000` (the protocol safety cap). |
 | `agentRuntime.peer.switchCacheMs` | `2000` | How long a receiving agent reuses one read of the owner's stop switch, so a batch, or a wake and the tick after it, share one read. `0` reads every time. A newly set switch reaches a queued peer message at most this much later. Maximum `30000`. |

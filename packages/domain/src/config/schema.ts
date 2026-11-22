@@ -1437,6 +1437,15 @@ export const AgentRuntimeConfigSchema = z.object({
     baseIntervalMs: z.number().int().min(1000).default(30_000),
     maxIntervalMs: z.number().int().min(1000).default(600_000),
   }).default({}),
+  /**
+   * Platform-side account-summary refresh (bug 2026-11-21/002 item 3). After a fill or
+   * position close the runtime reads the boundary account summary once the burst has
+   * been quiet for `debounceMs`; a decision wake reads it too, but never more often than
+   * one read per `debounceMs`. No per-tick polling.
+   */
+  portfolioRefresh: z.object({
+    debounceMs: z.number().int().min(0).max(60_000).default(3_000),
+  }).default({}),
   toolCircuitBreaker: z.object({
     failureThreshold: z.number().int().min(1).default(3),
     reopenAfterTicks: z.number().int().min(1).default(1),

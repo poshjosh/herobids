@@ -474,6 +474,8 @@ agentRuntime:
   backendDiscoveryRetry:
     baseIntervalMs: 30000      # min delay before retrying backend tool discovery at tick start, once backend_unreachable (30s)
     maxIntervalMs: 600000      # cap on the doubled retry delay while the backend stays unreachable (10 min)
+  portfolioRefresh:
+    debounceMs: 3000           # quiet period after the last fill/position close before one account-summary read; a decision wake reads at most once per this window (0 = no debounce, max 60000)
   toolCircuitBreaker:
     failureThreshold: 3        # consecutive tool failures before circuit opens
     reopenAfterTicks: 5        # 1 means: circuit is locked for the remainder of the current tick, 
