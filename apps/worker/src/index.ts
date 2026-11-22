@@ -788,6 +788,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
     .map(([provider]) => provider),
   crashLoopGuard: appConfig.agentRuntime.crashLoopGuard,
   operatorModelDefaults: appConfig.agentRuntime.llm.modelDefaults,
+  nonTradingDefaultTickIntervalMs: appConfig.agentRuntime.nonTradingDefaults.tickIntervalMs,
 }, agentReconnectHandler, platformAlerts, redisClient);
 
 // Enforce plan-level live execution eligibility when an agent creates a live-mode bot.

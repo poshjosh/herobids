@@ -236,7 +236,7 @@ Changes:
   informational only; the authoritative application of the tick stays in the
   worker's cost-profile step.
 
-### 2. Backend consumption: session-manager (worker path) — PENDING
+### 2. Backend consumption: session-manager (worker path) — DONE
 
 Files:
 - `apps/worker/src/agents/agent-session-manager.ts`
@@ -530,3 +530,13 @@ Grouped by plan item.
 - Low: test title uses `%i` with millisecond values; use a labelled table.
 - Low: add a test that `storedTickIntervalMs: 0` is treated as a user value.
 - Low: callers in items 2 and 3 must never pass `undefined` for the stored value (signature is `number | null`); normalise partial selects.
+
+### Item 2 — Worker session-manager
+
+- Medium: interim behaviour change. A non-trading agent with a stored null tick now runs at 24h from the next session launch (previously the preset cadence), and a stored `maxHoldDurationMs` may no longer satisfy `>= tick`. Ship with item 3 (API validation on the effective tick) or accept the interim.
+- Medium: no integration assertion that `agent.ts` seeds `effectiveTickIntervalMs` = 24h for non-trading with nothing stored; unit test stops at `agentConfig`. At least add a `resolveAgentCostProfile({ tickIntervalMs: 86_400_000 })` test.
+- Low: a stored `0` is a user value in the helper but `resolveAgentCostProfile` ignores values `<= 0`; confirm API validation prevents `0`.
+- Low: add a back-compat test with a stored 86400000 and a differing operator default (e.g. 12h).
+- Low: compute `deriveHasTradingCapability` once and reuse in `reconcileStartingSessions`.
+- Low: `as any` mocks in the new test file.
+- Note: implementer did not search `docs/bug-reports/`; reviewer checked bug report 2026/10/06/002 (guard in `deriveHasTradingCapability`) is in place.

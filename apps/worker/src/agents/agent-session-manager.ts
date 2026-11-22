@@ -9,7 +9,12 @@ import type {
   ProvidersYaml,
   OperatorModelDefaults,
 } from '@herobids/domain';
-import { readSkillPresetId, resolveAgentRuntimePolicy } from '@herobids/domain';
+import {
+  AgentRuntimeNonTradingDefaultsSchema,
+  readSkillPresetId,
+  resolveAgentRuntimePolicy,
+  resolveEffectiveTickIntervalMs,
+} from '@herobids/domain';
 import { deriveHasTradingCapability } from '../agent-capabilities.js';
 import { buildRuntimeDescriptor, generateAgentApiKey } from '@herobids/db';
 import type { AgentRepository, UsageBillingRepository } from '@herobids/db';
@@ -37,6 +42,11 @@ const logger = createLogger('agent-session-manager');
 
 /** Per-agent timeout for Redis stream subscription during survived-session recovery. */
 const STREAM_SUBSCRIBE_TIMEOUT_MS = 10_000;
+
+// Fallback when the operator value is not threaded in (e.g. unit tests); sourced
+// from the schema default of agentRuntime.nonTradingDefaults.tickIntervalMs.
+const DEFAULT_NON_TRADING_TICK_INTERVAL_MS: number =
+  AgentRuntimeNonTradingDefaultsSchema.parse({}).tickIntervalMs;
 
 export interface AgentSessionManagerConfig {
   /** Heartbeat timeout in ms — mark runtime unhealthy after this. Default: 30000 */
@@ -92,6 +102,8 @@ export interface AgentSessionManagerConfig {
   crashLoopGuard?: CrashLoopGuardConfig;
   /** Operator model defaults — final fallback tier for model resolution when neither agent nor user has explicit selection */
   operatorModelDefaults?: OperatorModelDefaults;
+  /** Operator agentRuntime.nonTradingDefaults.tickIntervalMs — tick for non-trading agents with no explicit interval. */
+  nonTradingDefaultTickIntervalMs?: number;
 }
 
 /**
@@ -492,6 +504,15 @@ export class AgentSessionManager {
           continue;
         }
 
+        // Explicit stored tick wins; non-trading unset gets the operator default;
+        // trading unset stays omitted so cost-profile/style cadence applies.
+        const { tickIntervalMs: effectiveTickIntervalMs } = resolveEffectiveTickIntervalMs({
+          storedTickIntervalMs: agent.tickIntervalMs ?? null,
+          hasTradingCapability: deriveHasTradingCapability(runtimeDescriptor.resolvedSkills),
+          nonTradingDefaultTickIntervalMs:
+            this.config.nonTradingDefaultTickIntervalMs ?? DEFAULT_NON_TRADING_TICK_INTERVAL_MS,
+        });
+
         const agentConfig: Record<string, unknown> = {
           name: agent.name,
           userId: agent.userId,
@@ -531,7 +552,7 @@ export class AgentSessionManager {
             : {}),
           prompt: agent.prompt,
           ...(agent.maxBots != null && { maxBots: agent.maxBots }),
-          ...(agent.tickIntervalMs != null && { tickIntervalMs: agent.tickIntervalMs }),
+          ...(effectiveTickIntervalMs !== null && { tickIntervalMs: effectiveTickIntervalMs }),
           runtimeDescriptor,
           // 004: Explicit capability / hybrid mode from UnifiedAgentConfig
           capabilityMode: agent.unifiedConfig?.capabilityMode ?? 'intelligence',
