@@ -7,6 +7,7 @@ export const AGENT_AUDIT_ACTIONS = [
   'agent.created',
   'agent.child_created',
   'agent.child_limit_set',
+  'agent.child_grant_scope_set',
   'agent.creator_paused_child',
   'agent.creator_stopped_child',
   'agent.creator_messaged_child',
@@ -38,6 +39,9 @@ export interface AgentAuditDetail {
   executionMode?: 'paper' | 'shadow' | 'live' | null;
   /** Requested ids the creating agent did not hold and the user's grant settings let through. Ids only. */
   grantedNotHeld?: { skills: string[]; connections: string[] };
+  /** The user's grant settings after an agent.child_grant_scope_set change. */
+  grantAnySkillToChildren?: boolean;
+  grantAnyConnectionToChildren?: boolean;
 }
 
 export interface AgentAuditEventInput {

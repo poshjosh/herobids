@@ -831,6 +831,7 @@ describe.skipIf(SKIP)('agent-created child agents (integration)', () => {
       const res = await postAsAgent(app, parent.rawKey, { name: 'Child', prompt: 'Help.', skillIds: [skill.skillId] });
 
       expect(res.statusCode).toBe(400);
+      expect(res.json<{ error: string }>().error).not.toBe('agent.create.grant_not_held');
       expect(await childrenOf(db, parent.agentId)).toHaveLength(0);
     });
 
@@ -859,8 +860,11 @@ describe.skipIf(SKIP)('agent-created child agents (integration)', () => {
 
       const res = await postAsAgent(app, parent.rawKey, { name: 'Child', prompt: 'Help.', connectionIds: [connectionId] });
 
-      expect(res.statusCode).toBeGreaterThanOrEqual(400);
-      expect(res.statusCode).toBeLessThan(500);
+      expect(res.statusCode).toBe(400);
+      expect(res.json<{ error: string; details: Array<{ path: string[]; message: string }> }>()).toMatchObject({
+        error: 'validation_error',
+        details: [{ path: ['connectionIds'], message: `Connection ${connectionId} does not belong to you` }],
+      });
       expect(await childrenOf(db, parent.agentId)).toHaveLength(0);
     });
 
@@ -873,19 +877,25 @@ describe.skipIf(SKIP)('agent-created child agents (integration)', () => {
 
       const res = await postAsAgent(app, parent.rawKey, { name: 'Child', prompt: 'Help.', connectionIds: [connectionId] });
 
-      expect(res.statusCode).toBeGreaterThanOrEqual(400);
-      expect(res.statusCode).toBeLessThan(500);
+      expect(res.statusCode).toBe(400);
+      expect(res.json<{ error: string; details: Array<{ path: string[]; message: string }> }>()).toMatchObject({
+        error: 'validation_error',
+        details: [{ path: ['connectionIds'], message: `Connection ${connectionId} is not active (status: revoked)` }],
+      });
       expect(await childrenOf(db, parent.agentId)).toHaveLength(0);
     });
 
-    it('a permission level above the parent is still refused with both settings on', async () => {
+    // An agent key cannot send permissionLevel at all, so the cap is unreachable by an explicit request;
+    // the policy-level cap is covered in agent-create-policy.test.ts.
+    it('an agent key cannot request a permission level with both settings on', async () => {
       const userId = await seedUser(db);
       const parent = await seedAgent(db, userId, { childAgentLimit: 1, permissionLevel: 'standard', grantAnySkillToChildren: true, grantAnyConnectionToChildren: true });
       const app = await appWith({});
 
       const res = await postAsAgent(app, parent.rawKey, { name: 'Child', prompt: 'Help.', permissionLevel: 'full' });
 
-      expect(res.statusCode).toBeGreaterThanOrEqual(400);
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toMatchObject({ error: 'agent.create.field_not_allowed', params: { fields: ['permissionLevel'] } });
       expect(await childrenOf(db, parent.agentId)).toHaveLength(0);
     });
 
@@ -914,6 +924,203 @@ describe.skipIf(SKIP)('agent-created child agents (integration)', () => {
 
       expect(res.statusCode).toBe(201);
       expect(await childCreatedDetail(userId)).toMatchObject({ grantedNotHeld: { skills: [], connections: [] } });
+    });
+  });
+
+  describe('grant scope route and reads', () => {
+    function putScope(app: FastifyInstance, agentId: string, auth: string, payload: Record<string, unknown>) {
+      return app.inject({
+        method: 'PUT',
+        url: `/agents/${agentId}/child-grant-scope`,
+        headers: { Authorization: `Bearer ${auth}` },
+        payload,
+      });
+    }
+
+    async function scopeEvents(userId: string) {
+      return db.select().from(agentAuditEvents).where(and(eq(agentAuditEvents.userId, userId), eq(agentAuditEvents.action, 'agent.child_grant_scope_set')));
+    }
+
+    async function storedFlags(agentId: string) {
+      const [row] = await db.select({
+        skill: agents.grantAnySkillToChildren,
+        connection: agents.grantAnyConnectionToChildren,
+      }).from(agents).where(eq(agents.id, agentId));
+      return row;
+    }
+
+    it('an owner sets both settings, gets them back and one audit row carries both values', async () => {
+      const userId = await seedUser(db);
+      const agent = await seedAgent(db, userId);
+      const token = await userToken(db, userId);
+      const app = await appWith({});
+
+      const res = await putScope(app, agent.agentId, token, { grantAnySkillToChildren: true, grantAnyConnectionToChildren: false });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ grantAnySkillToChildren: true, grantAnyConnectionToChildren: false });
+      expect(await storedFlags(agent.agentId)).toEqual({ skill: true, connection: false });
+      const events = await scopeEvents(userId);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        actorType: 'user',
+        actorId: userId,
+        targetId: agent.agentId,
+        detail: { grantAnySkillToChildren: true, grantAnyConnectionToChildren: false },
+      });
+    });
+
+    it('each change writes its own audit row', async () => {
+      const userId = await seedUser(db);
+      const agent = await seedAgent(db, userId);
+      const token = await userToken(db, userId);
+      const app = await appWith({});
+
+      await putScope(app, agent.agentId, token, { grantAnySkillToChildren: true, grantAnyConnectionToChildren: true });
+      await putScope(app, agent.agentId, token, { grantAnySkillToChildren: false, grantAnyConnectionToChildren: true });
+
+      const events = await scopeEvents(userId);
+      expect(events).toHaveLength(2);
+      expect(events.map((event) => event.detail)).toEqual(expect.arrayContaining([
+        { grantAnySkillToChildren: true, grantAnyConnectionToChildren: true },
+        { grantAnySkillToChildren: false, grantAnyConnectionToChildren: true },
+      ]));
+    });
+
+    it('an agent key gets 403 and nothing changes', async () => {
+      const userId = await seedUser(db);
+      const agent = await seedAgent(db, userId);
+      const app = await appWith({});
+
+      const res = await putScope(app, agent.agentId, agent.rawKey, { grantAnySkillToChildren: true, grantAnyConnectionToChildren: true });
+
+      expect(res.statusCode).toBe(403);
+      expect(await storedFlags(agent.agentId)).toEqual({ skill: false, connection: false });
+      expect(await scopeEvents(userId)).toHaveLength(0);
+    });
+
+    it("another user's agent gets 404, is unchanged and writes no audit row", async () => {
+      const ownerId = await seedUser(db);
+      const otherId = await seedUser(db);
+      const agent = await seedAgent(db, ownerId);
+      const otherToken = await userToken(db, otherId);
+      const app = await appWith({});
+
+      const res = await putScope(app, agent.agentId, otherToken, { grantAnySkillToChildren: true, grantAnyConnectionToChildren: true });
+
+      expect(res.statusCode).toBe(404);
+      expect(await storedFlags(agent.agentId)).toEqual({ skill: false, connection: false });
+      expect(await scopeEvents(ownerId)).toHaveLength(0);
+      expect(await scopeEvents(otherId)).toHaveLength(0);
+    });
+
+    it.each([
+      ['a missing field', { grantAnySkillToChildren: true }],
+      ['a non-boolean value', { grantAnySkillToChildren: 'yes', grantAnyConnectionToChildren: true }],
+      ['an unknown field', { grantAnySkillToChildren: true, grantAnyConnectionToChildren: true, childAgentLimit: 5 }],
+    ])('rejects %s with 400 and changes nothing', async (_label, body) => {
+      const userId = await seedUser(db);
+      const agent = await seedAgent(db, userId);
+      const token = await userToken(db, userId);
+      const app = await appWith({});
+
+      const res = await putScope(app, agent.agentId, token, body);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json<{ error: string }>().error).toBe('validation_error');
+      expect(await storedFlags(agent.agentId)).toEqual({ skill: false, connection: false });
+      expect(await scopeEvents(userId)).toHaveLength(0);
+    });
+
+    it('POST /agents from a user sets both settings on the new agent', async () => {
+      const userId = await seedUser(db);
+      const token = await userToken(db, userId);
+      const app = await appWith({});
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/agents',
+        headers: { Authorization: `Bearer ${token}` },
+        payload: { name: 'Coordinator', prompt: 'Coordinate.', grantAnySkillToChildren: true, grantAnyConnectionToChildren: true },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(res.json()).toMatchObject({ grantAnySkillToChildren: true, grantAnyConnectionToChildren: true });
+      const [created] = await agentsOwnedBy(db, userId);
+      expect(created).toMatchObject({ grantAnySkillToChildren: true, grantAnyConnectionToChildren: true });
+    });
+
+    it('POST /agents from a user leaves both settings false when omitted', async () => {
+      const userId = await seedUser(db);
+      const token = await userToken(db, userId);
+      const app = await appWith({});
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/agents',
+        headers: { Authorization: `Bearer ${token}` },
+        payload: { name: 'Plain', prompt: 'Work.' },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(res.json()).toMatchObject({ grantAnySkillToChildren: false, grantAnyConnectionToChildren: false });
+    });
+
+    it.each(['grantAnySkillToChildren', 'grantAnyConnectionToChildren'])('an agent key sending %s is refused with agent.create.field_not_allowed', async (field) => {
+      const userId = await seedUser(db);
+      const parent = await seedAgent(db, userId, { childAgentLimit: 1 });
+      const app = await appWith({});
+
+      const res = await postAsAgent(app, parent.rawKey, { name: 'Child', prompt: 'Help.', [field]: true });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toMatchObject({ error: 'agent.create.field_not_allowed', params: { fields: [field] } });
+      expect(await childrenOf(db, parent.agentId)).toHaveLength(0);
+    });
+
+    it('the child-allowance read returns both settings to the owner and to the agent itself', async () => {
+      const userId = await seedUser(db);
+      const agent = await seedAgent(db, userId, { childAgentLimit: 2, grantAnySkillToChildren: true });
+      const token = await userToken(db, userId);
+      const app = await appWith({});
+
+      for (const auth of [token, agent.rawKey]) {
+        const res = await app.inject({ method: 'GET', url: `/agents/${agent.agentId}/child-allowance`, headers: { Authorization: `Bearer ${auth}` } });
+        expect(res.statusCode).toBe(200);
+        expect(res.json()).toMatchObject({ childAgentLimit: 2, grantAnySkillToChildren: true, grantAnyConnectionToChildren: false });
+      }
+    });
+
+    it('the agent read includes both settings', async () => {
+      const userId = await seedUser(db);
+      const agent = await seedAgent(db, userId, { grantAnyConnectionToChildren: true });
+      const token = await userToken(db, userId);
+      const app = await appWith({});
+
+      const res = await app.inject({ method: 'GET', url: `/agents/${agent.agentId}`, headers: { Authorization: `Bearer ${token}` } });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ grantAnySkillToChildren: false, grantAnyConnectionToChildren: true });
+    });
+
+    it('PATCH /agents/:id ignores both settings and writes no scope audit row', async () => {
+      const userId = await seedUser(db);
+      const agent = await seedAgent(db, userId);
+      await db.update(agents).set({ status: 'stopped' }).where(eq(agents.id, agent.agentId));
+      const token = await userToken(db, userId);
+      const app = await appWith({});
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/agents/${agent.agentId}`,
+        headers: { Authorization: `Bearer ${token}` },
+        payload: { name: 'Renamed', grantAnySkillToChildren: true, grantAnyConnectionToChildren: true },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ name: 'Renamed', grantAnySkillToChildren: false, grantAnyConnectionToChildren: false });
+      expect(await storedFlags(agent.agentId)).toEqual({ skill: false, connection: false });
+      expect(await scopeEvents(userId)).toHaveLength(0);
     });
   });
 

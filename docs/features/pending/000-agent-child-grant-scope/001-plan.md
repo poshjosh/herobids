@@ -140,7 +140,7 @@ Check before coding:
 
 1. DONE — Refusal detail in the tool result (§4). Safe on its own and useful at once. Pass the response body through for all 4xx responses, not only grant refusals. A 400 `validation_error` was also reduced to "HTTP 400" and hid its cause. The [Agent Child Execution Mode](../000-agent-child-execution-mode/001-plan.md) plan shares this step. Do it once.
 2. DONE — Migration, policy change and the `grantedNotHeld` audit field, flags default off. No behavior change.
-3. PENDING — User-only route, audit and allowance read.
+3. DONE — User-only route, audit and allowance read.
 4. PENDING — Worker client and tool text. Add `list_owner_connections` only if the connection flag ships.
 5. PENDING — UI: card, then create flow.
 6. PENDING — Docs: [agent-creation-tools.md](/Users/chinomso.ikwuagwu/dev_ai/herobids/docs/tech/agents/tools/agent-creation-tools.md) (Grant rule row and the creator action list), the parent plan's §6 note, user docs for the two settings, CHANGELOG.
@@ -172,3 +172,16 @@ Refusal-body passthrough (rollout step 1) issues are recorded in the execution-m
 - Low: `grantedNotHeld` may list duplicate ids if request arrays are not deduped; dedupe or confirm.
 - Low: §10 lists `grant_user_only` and permission-cap with a flag on as unit tests; they exist only as integration tests.
 - Low: add the "agent key sends `grantAnySkillToChildren` → `field_not_allowed`" test (planned for step 3).
+
+### Item 3 — User-only route, audit, allowance read
+
+- Medium: user `POST /agents` with a flag on writes no audit row (only the PUT audits). Decide: add flags to `agent.created` detail, or record creation as deliberately unaudited.
+- Medium: no tests pinning the strict PUT body (extra key, missing field, non-boolean → 400, no audit row).
+- Medium: `PATCH` silently drops the flags with 200; consider a 400 pointing to the new route, or document it.
+- Low: audit detail spreads `...row`; name the two fields explicitly.
+- Low: a no-op PUT still writes an audit row, with no previous values.
+- Low: the PUT accepts child agents (POST forces false for children); note in plan.
+- Low: flags can be stored on agents without the children skill; UI should send them only when the skill is selected.
+- Low: duplicated comment on the create-schema fields and insert.
+- Note: the "permission level above the parent" integration test was passing for the wrong reason (agent keys cannot send `permissionLevel`); it now pins `field_not_allowed`. The real cap is covered only in `agent-create-policy.test.ts`.
+- Note: duplicate ids in `skillIds` on `POST /agents` return 500 (pre-existing `agent_skills` PK conflict).

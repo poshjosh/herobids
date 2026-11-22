@@ -286,7 +286,7 @@ async function assertGrantsHeldByParent(
   if (input.skillIds.length > 0) {
     const held = await q.select({ skillId: agentSkills.skillId }).from(agentSkills).where(eq(agentSkills.agentId, parent.id));
     const heldIds = new Set(held.map((row) => row.skillId));
-    const missing = input.skillIds.filter((skillId) => !heldIds.has(skillId));
+    const missing = [...new Set(input.skillIds.filter((skillId) => !heldIds.has(skillId)))];
     if (missing.length > 0 && !parent.grantAnySkillToChildren) {
       throw agentPolicyError(403, 'grant', 'agent.create.grant_not_held', 'The creating agent does not hold every requested skill.', {
         kind: 'skill',
@@ -302,7 +302,7 @@ async function assertGrantsHeldByParent(
       .from(agentConnections)
       .where(and(eq(agentConnections.agentId, parent.id), eq(agentConnections.status, 'active')));
     const assignedIds = new Set(assigned.map((row) => row.connectionId));
-    const missing = input.connectionIds.filter((connectionId) => !assignedIds.has(connectionId));
+    const missing = [...new Set(input.connectionIds.filter((connectionId) => !assignedIds.has(connectionId)))];
     if (missing.length > 0 && !parent.grantAnyConnectionToChildren) {
       throw agentPolicyError(403, 'grant', 'agent.create.grant_not_held', 'The creating agent does not hold every requested connection.', {
         kind: 'connection',

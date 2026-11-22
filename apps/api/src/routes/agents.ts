@@ -353,6 +353,9 @@ const CreateAgentBaseSchema = z.object({
   executionVenue: z.string().min(1).optional(),
   // Agent callers only: start the child after it is created. Omitted means start. Ignored for user creations.
   start: z.boolean().optional(),
+  // User callers only (agent keys are refused by AGENT_CHILD_CREATE_FIELDS). Both default to false.
+  grantAnySkillToChildren: z.boolean().optional(),
+  grantAnyConnectionToChildren: z.boolean().optional(),
   maxBots: optionalPositiveIntegerSchema(),
   tickIntervalMs: optionalPositiveIntegerSchema(1000),
   capital: optionalPositiveDecimalStringSchema,
@@ -492,6 +495,11 @@ function mergeTechnicalConfig(
 const PauseAgentSchema = z.object({
   reason: z.string().min(1).max(500).optional(),
 }).optional();
+
+const SetChildGrantScopeSchema = z.object({
+  grantAnySkillToChildren: z.boolean(),
+  grantAnyConnectionToChildren: z.boolean(),
+}).strict();
 
 const SetChildAgentLimitSchema = z.object({
   childAgentLimit: z.number().int().min(0),
@@ -1218,6 +1226,9 @@ export async function agentRoutes(
           parentAgentId: lineage.parentAgentId,
           depth: lineage.depth,
           childAgentLimit: childAllowance?.childAgentLimit ?? 0,
+          // A child never inherits the settings: only a user-created root agent can start with them on.
+          grantAnySkillToChildren: parentAgentId ? false : (parsed.data.grantAnySkillToChildren ?? false),
+          grantAnyConnectionToChildren: parentAgentId ? false : (parsed.data.grantAnyConnectionToChildren ?? false),
           prompt: parsed.data.prompt ?? '',
           status: 'stopped',
           toolPolicy: createFields.toolPolicy,
@@ -2778,6 +2789,46 @@ export async function agentRoutes(
     return reply.send({ childAgentLimit: updated.childAgentLimit });
   });
 
+  // Set whether this agent may give children skills / connections it does not hold (agent-child-grant-scope §6).
+  // User-only, so an agent cannot widen its own reach. Same shape as child-limit: owner-scoped UPDATE, audit in the same transaction.
+  app.put<{ Params: { id: string } }>('/agents/:id/child-grant-scope', { preHandler: requireUserCaller }, async (request, reply) => {
+    const { id } = request.params;
+    const parsed = SetChildGrantScopeSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
+    }
+
+    const updated = await db.transaction(async (tx) => {
+      const [row] = await tx.update(agents)
+        .set({
+          grantAnySkillToChildren: parsed.data.grantAnySkillToChildren,
+          grantAnyConnectionToChildren: parsed.data.grantAnyConnectionToChildren,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(agents.id, id), eq(agents.userId, request.userId)))
+        .returning({
+          grantAnySkillToChildren: agents.grantAnySkillToChildren,
+          grantAnyConnectionToChildren: agents.grantAnyConnectionToChildren,
+        });
+      if (row) {
+        await recordAgentAuditEvent(tx, {
+          userId: request.userId,
+          actorType: 'user',
+          actorId: request.userId,
+          action: 'agent.child_grant_scope_set',
+          targetId: id,
+          detail: { ...row },
+        });
+      }
+      return row;
+    });
+    if (!updated) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
+
+    return reply.send(updated);
+  });
+
   // Resume agent
   app.post<{ Params: { id: string } }>('/agents/:id/resume', { preHandler: requireUserCaller }, async (request, reply) => {
     const { id } = request.params;
@@ -3076,7 +3127,12 @@ export async function agentRoutes(
     preHandler: requireSelfAgentOrUser,
   }, async (request, reply) => {
     const { id } = request.params;
-    const [agent] = await db.select({ id: agents.id, childAgentLimit: agents.childAgentLimit })
+    const [agent] = await db.select({
+      id: agents.id,
+      childAgentLimit: agents.childAgentLimit,
+      grantAnySkillToChildren: agents.grantAnySkillToChildren,
+      grantAnyConnectionToChildren: agents.grantAnyConnectionToChildren,
+    })
       .from(agents)
       .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
     if (!agent) {
@@ -3090,6 +3146,8 @@ export async function agentRoutes(
     return reply.send({
       id: agent.id,
       childAgentLimit: agent.childAgentLimit,
+      grantAnySkillToChildren: agent.grantAnySkillToChildren,
+      grantAnyConnectionToChildren: agent.grantAnyConnectionToChildren,
       childCount,
       remainingChildAllowance: Math.max(0, agent.childAgentLimit - childCount),
     });

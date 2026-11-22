@@ -390,6 +390,12 @@ describe('agent create policy: grant settings', () => {
     expect(lineage.grantedNotHeld).toEqual({ skills: ['skill-b'], connections: ['conn-b', 'conn-c'] });
   });
 
+  it('lists a repeated requested id once in grantedNotHeld', async () => {
+    const lineage = await evaluateAgentCreatePolicy(readerOf(storeWith(BOTH_ON)), childInput({ skillIds: ['skill-b', 'skill-b'], connectionIds: ['conn-b', 'conn-b'] }), false);
+
+    expect(lineage.grantedNotHeld).toEqual({ skills: ['skill-b'], connections: ['conn-b'] });
+  });
+
   it('keeps the allowance rule with the settings on', async () => {
     const refusal = await ruleOf(evaluateAgentCreatePolicy(readerOf(storeWith({ ...BOTH_ON, childAgentLimit: 0 })), childInput({ skillIds: ['skill-b'] }), false));
 

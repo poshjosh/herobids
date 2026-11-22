@@ -206,7 +206,7 @@ An agent container calls the platform API with its own key. Agent-created agents
 - User-owned changes (child allowance, start, resume, edit, delete) use `requireUserCaller` and refuse every agent key.
 - Known gap: the container still has `DATABASE_URL` and `REDIS_URL`, so the key does not yet remove direct database access. A restricted database role is a separate task.
 
-Every creation, child-limit change, creator action and deletion writes one row to `agent_audit_events`. The table is append-only. Each row records the user, the actor (`user`, `agent` or `system`), the action, the target and `detail`. `detail` holds ids and counts only, never prompts, configuration, keys or message text. Actions: `agent.created`, `agent.child_created`, `agent.child_limit_set`, `agent.creator_paused_child`, `agent.creator_stopped_child`, `agent.creator_messaged_child` and `agent.deleted`. Schema: `packages/db/src/schema/agent-audit-events.ts`. Writer: `packages/db/src/agent-audit.ts`.
+Every creation, child-limit change, creator action and deletion writes one row to `agent_audit_events`. The table is append-only. Each row records the user, the actor (`user`, `agent` or `system`), the action, the target and `detail`. `detail` holds ids and counts only, never prompts, configuration, keys or message text. Actions: `agent.created`, `agent.child_created`, `agent.child_limit_set`, `agent.child_grant_scope_set`, `agent.creator_paused_child`, `agent.creator_stopped_child`, `agent.creator_messaged_child` and `agent.deleted`. Schema: `packages/db/src/schema/agent-audit-events.ts`. Writer: `packages/db/src/agent-audit.ts`.
 
 Creator pause and stop audit rows are written after the state change, so they are not atomic with it.
 
