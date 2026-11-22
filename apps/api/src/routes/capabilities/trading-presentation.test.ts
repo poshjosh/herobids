@@ -163,8 +163,7 @@ function makeDefaultClient() {
   const summary = {
     ok: true,
     agentId: TEST_AGENT_ID,
-    capital: '1000.00',
-    capitalAvailable: true,
+    initialCapital: '1000.00',
     executionMode: 'paper',
     positionSizeMode: 'fixed',
     fixedPositionSize: '1',
@@ -372,7 +371,7 @@ describe('trading capability presentation', () => {
     expect(fillsFeed.items[0]!.cells!['pnl']!.emphasis).toBe('positive');
   });
 
-  it('marks capital emphasis as warning when capitalAvailable is false', async () => {
+  it('marks capital emphasis as warning when initialCapital is unavailable', async () => {
     const app = Fastify();
     decorateWithAuth(app);
     const db = buildDb([[AGENT_ROW], [ACTIVE_ASSIGNMENT]]);
@@ -381,8 +380,7 @@ describe('trading capability presentation', () => {
         const summary = {
           ok: true,
           agentId: TEST_AGENT_ID,
-          capital: null,
-          capitalAvailable: false,
+          initialCapital: null,
           executionMode: 'paper',
           positionSizeMode: 'fixed',
           openPositionCount: 0,
@@ -416,8 +414,7 @@ describe('trading capability presentation', () => {
         const summary = {
           ok: true,
           agentId: TEST_AGENT_ID,
-          capital: '1000.00',
-          capitalAvailable: true,
+          initialCapital: '1000.00',
           executionMode: 'paper',
           positionSizeMode: 'fixed',
           openPositionCount: 0,
@@ -488,8 +485,7 @@ describe('trading capability presentation', () => {
     const summary = {
       ok: true,
       agentId: TEST_AGENT_ID,
-      capital: '1000.00',
-      capitalAvailable: true,
+      initialCapital: '1000.00',
       executionMode: 'paper',
       positionSizeMode: 'fixed',
       openPositionCount: 1,

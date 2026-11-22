@@ -53,9 +53,29 @@ export interface RuntimePortfolioSummary {
   realizedPnlUsd: number | null;
   unrealizedPnlUsd: number | null;
   drawdownPct: number | null;
+  /** Traderton `availableCapital`: max(0, equity - marginUsed). Not the configured allocation. */
   availableCapitalUsd: number | null;
   netDelta: number | null;
   freshness: RuntimeFreshness;
+  /** Traderton `initialCapital`: the configured allocation for the current period. */
+  initialCapitalUsd: number | null;
+  /** Traderton `equity` (agent-direct scope). Never derived locally. */
+  equityUsd: number | null;
+  marginUsedUsd: number | null;
+  returnPct: number | null;
+  /** Peak equity behind `drawdownPct`, as reported by the boundary. */
+  peakEquityUsd: number | null;
+  /** Fee-adjusted all-time realized P&L; unchanged by capital edits. */
+  lifetimeRealizedPnlUsd: number | null;
+  /** Realized P&L since `capitalChangedAt` (equals lifetime when never edited). */
+  pnlSinceCapitalChangeUsd: number | null;
+  capitalChangedAt: string | null;
+  /** False when some open position has no mark, so unrealized P&L and equity are partial. */
+  unrealizedComplete: boolean | null;
+  /** False means P&L and equity exclude funding payments. Null until a summary is read. */
+  fundingIncluded: boolean | null;
+  /** Boundary read time (ISO) of the account summary these figures come from. */
+  asOf: string | null;
 }
 
 export interface RuntimePositionSnapshot {
@@ -508,6 +528,8 @@ export interface RuntimeSessionMetrics {
 export interface RuntimeCompositionState {
   runtimeDescriptor: RuntimeDescriptor;
   sessionStartMs: number;
+  /** True once a successful get_account_summary has been folded into portfolio state. */
+  accountSummaryApplied: boolean;
   tickCount: number;
   context: RuntimeCompositionContext;
   metrics: RuntimeSessionMetrics;
@@ -841,25 +863,24 @@ function normalizeWinRatePercent(value: number | null | undefined): number | nul
 }
 
 function refreshDerivedPerformanceInputs(state: RuntimeCompositionState): void {
-  const netPnlUsd = (state.metrics.portfolio.realizedPnlUsd ?? 0) + (state.metrics.portfolio.unrealizedPnlUsd ?? 0);
-  state.metrics.performance.netPnlUsd = netPnlUsd;
+  const { portfolio, performance } = state.metrics;
+  // Equity, capital, peak and drawdown come from the Traderton boundary; nothing
+  // is derived from available capital or inferred once per session.
+  const netPnlUsd = portfolio.equityUsd !== null && portfolio.initialCapitalUsd !== null
+    ? portfolio.equityUsd - portfolio.initialCapitalUsd
+    : (portfolio.realizedPnlUsd ?? 0) + (portfolio.unrealizedPnlUsd ?? 0);
+  performance.netPnlUsd = netPnlUsd;
+  performance.startingCapitalUsd = portfolio.initialCapitalUsd;
+  performance.peakEquityUsd = portfolio.peakEquityUsd;
+  performance.drawdownPct = portfolio.drawdownPct;
 
-  const currentEquityUsd = (state.metrics.portfolio.availableCapitalUsd ?? 0) + (state.metrics.portfolio.exposureUsd ?? 0);
-  if (state.metrics.performance.startingCapitalUsd === null && currentEquityUsd > 0) {
-    state.metrics.performance.startingCapitalUsd = Math.max(currentEquityUsd - netPnlUsd, 0.01);
-  }
-
-  const startingCapitalUsd = state.metrics.performance.startingCapitalUsd;
+  const startingCapitalUsd = performance.startingCapitalUsd;
   const elapsedHours = Math.max((Date.now() - state.sessionStartMs) / 3_600_000, 1 / 60);
-  if (currentEquityUsd > 0) {
-    state.metrics.performance.peakEquityUsd = Math.max(state.metrics.performance.peakEquityUsd ?? currentEquityUsd, currentEquityUsd);
-    if (state.metrics.performance.peakEquityUsd > 0) {
-      state.metrics.performance.drawdownPct = ((currentEquityUsd - state.metrics.performance.peakEquityUsd) / state.metrics.performance.peakEquityUsd) * 100;
-    }
-  }
   if (startingCapitalUsd !== null && startingCapitalUsd > 0) {
     const pnlReturnPct = (netPnlUsd / startingCapitalUsd) * 100;
     state.metrics.performance.riskAdjustedReturn = pnlReturnPct / Math.sqrt(elapsedHours);
+  } else {
+    performance.riskAdjustedReturn = null;
   }
 }
 
@@ -1835,6 +1856,7 @@ export function createRuntimeCompositionState(
   return {
     runtimeDescriptor,
     sessionStartMs: Date.now(),
+    accountSummaryApplied: false,
     tickCount: 0,
     context: {
       workspaceRoot: context.workspaceRoot ?? null,
@@ -1870,6 +1892,17 @@ export function createRuntimeCompositionState(
         availableCapitalUsd: null,
         netDelta: null,
         freshness: unavailableFreshness('portfolio summary pending'),
+        initialCapitalUsd: null,
+        equityUsd: null,
+        marginUsedUsd: null,
+        returnPct: null,
+        peakEquityUsd: null,
+        lifetimeRealizedPnlUsd: null,
+        pnlSinceCapitalChangeUsd: null,
+        capitalChangedAt: null,
+        unrealizedComplete: null,
+        fundingIncluded: null,
+        asOf: null,
       },
       openPositions: [],
       activeWatches: [],
@@ -2136,6 +2169,57 @@ export {
   recordVenueSignals as setVenueSignals,
 };
 
+/** Traderton returns decimals as strings; unavailable values are null. */
+function parseDecimal(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Map a Traderton `get_account_summary` payload straight onto portfolio state.
+ * Every figure is replaced (null included) so a stale value never survives a
+ * newer read. Traderton reports drawdown as a positive magnitude; herobids
+ * stores it as a non-positive percent.
+ */
+function accountSummaryToPortfolioUpdate(
+  data: Record<string, unknown>,
+): Partial<Omit<RuntimePortfolioSummary, 'freshness'>> & { freshness?: RuntimeFreshness } {
+  const drawdown = typeof data['drawdown'] === 'object' && data['drawdown'] !== null
+    ? data['drawdown'] as Record<string, unknown>
+    : null;
+  const drawdownMagnitude = drawdown ? parseDecimal(drawdown['currentPct']) : null;
+  const asOfRaw = typeof data['asOf'] === 'string' ? data['asOf'] : null;
+  const asOfMs = asOfRaw === null ? Number.NaN : Date.parse(asOfRaw);
+  const asOf = Number.isFinite(asOfMs) ? asOfRaw : null;
+  const lifetime = parseDecimal(data['lifetimeRealizedPnl']);
+
+  return {
+    initialCapitalUsd: parseDecimal(data['initialCapital']),
+    equityUsd: parseDecimal(data['equity']),
+    availableCapitalUsd: parseDecimal(data['availableCapital']),
+    marginUsedUsd: parseDecimal(data['marginUsed']),
+    returnPct: parseDecimal(data['returnPct']),
+    unrealizedPnlUsd: parseDecimal(data['unrealizedPnlUsd']),
+    unrealizedComplete: typeof data['unrealizedComplete'] === 'boolean' ? data['unrealizedComplete'] : null,
+    // Deliberately period-scoped (since the last capital change), not lifetime:
+    // it must pair with `initialCapital` of the same period. Lifetime lives in lifetimeRealizedPnlUsd.
+    realizedPnlUsd: parseDecimal(data['pnlSinceCapitalChange']),
+    pnlSinceCapitalChangeUsd: parseDecimal(data['pnlSinceCapitalChange']),
+    lifetimeRealizedPnlUsd: lifetime,
+    capitalChangedAt: typeof data['capitalChangedAt'] === 'string' ? data['capitalChangedAt'] : null,
+    peakEquityUsd: drawdown ? parseDecimal(drawdown['peakEquity']) : null,
+    drawdownPct: drawdownMagnitude === null || drawdownMagnitude === 0 ? drawdownMagnitude : -Math.abs(drawdownMagnitude),
+    fundingIncluded: typeof data['fundingIncluded'] === 'boolean' ? data['fundingIncluded'] : null,
+    asOf,
+    // Freshness is the boundary read time, not the time this result was folded in.
+    freshness: asOf !== null
+      ? { state: 'fresh', provider: 'account-summary-tool', ageMs: Math.max(0, Date.now() - asOfMs) }
+      : unavailableFreshness('account summary missing asOf'),
+  };
+}
+
 /** The agent's own read tools whose results feed the portfolio summary block. */
 const PORTFOLIO_FEED_TOOLS = new Set(['get_account_summary', 'list_positions', 'get_analytics']);
 
@@ -2340,9 +2424,13 @@ export function applyRuntimeMessage(
     }
 
     if (tool === 'get_analytics' && data && !Array.isArray(data)) {
+      const lifetimeRealizedPnlUsd = parseDecimal(data['lifetimeRealizedPnlUsd']);
+      // Once the account summary supplied the period P&L, the analytics window
+      // figure (a lookback sum) must not replace it or relabel its freshness.
+      const summaryApplied = state.accountSummaryApplied;
       updatePortfolioSummary(state, {
-        realizedPnlUsd: parseNumber(data['realizedPnlUsd']),
-        freshness: freshFreshness('analytics-tool'),
+        ...(summaryApplied ? {} : { realizedPnlUsd: parseNumber(data['realizedPnlUsd']), freshness: freshFreshness('analytics-tool') }),
+        ...(lifetimeRealizedPnlUsd !== null ? { lifetimeRealizedPnlUsd } : {}),
       });
       recordPerformanceInputs(state, {
         winRate: parseNumber(data['winRate']),
@@ -2353,16 +2441,20 @@ export function applyRuntimeMessage(
     }
 
     if (tool === 'get_account_summary' && data && !Array.isArray(data)) {
-      const capitalUsd = parseNumber(data['capital']);
-      if (capitalUsd !== null) {
-        updatePortfolioSummary(state, {
-          availableCapitalUsd: capitalUsd,
-          freshness: freshFreshness('account-summary-tool'),
-        });
+      // Traderton's success payload carries `ok: true`; failures are `{ success:false, error, errorCode }`
+      // (no `ok`), so anything else must leave the previous state untouched.
+      if (data['ok'] !== true) {
+        const failed = 'Account summary: read failed';
+        pushRecentEvent(state, type, failed);
+        return failed;
       }
-      const summary = capitalUsd !== null
-        ? `Account summary: available capital ${formatCurrency(capitalUsd)}`
-        : 'Account summary: capital unavailable';
+      const update = accountSummaryToPortfolioUpdate(data);
+      updatePortfolioSummary(state, update);
+      state.accountSummaryApplied = true;
+      const equityUsd = update.equityUsd ?? null;
+      const summary = equityUsd !== null
+        ? `Account summary: equity ${formatCurrency(equityUsd)}, available capital ${formatCurrency(update.availableCapitalUsd ?? null)}`
+        : 'Account summary: equity unavailable';
       pushRecentEvent(state, type, summary);
       return summary;
     }

@@ -42,3 +42,15 @@ Approved by the owner on 2026-11-21. Not started. Depends on traderton's new fie
 
 ## Not verified
 - Not reproduced live. Readers of the Redis `startingCapital` key were not checked.
+
+## Implementation Plan (coordinator task list)
+1. DONE - Map traderton summary fields (initialCapital, equity, availableCapital, realized/unrealized P&L, drawdown, pnlSinceCapitalChange, fundingIncluded, asOf) into portfolio state; delete `available + exposure` equity derivation and infer-once startingCapital; stamp freshness with boundary `asOf`.
+2. PENDING - Prompt/portfolio block: show equity, total P&L, lifetime realized, P&L since capital change, funding label; rename "Available capital"; size perPositionCap from real available capital.
+3. PENDING - Platform-side debounced account-summary refresh after fills/position close and at each decision wake.
+4. PENDING - Redis `startingCapital` readers aligned; update fixtures/tests (`runtime-composition.test.ts`, `hybrid-agent-evaluator.test.ts`, `venue-intelligence.test.ts`); CHANGELOG.
+
+## Outstanding Issues
+### Item 1
+- Medium: equity/netPnl freeze at the last summary read while `recalculatePortfolioFromPositions` still updates unrealized/exposure from live positions (resolved by item 3 refresh; prompt should show asOf/age next to equity).
+- Medium: api `AccountSummary.capital`/`capitalAvailable` now carry initialCapital (label "Capital" still implies a balance); rename to initialCapital/initialCapitalSet and update i18n label `capability.trading.attr.capital` + visual check.
+- Low: tool descriptions in `apps/worker/src/tools/account.ts` and `tool-schemas.ts` still say "usable/available capital"; hybrid-agent-evaluator.test.ts fixtures not updated with new fields; worker/api tsconfig exclude tests so lint doesn't typecheck them; `positions[]` of the summary is not folded into openPositions.

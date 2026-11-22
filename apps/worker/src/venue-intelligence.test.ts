@@ -23,6 +23,17 @@ function buildSessionMetrics(): RuntimeSessionMetrics {
       availableCapitalUsd: null,
       netDelta: null,
       freshness: { state: 'fresh', provider: 'runtime' },
+      initialCapitalUsd: null,
+      equityUsd: null,
+      marginUsedUsd: null,
+      returnPct: null,
+      peakEquityUsd: null,
+      lifetimeRealizedPnlUsd: null,
+      pnlSinceCapitalChangeUsd: null,
+      capitalChangedAt: null,
+      unrealizedComplete: null,
+      fundingIncluded: null,
+      asOf: null,
     },
     openPositions: [
       {

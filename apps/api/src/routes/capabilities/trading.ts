@@ -204,6 +204,7 @@ function toDecisionRow(record: unknown): DecisionRow {
 
 /** Narrow the `get_account_summary` success payload to the fields the presentation needs. */
 interface AccountSummary {
+  /** Traderton `initialCapital`: the configured allocation (null when unavailable). */
   capital: string | null;
   capitalAvailable: boolean;
   executionMode: string | null;
@@ -213,10 +214,10 @@ interface AccountSummary {
 }
 
 function accountSummaryOf(record: Record<string, unknown>): AccountSummary {
-  const capital = typeof record['capital'] === 'string' ? (record['capital'] as string) : null;
+  const capital = typeof record['initialCapital'] === 'string' ? (record['initialCapital'] as string) : null;
   return {
     capital,
-    capitalAvailable: record['capitalAvailable'] === true,
+    capitalAvailable: capital !== null,
     executionMode: typeof record['executionMode'] === 'string' ? (record['executionMode'] as string) : null,
     openPositionCount: typeof record['openPositionCount'] === 'number' ? (record['openPositionCount'] as number) : 0,
     positionSizeMode: typeof record['positionSizeMode'] === 'string' ? (record['positionSizeMode'] as string) : null,

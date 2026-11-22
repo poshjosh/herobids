@@ -664,22 +664,222 @@ describe('runtime composition helpers', () => {
     expect(userContext).toContain('Win rate: 67%');
   });
 
-  it('updates available capital from get_account_summary tool results', () => {
+  const ASOF = '2026-11-21T10:00:00.000Z';
+  // Traderton get_account_summary after a realized loss of 200 on a 1000 allocation, one open position.
+  const lossSummary = {
+    ok: true,
+    asOf: ASOF,
+    initialCapital: '1000',
+    lifetimeRealizedPnl: '-200',
+    pnlSinceCapitalChange: '-200',
+    capitalChangedAt: null,
+    unrealizedPnlUsd: '50',
+    unrealizedComplete: true,
+    equity: '850',
+    marginUsed: '300',
+    availableCapital: '550',
+    returnPct: '-15',
+    drawdown: { current: '150', currentPct: '15', peakEquity: '1000' },
+    equityScope: 'agent_direct',
+    drawdownBasis: 'realized_peak',
+    fundingIncluded: false,
+    fundingNote: 'excludes funding',
+  };
+
+  const foldSummary = (state: ReturnType<typeof createRuntimeCompositionState>, data: Record<string, unknown>) =>
+    applyRuntimeMessage(state, { type: 'instance.tool.result', payload: { tool: 'get_account_summary', data } });
+
+  it('shows equity below initial capital and a drawdown after a realized loss', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
 
-    const summary = applyRuntimeMessage(state, {
-      type: 'instance.tool.result',
-      payload: {
-        tool: 'get_account_summary',
-        data: {
-          capital: '15000',
-          capitalAvailable: true,
-        },
-      },
+    const summary = foldSummary(state, lossSummary);
+
+    expect(summary).toBe('Account summary: equity $850.00, available capital $550.00');
+    const { portfolio, performance } = state.metrics;
+    expect(portfolio.equityUsd).toBe(850);
+    expect(portfolio.initialCapitalUsd).toBe(1000);
+    expect(portfolio.equityUsd!).toBeLessThan(portfolio.initialCapitalUsd!);
+    expect(portfolio.availableCapitalUsd).toBe(550);
+    expect(portfolio.drawdownPct).toBe(-15);
+    expect(performance.drawdownPct).toBe(-15);
+    expect(performance.peakEquityUsd).toBe(1000);
+    expect(performance.netPnlUsd).toBe(-150);
+    expect(performance.riskAdjustedReturn).not.toBeNull();
+  });
+
+  it('clears drawdown, peak and risk-adjusted return when the boundary reports them unavailable', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    foldSummary(state, lossSummary);
+    expect(state.metrics.performance.riskAdjustedReturn).not.toBeNull();
+
+    foldSummary(state, { ...lossSummary, initialCapital: null, drawdown: null });
+
+    const { performance } = state.metrics;
+    expect(performance.startingCapitalUsd).toBeNull();
+    expect(performance.drawdownPct).toBeNull();
+    expect(performance.peakEquityUsd).toBeNull();
+    expect(performance.riskAdjustedReturn).toBeNull();
+  });
+
+  it('keeps starting capital equal to initial capital instead of inferring it from available capital and exposure', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    foldSummary(state, lossSummary);
+    applyOwnToolResult(state, 'list_positions', {
+      ok: true,
+      positions: [{ instrumentId: 'BTC-PERP', side: 'long', size: '0.5', entryPrice: '60000', unrealizedPnlUsd: '500' }],
     });
 
-    expect(summary).toBe('Account summary: available capital $15.0K');
-    expect(state.metrics.portfolio.availableCapitalUsd).toBe(15000);
+    expect(state.metrics.performance.startingCapitalUsd).toBe(1000);
+    foldSummary(state, { ...lossSummary, asOf: '2026-11-21T11:00:00.000Z', equity: '900', availableCapital: '600' });
+    expect(state.metrics.performance.startingCapitalUsd).toBe(1000);
+  });
+
+  it('does not derive equity or starting capital before the boundary has answered', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    applyOwnToolResult(state, 'list_positions', {
+      ok: true,
+      positions: [{ instrumentId: 'BTC-PERP', side: 'long', size: '0.5', entryPrice: '60000', unrealizedPnlUsd: '500' }],
+    });
+
+    expect(state.metrics.portfolio.exposureUsd).toBe(30000);
+    expect(state.metrics.portfolio.equityUsd).toBeNull();
+    expect(state.metrics.performance.startingCapitalUsd).toBeNull();
+    expect(state.metrics.performance.drawdownPct).toBeNull();
+  });
+
+  it('stamps freshness and asOf with the boundary read time', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-11-21T10:05:00.000Z'));
+      const state = createRuntimeCompositionState(baseDescriptor);
+      foldSummary(state, lossSummary);
+
+      expect(state.metrics.portfolio.asOf).toBe(ASOF);
+      expect(state.metrics.portfolio.freshness).toMatchObject({ state: 'fresh', ageMs: 5 * 60_000 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reports freshness unavailable when the summary carries no usable asOf', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    foldSummary(state, { ...lossSummary, asOf: undefined });
+
+    expect(state.metrics.portfolio.asOf).toBeNull();
+    expect(state.metrics.portfolio.freshness.state).toBe('unavailable');
+  });
+
+  it('keeps lifetime realized P&L and shows P&L since the change after a capital edit', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    foldSummary(state, lossSummary);
+
+    foldSummary(state, {
+      ...lossSummary,
+      initialCapital: '2000',
+      pnlSinceCapitalChange: '0',
+      capitalChangedAt: '2026-11-21T09:00:00.000Z',
+      equity: '2050',
+      availableCapital: '1750',
+      returnPct: '2.5',
+      drawdown: { current: '0', currentPct: '0', peakEquity: '2050' },
+    });
+
+    const { portfolio } = state.metrics;
+    expect(portfolio.initialCapitalUsd).toBe(2000);
+    expect(portfolio.lifetimeRealizedPnlUsd).toBe(-200);
+    expect(portfolio.pnlSinceCapitalChangeUsd).toBe(0);
+    expect(portfolio.capitalChangedAt).toBe('2026-11-21T09:00:00.000Z');
+    expect(state.metrics.performance.startingCapitalUsd).toBe(2000);
+    expect(portfolio.drawdownPct).toBe(0);
+  });
+
+  it('carries the funding flag so the prompt can label P&L as excluding funding', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    foldSummary(state, lossSummary);
+    expect(state.metrics.portfolio.fundingIncluded).toBe(false);
+  });
+
+  it('maps unavailable boundary fields to null rather than inventing values', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    foldSummary(state, lossSummary);
+
+    foldSummary(state, {
+      ok: true,
+      asOf: ASOF,
+      initialCapital: '1000',
+      lifetimeRealizedPnl: null,
+      pnlSinceCapitalChange: null,
+      unrealizedPnlUsd: null,
+      equity: null,
+      availableCapital: null,
+      drawdown: null,
+    });
+
+    const { portfolio } = state.metrics;
+    expect(portfolio.equityUsd).toBeNull();
+    expect(portfolio.availableCapitalUsd).toBeNull();
+    expect(portfolio.drawdownPct).toBeNull();
+    expect(portfolio.lifetimeRealizedPnlUsd).toBeNull();
+    expect(portfolio.initialCapitalUsd).toBe(1000);
+  });
+
+  it('ignores a failed get_account_summary result', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    foldSummary(state, lossSummary);
+
+    foldSummary(state, { ok: false });
+
+    expect(state.metrics.portfolio.equityUsd).toBe(850);
+  });
+
+  it('keeps previous state when the payload has no ok flag', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    foldSummary(state, lossSummary);
+
+    foldSummary(state, { initialCapital: '5', equity: '5' });
+
+    expect(state.metrics.portfolio.equityUsd).toBe(850);
+    expect(state.metrics.portfolio.initialCapitalUsd).toBe(1000);
+  });
+
+  it('keeps previous state on a traderton failure payload with an error', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    foldSummary(state, lossSummary);
+
+    foldSummary(state, { success: false, error: 'Failed to get account summary: boom', errorCode: 'account.summary_failed' });
+    foldSummary(state, { error: 'boom' });
+
+    expect(state.metrics.portfolio.equityUsd).toBe(850);
+    expect(state.metrics.portfolio.availableCapitalUsd).toBe(550);
+  });
+
+  it('does not let get_analytics overwrite summary P&L when the summary has no asOf', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    foldSummary(state, { ...lossSummary, asOf: undefined });
+
+    applyOwnToolResult(state, 'get_analytics', { ok: true, realizedPnlUsd: 12.5, winRate: 50 });
+
+    expect(state.metrics.portfolio.realizedPnlUsd).toBe(-200);
+    expect(state.metrics.portfolio.freshness.state).toBe('unavailable');
+  });
+
+  it('lets get_analytics supply realized P&L before any account summary arrives', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+
+    applyOwnToolResult(state, 'get_analytics', { ok: true, realizedPnlUsd: 12.5, winRate: 50 });
+
+    expect(state.metrics.portfolio.realizedPnlUsd).toBe(12.5);
+  });
+
+  it('records lifetime realized P&L from get_analytics without replacing the summary period P&L', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    foldSummary(state, lossSummary);
+
+    applyOwnToolResult(state, 'get_analytics', { ok: true, realizedPnlUsd: 12.5, lifetimeRealizedPnlUsd: '-180', winRate: 50 });
+
+    expect(state.metrics.portfolio.lifetimeRealizedPnlUsd).toBe(-180);
+    expect(state.metrics.portfolio.realizedPnlUsd).toBe(-200);
+    expect(state.metrics.portfolio.asOf).toBe(ASOF);
   });
 
   // Bug 006: nothing published instance.tool.result, so the portfolio block
@@ -687,7 +887,7 @@ describe('runtime composition helpers', () => {
   it('fills the portfolio block from the agent\'s own get_account_summary, get_analytics and list_positions results', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
 
-    applyOwnToolResult(state, 'get_account_summary', { ok: true, capital: '1000', capitalAvailable: true });
+    applyOwnToolResult(state, 'get_account_summary', { ...lossSummary, availableCapital: '1000' });
     applyOwnToolResult(state, 'get_analytics', { ok: true, realizedPnlUsd: 12.5, winRate: 50 });
     applyOwnToolResult(state, 'list_positions', {
       ok: true,
@@ -695,7 +895,7 @@ describe('runtime composition helpers', () => {
     });
 
     expect(state.metrics.portfolio.availableCapitalUsd).toBe(1000);
-    expect(state.metrics.portfolio.realizedPnlUsd).toBe(12.5);
+    expect(state.metrics.portfolio.realizedPnlUsd).toBe(-200);
     expect(state.metrics.openPositions).toHaveLength(1);
     expect(state.metrics.portfolio.exposureUsd).toBe(850);
   });
@@ -703,7 +903,7 @@ describe('runtime composition helpers', () => {
   it('ignores the agent\'s own results for non-portfolio tools and non-object data', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
 
-    applyOwnToolResult(state, 'get_price', { capital: '1000' });
+    applyOwnToolResult(state, 'get_price', { availableCapital: '1000' });
     applyOwnToolResult(state, 'get_account_summary', 'not an object');
 
     expect(state.metrics.portfolio.availableCapitalUsd).toBeNull();
@@ -914,7 +1114,7 @@ describe('runtime composition helpers', () => {
     expect(state.metrics.openPositions[0]?.venueType).toBe('dex');
   });
 
-  it('derives exposure and starting capital from tracked positions', () => {
+  it('derives exposure from tracked positions', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
 
     buildTickUserContext(state, [
@@ -939,8 +1139,6 @@ describe('runtime composition helpers', () => {
     ]);
 
     expect(state.metrics.portfolio.exposureUsd).toBe(30000);
-    expect(state.metrics.performance.startingCapitalUsd).toBe(29500);
-    expect(state.metrics.performance.riskAdjustedReturn).not.toBeNull();
   });
 
   it('clears portfolio exposure and unrealized PnL when positions flatten', () => {
