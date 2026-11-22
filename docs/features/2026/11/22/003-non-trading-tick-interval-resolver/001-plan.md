@@ -303,16 +303,43 @@ Files:
 - create/edit render + flow tests
 
 Changes:
-- **Remove the pre-fill:** delete `resolveStyleTickIntervalMins`' non-trading 24 h
-  branch (and likely the function, if trading agents can read the style interval
-  directly). Stop seeding `tickIntervalMins = '1440'` at init, on style change, and
-  on trading-capability change in `CreateAgentFlow.tsx` / `EditAgentModal.tsx`.
-  - For a non-trading agent, leave the Tick interval field **empty** (meaning
-    "use default"), and show the effective default as placeholder/helper text
-    (e.g. "Default: 1440 min (24 h) for non-trading agents"). The field stays
-    editable — typing a value makes it an explicit user choice.
-  - `NON_TRADING_DEFAULT_TICK_INTERVAL_MINS` may be retained purely for the
-    *display* string, but must no longer feed the payload.
+Principle: **the web does not decide whether an agent is a trading agent, and does
+not compute or check anything that depends on that.** The API is the only
+classifier (it reads the real skill ids). The form sends a tick interval only when
+the user typed one.
+
+- **Remove the pre-fill and the skill-driven re-derivation.** Delete
+  `resolveStyleTickIntervalMins` (both branches: the non-trading 24 h branch and
+  the style lookup, since an empty field now means "use the default"). Stop
+  seeding `tickIntervalMins` at init, on style change, and on skill change in
+  `CreateAgentFlow.tsx` / `EditAgentModal.tsx`. Remove the
+  `selectedSkillsHaveCapabilityFamily(..., 'trading')` calls that exist only to
+  pick a tick interval, and the `tickIntervalManuallySetRef` bookkeeping that
+  guards the re-derivation. Other uses of the trading check (for example showing
+  trading setup fields) are out of scope and unchanged.
+  - The Tick interval field starts **empty** (meaning "use the default"). It stays
+    editable; typing a value makes it an explicit user choice.
+  - **Create form hint (decision 5, option A):** a generic helper text, for
+    example "Leave blank to use the default for this agent's skills." It names no
+    number, because the form does not know the agent's classification. No new
+    endpoint.
+  - **Edit form and detail page:** may show the effective value and its `source`
+    from the decorated response (§3), since the agent exists and the server has
+    classified it.
+  - `NON_TRADING_DEFAULT_TICK_INTERVAL_MINS` and
+    `NON_TRADING_DEFAULT_TICK_INTERVAL_MS` are removed from the web. If the edit
+    form shows an effective value, it comes from the API response, not a mirrored
+    constant.
+- **Remove client-side max-hold logic (decision 6, option A).** Delete
+  `applyAutoMaxHoldOverride`, `reconcileMaxHoldOverride` (the parts that derive
+  max hold from the tick interval), the `maxHoldViolation` submit guard in
+  `CreateAgentFlow.tsx`, and the matching logic in `EditAgentModal.tsx`. The API's
+  `validateMaxHoldDurationInvariant`, run on the *effective* tick (§3), is the only
+  check. A violation now surfaces on submit as the API's 400, shown against the
+  field with the existing server-error display. A user-typed max hold is still
+  sent as an explicit override. Confirm the form maps the API's
+  `runtimePolicyOverrides.maxHoldDurationMs` issue path to a visible field
+  message, not a generic banner.
 - **Payload:** `agent-payloads.ts` — when the field is empty, continue to **omit**
   `tickIntervalMs` on create (already the behaviour of `getTickIntervalMsOrThrow`
   returning `undefined` → omitted). On update, an empty field should send the
@@ -323,10 +350,8 @@ Changes:
   hydrate as empty (not 1440), so editing a defaulted non-trading agent does not
   silently persist 24 h as explicit. Use the decorated *effective* value only for
   display/helper text, not for the editable field's value.
-- **Max-hold auto-derivation:** `applyAutoMaxHoldOverride` /
-  `reconcileMaxHoldOverride` currently derive max-hold from the (pre-filled) tick.
-  With an empty tick for non-trading agents, derive against the *effective* tick
-  (24 h) for display/validation parity, mirroring the backend invariant.
+- **Hydration of max hold:** show only a stored explicit max-hold override. Never
+  fill it from the tick interval. See "Remove client-side max-hold logic" above.
 
 ### 5. Migration / back-compat for existing ~1440 agents
 
@@ -389,11 +414,17 @@ Changes:
   null still validates as 24 h.
 
 **Web (component / flow):**
-- Create flow: non-trading selection leaves Tick interval empty with a 24 h
-  helper/placeholder; payload omits `tickIntervalMs`.
+- Create flow: the Tick interval field starts empty with the generic helper text
+  and no number; the payload omits `tickIntervalMs`, whatever skills are selected.
+- Regression for the 2026-11-22 incident: select a trading skill that is **not** in
+  the form's initial skills list (picked through picker search); the payload still
+  omits `tickIntervalMs`, and no client-side classification is involved.
 - Typing a value in the field makes the payload carry an explicit `tickIntervalMs`.
-- Switching skills to trading no longer force-writes a style interval into an
-  empty field (it stays the user's choice if set; stays empty/default if unset).
+- Switching skills, or changing style, never writes into the tick or max-hold
+  fields.
+- A max-hold violation returned by the API (400, `runtimePolicyOverrides.
+  maxHoldDurationMs` path) is shown against the field. No client-side
+  `maxHoldViolation` guard remains.
 - Edit flow: hydrating an agent with `tick_interval_ms = null` shows an empty
   field + effective default; hydrating a stored explicit value shows that value.
 - `style-mapping.test.ts`: remove/replace assertions tied to
@@ -425,6 +456,12 @@ Changes:
   field with the effective 24 h instead of leaving it empty, the next save writes
   an explicit value and loses the signal. *Mitigation:* hydrate from the *stored*
   value (null → empty), display the effective value only as helper/placeholder.
+- **Errors move from live to on-submit.** Removing the client max-hold check means
+  a user who types a tick interval above the max hold learns on submit, not as they
+  type. *Mitigation:* the API message already names both values and the remedy;
+  test that it renders against the field. If this proves painful, add the
+  effective-defaults endpoint (Non-Goals) so the form can validate live without
+  classifying.
 - **Plan 071 ordering conflict.** If 071 lands first and computes a default for
   non-trading agents too, the two rules could fight. *Mitigation:* 071 note #6
   already defers non-trading to this operator default; land this plan's
@@ -446,12 +483,27 @@ Changes:
    operator config (`agentRuntime.nonTradingDefaults.tickIntervalMs`); keep it
    there, do not move to instance config.
 
+Decided 2026-11-22:
+
+5. **Create-form hint: generic text, no number (option A).** The form does not
+   know the agent's classification, so it shows "Leave blank to use the default for
+   this agent's skills." and names no interval. The alternative (an endpoint that
+   takes skill ids and returns the effective tick and its source, so the form can
+   show the real number) is deferred; see Non-Goals.
+6. **No client-side max-hold logic (option A).** The auto-derivation and the
+   `maxHoldViolation` guard are removed from the create and edit forms. The API's
+   invariant check on the effective tick is the single validator, and its error
+   shows on submit.
+
 ## Non-Goals
 
 - No change to how `resolveAgentCostProfile` applies an explicit tick ("explicit
   wins" stays).
 - No runtime re-derivation of tick from skills (that is plan 071).
 - No agent-controlled tick override behaviour (that is 070 / routine-tasks Part 2).
+- No "resolve defaults for these skills" endpoint in this plan (decision 5,
+  option B). Add it later only if the generic hint or on-submit errors prove
+  painful. It would keep the API as the only classifier.
 - No new `tick_interval_ms` storage model — it stays a nullable column; `null`
   carries the "unset/default" meaning.
 - No data migration of existing agents.
