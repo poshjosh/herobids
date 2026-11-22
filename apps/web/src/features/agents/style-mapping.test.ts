@@ -20,8 +20,8 @@ describe('resolveStyleDefaults', () => {
 
   it('returns correct config for careful style', () => {
     const config = resolveStyleDefaults('careful');
-    expect(config.costPreset).toBe('standard');
-    expect(config.tickIntervalMins).toBe('30');
+    expect(config.costPreset).toBe('minimal');
+    expect(config.tickIntervalMins).toBe('90');
     expect(config.dailySpendBudgetUsd).toBe('1');
     expect(config.scoutMaxTurns).toBe(50);
     expect(config.judgeMaxTurns).toBe(500);
@@ -32,8 +32,8 @@ describe('resolveStyleDefaults', () => {
 
   it('returns correct config for balanced style', () => {
     const config = resolveStyleDefaults('balanced');
-    expect(config.costPreset).toBe('premium');
-    expect(config.tickIntervalMins).toBe('10');
+    expect(config.costPreset).toBe('standard');
+    expect(config.tickIntervalMins).toBe('30');
     expect(config.dailySpendBudgetUsd).toBe('5');
     expect(config.scoutMaxTurns).toBe(50);
     expect(config.judgeMaxTurns).toBe(500);
@@ -178,8 +178,8 @@ describe('resolveStyleDefaults', () => {
 
   describe('derived cadence helpers', () => {
     it('uses the style tick interval when no override is given', () => {
-      // balanced tick is now 10 min (600_000 ms) after the ladder rescale.
-      expect(resolveStyleTickIntervalMs('balanced')).toBe(600_000);
+      // balanced tick is 30 min (1_800_000 ms).
+      expect(resolveStyleTickIntervalMs('balanced')).toBe(1_800_000);
     });
 
     it('uses an explicit tick interval override when present', () => {
@@ -187,8 +187,8 @@ describe('resolveStyleDefaults', () => {
     });
 
     it('derives max hold from the effective tick interval', () => {
-      // balanced max-hold multiplier is now 1× its tick, so max hold tracks the tick 1:1.
-      expect(deriveStyleMaxHoldDurationMs('balanced', 900_000)).toBe(900_000);
+      // balanced max-hold multiplier is 3× its tick.
+      expect(deriveStyleMaxHoldDurationMs('balanced', 900_000)).toBe(2_700_000);
     });
 
     it('clears the max-hold override when the derived value matches the style default', () => {
@@ -198,7 +198,7 @@ describe('resolveStyleDefaults', () => {
     it('stores an auto max-hold override when cadence differs from the style default', () => {
       expect(applyAutoMaxHoldOverride('balanced', { scoutMaxTurns: 50 }, 900_000)).toEqual({
         scoutMaxTurns: 50,
-        maxHoldDurationMs: 900_000,
+        maxHoldDurationMs: 2_700_000,
       });
     });
   });
@@ -211,16 +211,16 @@ describe('resolveStyleDefaults', () => {
     });
 
     it('re-derives max hold when the tick outgrows a stored max hold', () => {
-      // balanced max-hold multiplier is 1×, so re-derivation tracks the tick 1:1.
+      // balanced max-hold multiplier is 3×, so re-derivation is 3 × the tick.
       expect(reconcileMaxHoldOverride('balanced', { scoutMaxTurns: 50, maxHoldDurationMs: 600_000 }, 3_600_000)).toEqual({
         scoutMaxTurns: 50,
-        maxHoldDurationMs: 3_600_000,
+        maxHoldDurationMs: 10_800_000,
       });
     });
 
     it('stores no max-hold override when the style default already covers the tick', () => {
-      // balanced's default max hold (10 min) matches its 10-min tick, so it covers the style tick exactly.
-      expect(reconcileMaxHoldOverride('balanced', null, 600_000)).toBeNull();
+      // balanced's default max hold (90 min) covers its 30-min style tick.
+      expect(reconcileMaxHoldOverride('balanced', null, 1_800_000)).toBeNull();
     });
 
     it('leaves overrides unchanged when the tick is unknown', () => {
@@ -433,8 +433,8 @@ describe('adaptive reasoning style defaults', () => {
 
 describe('resolveStyleTickIntervalMins (D10)', () => {
   it('keeps the style interval for a trading agent', () => {
-    expect(resolveStyleTickIntervalMins('careful', true)).toBe('30');
-    expect(resolveStyleTickIntervalMins('balanced', true)).toBe('10');
+    expect(resolveStyleTickIntervalMins('careful', true)).toBe('90');
+    expect(resolveStyleTickIntervalMins('balanced', true)).toBe('30');
     expect(resolveStyleTickIntervalMins('bold', true)).toBe('10');
   });
 

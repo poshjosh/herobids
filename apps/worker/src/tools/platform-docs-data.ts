@@ -172,26 +172,26 @@ const AGENT_STYLE_ENTRY: DocsIndexEntry = {
 Risk styles determine default agent behavior. The user picks a style; the platform fills in defaults.
 
 Careful:
-  - costPreset: standard
-  - tickInterval: 30 minutes
+  - costPreset: minimal
+  - tickInterval: 90 minutes
   - dailySpendBudget: $1/day
   - openPositionEscalationToJudgePolicy: uncovered_or_triggered
   - scoutMaxTurns: 50, judgeMaxTurns: 500
   - scoutMaxTokens: 1,024, judgeMaxTokens: 4,096
   - allowedHoursUtc: all (24/7)
   - weekendPause: false
-  - maxHoldDuration: 90 minutes (1.5 hours)
+  - maxHoldDuration: 450 minutes (7.5 hours)
 
 Balanced:
-  - costPreset: premium
-  - tickInterval: 10 minutes
+  - costPreset: standard
+  - tickInterval: 30 minutes
   - dailySpendBudget: $5/day
   - openPositionEscalationToJudgePolicy: always
   - scoutMaxTurns: 50, judgeMaxTurns: 500
   - scoutMaxTokens: 2,048, judgeMaxTokens: 8,192
   - allowedHoursUtc: all (24/7)
   - weekendPause: false
-  - maxHoldDuration: 10 minutes
+  - maxHoldDuration: 90 minutes (1.5 hours)
 
 Bold:
   - costPreset: premium
@@ -454,9 +454,9 @@ Three built-in styles are available: **Careful**, **Balanced**, and **Bold**. In
 
 | | **Careful** | **Balanced** | **Bold** |
 |---|---|---|---|
-| **Default cost preset** | Standard | Premium | Premium |
+| **Default cost preset** | Minimal | Standard | Premium |
 | **Daily spend budget (default)** | \$1 | \$5 | \$30 |
-| **Tick interval** | 30 min | 10 min | 10 min |
+| **Tick interval** | 90 min | 30 min | 10 min |
 | **Open position escalation** | On missing coverage | Always | Always |
 
 ### Tool Turn Limits
@@ -514,7 +514,7 @@ Economy models already keep costs low, so every style uses at least medium reaso
 
 | | **Careful** | **Balanced** | **Bold** |
 |---|---|---|---|
-| **Max hold duration** | 90 min | 10 min | 10 min |
+| **Max hold duration** | 450 min | 90 min | 10 min |
 
 ## What each field means
 
@@ -1527,8 +1527,8 @@ Your agent's **style** sets a default daily spend target that shapes how often i
 
 | Style | Default daily spend target | Tick interval | What it means |
 |---|---|---|---|
-| **Careful** | \$1 | 30 min | Lowest cost. Lower reasoning, longer gaps between ticks. |
-| **Balanced** | \$5 | 10 min | Moderate cost. Moderate speed and reasoning. |
+| **Careful** | \$1 | 90 min | Lowest cost. Lower reasoning, longer gaps between ticks. |
+| **Balanced** | \$5 | 30 min | Moderate cost. Moderate speed and reasoning. |
 | **Bold** | \$30 | 10 min | Highest cost. Fastest, deepest reasoning. |
 | **Custom** | You set it | Derived from your settings | Full control over your daily spend target. |
 

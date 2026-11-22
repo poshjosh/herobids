@@ -10,6 +10,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 4xx refusal bodies now reach the agent in tool results.
 - Per-agent child grant scope. Two user-set settings, `grantAnySkillToChildren` and `grantAnyConnectionToChildren` (both off by default), let an agent give its children skills or connections it does not hold. New `PUT /agents/:id/child-grant-scope` (audit `agent.child_grant_scope_set`), flags on `GET /agents/:id/child-allowance`, the `list_owner_connections` tool and `GET /agents/:id/owner-connections` (403 `agent.owner_connections.not_enabled` when off), `grantedNotHeld` in the `agent.child_created` audit detail, and two checkboxes on the child allowance card and create flow. See `docs/tech/agents/tools/agent-creation-tools.md`.
 - Creating an agent with either grant setting on now records both settings in the `agent.created` audit detail, so a widened grant scope set at creation is as visible as one set through `PUT /agents/:id/child-grant-scope`. The keys are left out when both settings are off.
+### Changed
+- Agent style defaults now follow the strategy preset tiers. Careful uses the Minimal cost preset (90 min tick, 450 min max hold), Balanced uses Standard (30 min tick, 90 min max hold) and Bold stays Premium (10 min tick). New agents in the create form default to Balanced, which is now Standard instead of Premium. Daily spend hints ($1/$5/$30) are unchanged. Existing agents keep their saved values.
 
 ### Fixed
 

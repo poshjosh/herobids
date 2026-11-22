@@ -10,9 +10,9 @@ Three built-in styles are available: **Careful**, **Balanced**, and **Bold**. In
 
 | | **Careful** | **Balanced** | **Bold** |
 |---|---|---|---|
-| **Default cost preset** | Standard | Premium | Premium |
+| **Default cost preset** | Minimal | Standard | Premium |
 | **Daily spend budget (default)** | $1 | $5 | $30 |
-| **Tick interval** | 30 min | 10 min | 10 min |
+| **Tick interval** | 90 min | 30 min | 10 min |
 | **Open position escalation** | On missing coverage | Always | Always |
 
 ### Tool Turn Limits
@@ -70,7 +70,7 @@ Economy models already keep costs low, so every style uses at least medium reaso
 
 | | **Careful** | **Balanced** | **Bold** |
 |---|---|---|---|
-| **Max hold duration** | 90 min | 10 min | 10 min |
+| **Max hold duration** | 450 min | 90 min | 10 min |
 
 ## What each field means
 

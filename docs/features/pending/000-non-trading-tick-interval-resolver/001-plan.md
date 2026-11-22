@@ -20,8 +20,11 @@ user choice.
 
 This plan:
 
-1. **Stops the frontend pre-filling 1440** for non-trading agents, so an unset
-   interval genuinely means "resolve the default server-side".
+1. **Takes the frontend out of tick-interval and max-hold decisions entirely.**
+   The form no longer pre-fills 1440, no longer guesses whether the agent is a
+   trading agent, and no longer derives or checks max hold. An empty interval
+   means "resolve the default server-side"; the API classifies the agent from its
+   real skills and validates (decided 2026-11-22, see Open Decisions 5 and 6).
 2. **Applies the non-trading 24 h default in the backend**, gated on
    `hasTradingCapability`, only when there is no explicit user override.
 3. **Preserves back-compat** for existing agents that already have
@@ -38,6 +41,14 @@ This plan:
   `agents.tick_interval_ms` is nullable (`integer('tick_interval_ms')`), so
   `null` is already available to mean "unset". The frontend throws that signal
   away by pre-filling 1440. Recovering it is the core of this change.
+- **The form's guess is wrong in practice (2026-11-22 incident).** The create form
+  decides "trading or not" from a one-page skills list (default page size 20). A
+  skill picked through the picker's search is missing from that list, so the form
+  keeps the 24 h pre-fill for what the API correctly classifies as a trading
+  agent, and create fails with `maxHoldDurationMs (600000ms) must be >=
+  tickIntervalMs (86400000ms)`. `EditAgentModal` and `AgentDetailPage` fetch the
+  same unpaged list. Any client-side classification has this failure mode; only
+  removing it fixes the class, not just this case.
 - **Unblocks adjacent plans.** 071 (skill-driven defaults) wants the API to only
   compute a default "if `tickIntervalMs` was not explicitly provided". 070 /
   routine-tasks Part 2 want "a creator edit clears the agent's runtime override".
@@ -270,9 +281,10 @@ Changes:
   explicitly means "clear back to unset/default" (confirm the route accepts null
   to clear; today update sends number-or-null).
 - **Response decoration:** expose the *resolved effective* tick (and ideally its
-  `source`) so the UI can display the effective 24 h without the stored column
-  being 24 h. Add it to the decorated agent response via the resolved policy /
-  helper so the form can show "Default: 24 h (non-trading)".
+  `source`) so the edit form and detail page can display the effective 24 h
+  without the stored column being 24 h. Add it to the decorated agent response
+  via the resolved policy / helper. This is for an existing agent only. The create
+  form has no agent yet and shows a generic hint (see §4, decision 5).
 - `validateMaxHoldDurationInvariant` (agent-config-helpers): review the existing
   tests that pass `tickIntervalMs = 24 h` for non-trading agents — the invariant
   must still be validated against the *effective* tick, so validation should run

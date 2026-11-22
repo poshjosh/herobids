@@ -336,10 +336,11 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
   openPositionEscalationToJudgePolicy: 'never' | 'uncovered_or_triggered' | 'always';
   maxHoldDurationMs: number;
 }> = {
-  // Ladder rescaled one notch upward: new careful = former balanced budgets.
+  // Cost preset ladder: careful → minimal (economy), balanced → standard, bold → premium.
+  // Preset, tick interval and max hold are paired per style; spend hints are $1/$5/$30.
   careful: {
-    costPreset: 'standard',
-    tickIntervalMins: '30',
+    costPreset: 'minimal',
+    tickIntervalMins: '90',
     dailySpendBudgetUsd: '1',
     openPositionEscalationToJudgePolicy: 'uncovered_or_triggered',
     scoutMaxTurns: DEFAULT_SCOUT_MAX_TURNS,
@@ -363,13 +364,12 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     maxContextBlockChars: 4_000,
     toolResultFullRetentionTurns: 3,
     toolResultMaxStaleChars: 500,
-    maxHoldDurationMs: 5_400_000, // 90 min (3 × tick interval)
+    maxHoldDurationMs: 27_000_000, // 450 min (5 × tick interval)
     skipUnchangedTicks: true,
   },
-  // new balanced = former bold budgets.
   balanced: {
-    costPreset: 'premium',
-    tickIntervalMins: '10',
+    costPreset: 'standard',
+    tickIntervalMins: '30',
     dailySpendBudgetUsd: '5',
     openPositionEscalationToJudgePolicy: 'always',
     scoutMaxTurns: DEFAULT_SCOUT_MAX_TURNS,
@@ -393,7 +393,7 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     maxContextBlockChars: 8_000,
     toolResultFullRetentionTurns: 5,
     toolResultMaxStaleChars: 1_000,
-    maxHoldDurationMs: 600_000, // 10 min (1 × tick interval)
+    maxHoldDurationMs: 5_400_000, // 90 min (3 × tick interval)
     skipUnchangedTicks: true,
   },
   // new bold = former bold with Category-A budget fields doubled, then clamped to RUNTIME_POLICY_CEILINGS.

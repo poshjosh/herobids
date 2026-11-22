@@ -53,8 +53,8 @@ Your agent's **style** sets a default daily spend target that shapes how often i
 
 | Style | Default daily spend target | Tick interval | What it means |
 |---|---|---|---|
-| **Careful** | $1 | 30 min | Lowest cost. Lower reasoning, longer gaps between ticks. |
-| **Balanced** | $5 | 10 min | Moderate cost. Moderate speed and reasoning. |
+| **Careful** | $1 | 90 min | Lowest cost. Lower reasoning, longer gaps between ticks. |
+| **Balanced** | $5 | 30 min | Moderate cost. Moderate speed and reasoning. |
 | **Bold** | $30 | 10 min | Highest cost. Fastest, deepest reasoning. |
 | **Custom** | You set it | Derived from your settings | Full control over your daily spend target. |
 

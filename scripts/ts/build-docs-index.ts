@@ -320,26 +320,26 @@ const AGENT_STYLE_ENTRY: DocsIndexEntry = {
 Risk styles determine default agent behavior. The user picks a style; the platform fills in defaults.
 
 Careful:
-  - costPreset: standard
-  - tickInterval: 30 minutes
+  - costPreset: minimal
+  - tickInterval: 90 minutes
   - dailySpendBudget: $1/day
   - openPositionEscalationToJudgePolicy: uncovered_or_triggered
   - scoutMaxTurns: 50, judgeMaxTurns: 500
   - scoutMaxTokens: 1,024, judgeMaxTokens: 4,096
   - allowedHoursUtc: all (24/7)
   - weekendPause: false
-  - maxHoldDuration: 90 minutes (1.5 hours)
+  - maxHoldDuration: 450 minutes (7.5 hours)
 
 Balanced:
-  - costPreset: premium
-  - tickInterval: 10 minutes
+  - costPreset: standard
+  - tickInterval: 30 minutes
   - dailySpendBudget: $5/day
   - openPositionEscalationToJudgePolicy: always
   - scoutMaxTurns: 50, judgeMaxTurns: 500
   - scoutMaxTokens: 2,048, judgeMaxTokens: 8,192
   - allowedHoursUtc: all (24/7)
   - weekendPause: false
-  - maxHoldDuration: 10 minutes
+  - maxHoldDuration: 90 minutes (1.5 hours)
 
 Bold:
   - costPreset: premium

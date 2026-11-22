@@ -30,8 +30,8 @@ Three styles define the baseline. All numeric values are backed by
 
 | Field | careful | balanced | bold |
 |-------|:-------:|:--------:|:----:|
-| **Cost preset** | standard | premium | premium |
-| **Tick interval** | 30 min | 10 min | 10 min |
+| **Cost preset** | minimal | standard | premium |
+| **Tick interval** | 90 min | 30 min | 10 min |
 | **Daily spend budget** | $1 | $5 | $30 |
 | **Escalation policy** | uncovered_or_triggered | always | always |
 | `scoutMaxTurns` | 50 | 50 | 50 |
@@ -54,16 +54,18 @@ Three styles define the baseline. All numeric values are backed by
 | `maxContextBlockChars` | 4 000 | 8 000 | 16 000 |
 | `toolResultFullRetentionTurns` | 3 | 5 | 10 |
 | `toolResultMaxStaleChars` | 500 | 1 000 | 2 000 |
-| `maxHoldDurationMs` | 5 400 000 | 600 000 | 600 000 |
+| `maxHoldDurationMs` | 27 000 000 | 5 400 000 | 600 000 |
 
 ¹ new bold `deepThinkingTokens` would be 40 960 (former bold 20 480 × 2) but is
 clamped to the `deepThinkingTokens` ceiling of 32 768.
 
-The style ladder was rescaled one notch upward: careful now carries the former
-balanced budgets, balanced carries the former bold budgets, and bold carries the
-former bold budgets with its Category-A budget fields doubled (then clamped to
-the operator ceilings). Behavioral (non-budget) fields in bold are identical to
-balanced.
+Cost preset, tick interval and max hold are paired per style and follow the
+strategy preset tiers: careful → minimal (economy), balanced → standard,
+bold → premium. Max hold is a multiple of the tick (careful 5×, balanced 3×,
+bold 1×). Budget fields (history, tokens, tool schemas) step up per style, with
+bold's doubled and clamped to the operator ceilings. The daily spend hints
+($1 / $5 / $30) are the targets and are independent of the preset's own default
+budget.
 
 A missing or invalid style falls back to **balanced**.
 

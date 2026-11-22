@@ -11,26 +11,28 @@ const HOUR = 60 * MINUTE;
 const NON_TRADING_DEFAULT_MS = 24 * HOUR;
 
 describe('resolveStyleTradingTickIntervalMs', () => {
-  it('uses 30, 10 and 10 minutes for careful, balanced and bold', () => {
-    expect(resolveStyleTradingTickIntervalMs('careful')).toBe(30 * MINUTE);
-    expect(resolveStyleTradingTickIntervalMs('balanced')).toBe(10 * MINUTE);
+  it('uses 90, 30 and 10 minutes for careful, balanced and bold', () => {
+    expect(resolveStyleTradingTickIntervalMs('careful')).toBe(90 * MINUTE);
+    expect(resolveStyleTradingTickIntervalMs('balanced')).toBe(30 * MINUTE);
     expect(resolveStyleTradingTickIntervalMs('bold')).toBe(10 * MINUTE);
   });
 });
 
 describe('deriveStyleMaxHoldDurationMs', () => {
   it('keeps the style default when the tick is the style default', () => {
-    // careful tick default is 30 min; passing it back yields the careful max-hold default.
-    expect(deriveStyleMaxHoldDurationMs('careful', 30 * MINUTE)).toBe(AGENT_STYLE_RUNTIME_DEFAULTS.careful.maxHoldDurationMs);
-    expect(deriveStyleMaxHoldDurationMs('balanced', 10 * MINUTE)).toBe(AGENT_STYLE_RUNTIME_DEFAULTS.balanced.maxHoldDurationMs);
+    // careful tick default is 90 min; passing it back yields the careful max-hold default.
+    expect(deriveStyleMaxHoldDurationMs('careful', 90 * MINUTE)).toBe(AGENT_STYLE_RUNTIME_DEFAULTS.careful.maxHoldDurationMs);
+    expect(deriveStyleMaxHoldDurationMs('balanced', 30 * MINUTE)).toBe(AGENT_STYLE_RUNTIME_DEFAULTS.balanced.maxHoldDurationMs);
   });
 
   it('scales max hold with the tick for the same style', () => {
-    // balanced max-hold == tick (1× multiplier): max hold tracks the tick 1:1.
-    expect(deriveStyleMaxHoldDurationMs('balanced', HOUR)).toBe(HOUR);
-    // careful max-hold is 3× its tick (90 min = 3 × 30 min): scales 3× with the tick.
-    expect(deriveStyleMaxHoldDurationMs('careful', 30 * MINUTE)).toBe(3 * 30 * MINUTE);
-    expect(deriveStyleMaxHoldDurationMs('careful', HOUR)).toBe(3 * HOUR);
+    // bold max-hold == tick (1× multiplier): max hold tracks the tick 1:1.
+    expect(deriveStyleMaxHoldDurationMs('bold', HOUR)).toBe(HOUR);
+    // balanced max-hold is 3× its tick (90 min = 3 × 30 min): scales 3× with the tick.
+    expect(deriveStyleMaxHoldDurationMs('balanced', 30 * MINUTE)).toBe(3 * 30 * MINUTE);
+    expect(deriveStyleMaxHoldDurationMs('balanced', HOUR)).toBe(3 * HOUR);
+    // careful max-hold is 5× its tick (450 min = 5 × 90 min).
+    expect(deriveStyleMaxHoldDurationMs('careful', 90 * MINUTE)).toBe(5 * 90 * MINUTE);
   });
 
   it('never exceeds the operator max-hold ceiling', () => {
@@ -44,7 +46,7 @@ describe('resolveTradingTickIntervalMs', () => {
       style: 'balanced',
       currentTickIntervalMs: NON_TRADING_DEFAULT_MS,
       nonTradingDefaultTickIntervalMs: NON_TRADING_DEFAULT_MS,
-    })).toBe(10 * MINUTE);
+    })).toBe(30 * MINUTE);
   });
 
   it('replaces a missing stored tick with the style trading tick', () => {

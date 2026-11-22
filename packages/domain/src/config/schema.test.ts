@@ -1120,7 +1120,7 @@ describe('AGENT_STYLE_RUNTIME_DEFAULTS', () => {
     expect(d.maxHistoryTokens).toBe(40_000);
     expect(d.weekendPause).toBe(false);
     expect(d.allowedHoursUtc).toEqual([]);  // careful no longer restricts hours
-    expect(d.costPreset).toBe('standard');
+    expect(d.costPreset).toBe('minimal');
   });
 
   it('balanced has moderate defaults', () => {
@@ -1128,7 +1128,7 @@ describe('AGENT_STYLE_RUNTIME_DEFAULTS', () => {
     expect(d.scoutMaxTurns).toBe(50);
     expect(d.judgeMaxTurns).toBe(500);
     expect(d.maxHistoryTokens).toBe(80_000);
-    expect(d.costPreset).toBe('premium');
+    expect(d.costPreset).toBe('standard');
   });
 
   it('bold has aggressive defaults', () => {
@@ -1220,7 +1220,7 @@ describe('resolveAgentRuntimePolicy', () => {
   it('handles empty overrides object', () => {
     const resolved = resolveAgentRuntimePolicy('careful', {});
     expect(resolved.scoutMaxTurns).toBe(50);
-    expect(resolved.maxHoldDurationMs).toBe(5_400_000);  // careful: 3 × tick interval (90 min)
+    expect(resolved.maxHoldDurationMs).toBe(27_000_000);  // careful: 5 × tick interval (90 min → 450 min)
   });
 });
 

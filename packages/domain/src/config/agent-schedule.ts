@@ -7,7 +7,7 @@ export function resolveStyleTradingTickIntervalMs(style: AgentStyleValue): numbe
   return Number(AGENT_STYLE_RUNTIME_DEFAULTS[style].tickIntervalMins) * MS_PER_MINUTE;
 }
 
-/** Max hold keeps the style's ratio to its tick interval (careful: 3 × tick; balanced and bold: 1 × tick). */
+/** Max hold keeps the style's ratio to its tick interval (careful: 5 × tick; balanced: 3 × tick; bold: 1 × tick). */
 export function deriveStyleMaxHoldDurationMs(style: AgentStyleValue, tickIntervalMs: number): number {
   const styleMaxHoldMs = AGENT_STYLE_RUNTIME_DEFAULTS[style].maxHoldDurationMs;
   if (styleMaxHoldMs === undefined) {

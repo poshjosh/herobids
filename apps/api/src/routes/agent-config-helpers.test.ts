@@ -586,7 +586,7 @@ describe('validateConnectionRequirement', () => {
 
 describe('validateMaxHoldDurationInvariant (D9)', () => {
   const TWENTY_FOUR_HOURS_MINS = 1440;
-  const CAREFUL_MAX_HOLD_MS = 5_400_000; // 90 min (careful default after the ladder rescale)
+  const CAREFUL_MAX_HOLD_MS = 27_000_000; // 450 min (careful default: 5 × its 90 min tick)
 
   it('rejects a 24 h interval on a careful trading agent when skip-unchanged is on', () => {
     const issues = validateMaxHoldDurationInvariant({

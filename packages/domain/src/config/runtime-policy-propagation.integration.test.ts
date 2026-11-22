@@ -54,7 +54,7 @@ describe('resolveAgentRuntimePolicy', () => {
     expect(policy.maxHistoryMessages).toBe(20);
     expect(policy.allowedHoursUtc).toEqual([]);  // careful no longer restricts hours
     expect(policy.weekendPause).toBe(false);
-    expect(policy.maxHoldDurationMs).toBe(5_400_000);  // careful: 3 × tick interval (90 min)
+    expect(policy.maxHoldDurationMs).toBe(27_000_000);  // careful: 5 × tick interval (90 min → 450 min)
   });
 
   it('resolves balanced style with no overrides', () => {
@@ -69,7 +69,7 @@ describe('resolveAgentRuntimePolicy', () => {
     expect(policy.maxHistoryMessages).toBe(40);
     expect(policy.allowedHoursUtc).toEqual([]);
     expect(policy.weekendPause).toBe(false);
-    expect(policy.maxHoldDurationMs).toBe(600_000);  // balanced: 1 × tick interval (10 min)
+    expect(policy.maxHoldDurationMs).toBe(5_400_000);  // balanced: 3 × tick interval (30 min → 90 min)
   });
 
   it('falls back to balanced when style is undefined', () => {
@@ -130,7 +130,7 @@ describe('runtime policy override merging', () => {
   it('empty overrides object leaves all style defaults intact', () => {
     const policy = resolveAgentRuntimePolicy('careful', {});
     expect(policy.scoutMaxTurns).toBe(50);
-    expect(policy.maxHoldDurationMs).toBe(5_400_000);  // careful: 3 × tick interval (90 min)
+    expect(policy.maxHoldDurationMs).toBe(27_000_000);  // careful: 5 × tick interval (90 min → 450 min)
     expect(policy.allowedHoursUtc).toEqual([]);  // careful no longer restricts hours
   });
 
@@ -352,8 +352,8 @@ describe('style consistency', () => {
   });
 
   it('cost presets match expected mapping', () => {
-    expect(AGENT_STYLE_RUNTIME_DEFAULTS.careful.costPreset).toBe('standard');
-    expect(AGENT_STYLE_RUNTIME_DEFAULTS.balanced.costPreset).toBe('premium');
+    expect(AGENT_STYLE_RUNTIME_DEFAULTS.careful.costPreset).toBe('minimal');
+    expect(AGENT_STYLE_RUNTIME_DEFAULTS.balanced.costPreset).toBe('standard');
     expect(AGENT_STYLE_RUNTIME_DEFAULTS.bold.costPreset).toBe('premium');
   });
 });
