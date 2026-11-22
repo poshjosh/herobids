@@ -9,6 +9,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Agents can create trading children. `create_child_agent` accepts `executionDefaults` (`mode` `paper` or `shadow`, `slippageBps`); the child takes what the parent sets and defaults to `paper`. `live` is refused with `agent.create.live_not_supported` (HTTP 403). See `docs/tech/agents/tools/agent-creation-tools.md`.
 - 4xx refusal bodies now reach the agent in tool results.
 - Per-agent child grant scope. Two user-set settings, `grantAnySkillToChildren` and `grantAnyConnectionToChildren` (both off by default), let an agent give its children skills or connections it does not hold. New `PUT /agents/:id/child-grant-scope` (audit `agent.child_grant_scope_set`), flags on `GET /agents/:id/child-allowance`, the `list_owner_connections` tool and `GET /agents/:id/owner-connections` (403 `agent.owner_connections.not_enabled` when off), `grantedNotHeld` in the `agent.child_created` audit detail, and two checkboxes on the child allowance card and create flow. See `docs/tech/agents/tools/agent-creation-tools.md`.
+- Creating an agent with either grant setting on now records both settings in the `agent.created` audit detail, so a widened grant scope set at creation is as visible as one set through `PUT /agents/:id/child-grant-scope`. The keys are left out when both settings are off.
 
 ### Fixed
 

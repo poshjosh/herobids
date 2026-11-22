@@ -12,7 +12,7 @@ Seen on a local stack with agent `crypto-trading-coord` (`51c5c436-94f5-4b47-845
 
 The "parent must hold it" rule suits a parent that delegates part of its own toolset. It does not suit a coordinator whose job is to build workers with skills it does not need itself. Giving the coordinator every worker skill makes its prompt and tool surface larger, and the coordinator would carry skills it should not use.
 
-Related: a second block hit the same coordinator once the grants were right. A child with a trading skill could not be created at all, because `executionDefaults` is required and not allowed for agent callers. That is handled in [Agent Child Execution Mode](../000-agent-child-execution-mode/001-plan.md), which lets an agent pass `executionDefaults`, keeps the child's mode uncapped for `paper` and `shadow`, and refuses `live` for now. The two plans ship independently, and `shadow` children need the connection grants from this plan.
+Related: a second block hit the same coordinator once the grants were right. A child with a trading skill could not be created at all, because `executionDefaults` is required and not allowed for agent callers. That is handled in [Agent Child Execution Mode](docs/features/2026/11/22/001-agent-child-execution-mode/001-plan.md), which lets an agent pass `executionDefaults`, keeps the child's mode uncapped for `paper` and `shadow`, and refuses `live` for now. The two plans ship independently, and `shadow` children need the connection grants from this plan.
 
 ## 2. Goal
 
@@ -138,7 +138,7 @@ Check before coding:
 
 ## 11. Rollout
 
-1. DONE — Refusal detail in the tool result (§4). Safe on its own and useful at once. Pass the response body through for all 4xx responses, not only grant refusals. A 400 `validation_error` was also reduced to "HTTP 400" and hid its cause. The [Agent Child Execution Mode](../000-agent-child-execution-mode/001-plan.md) plan shares this step. Do it once.
+1. DONE — Refusal detail in the tool result (§4). Safe on its own and useful at once. Pass the response body through for all 4xx responses, not only grant refusals. A 400 `validation_error` was also reduced to "HTTP 400" and hid its cause. The [Agent Child Execution Mode](docs/features/2026/11/22/001-agent-child-execution-mode/001-plan.md) plan shares this step. Do it once.
 2. DONE — Migration, policy change and the `grantedNotHeld` audit field, flags default off. No behavior change.
 3. DONE — User-only route, audit and allowance read.
 4. DONE — Worker client and tool text. Add `list_owner_connections` only if the connection flag ships.

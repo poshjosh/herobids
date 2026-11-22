@@ -2,7 +2,7 @@
 
 Status: Ready to build (revision 2, no open questions)
 Date: 2026-11-22
-Builds on: [Agent-Created Agents](../../2026/10/25/001-agent-creating-agents/001-plan.md) §5, §6. Sibling plan: [Agent Child Grant Scope](../000-agent-child-grant-scope/001-plan.md). The two ship independently.
+Builds on: [Agent-Created Agents](../../2026/10/25/001-agent-creating-agents/001-plan.md) §5, §6. Sibling plan: [Agent Child Grant Scope](docs/features/2026/11/22/002-agent-child-grant-scope/001-plan.md). The two ship independently.
 
 Revision 2 drops the mode cap. Revision 1 capped a child's mode at its parent's. That needed a mode ranking, a read of the parent's mode over the boundary, and a traderton export, all to guard modes that move no real money. The decision record is in §3.
 

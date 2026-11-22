@@ -72,7 +72,7 @@ Operator settings are in [Configuration: Agent creation limits](../../configurat
 
 ### Child grant scope
 
-Design: [Agent Child Grant Scope](../../../features/pending/000-agent-child-grant-scope/001-plan.md). Two per-agent settings, both `false` by default, set only by the user:
+Design: [Agent Child Grant Scope](docs/features/2026/11/22/002-agent-child-grant-scope/001-plan.md). Two per-agent settings, both `false` by default, set only by the user:
 
 | Setting | Off | On |
 |---|---|---|
@@ -91,7 +91,7 @@ Design: [Agent Child Grant Scope](../../../features/pending/000-agent-child-gran
 
 ### Child execution mode
 
-A child that holds a trading skill takes the `executionDefaults` its parent passes. Design: [Agent Child Execution Mode](../../../features/pending/000-agent-child-execution-mode/001-plan.md).
+A child that holds a trading skill takes the `executionDefaults` its parent passes. Design: [Agent Child Execution Mode](docs/features/2026/11/22/001-agent-child-execution-mode/001-plan.md).
 
 - `mode` is `paper` or `shadow`. The tool schema leaves `live` out. `mode` defaults to `paper` for a trading child when omitted, and `executionDefaults` itself is optional for an agent caller.
 - `slippageBps` is stored on the child as given. Omit it for the platform default.

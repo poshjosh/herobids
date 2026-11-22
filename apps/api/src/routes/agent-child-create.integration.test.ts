@@ -1050,6 +1050,47 @@ describe.skipIf(SKIP)('agent-created child agents (integration)', () => {
       expect(created).toMatchObject({ grantAnySkillToChildren: true, grantAnyConnectionToChildren: true });
     });
 
+    async function createdEventDetails(userId: string) {
+      const events = await db.select().from(agentAuditEvents).where(and(eq(agentAuditEvents.userId, userId), eq(agentAuditEvents.action, 'agent.created')));
+      return events.map((event) => event.detail);
+    }
+
+    it('records a grant setting turned on at creation in the agent.created audit detail', async () => {
+      const userId = await seedUser(db);
+      const token = await userToken(db, userId);
+      const app = await appWith({});
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/agents',
+        headers: { Authorization: `Bearer ${token}` },
+        payload: { name: 'Coordinator', prompt: 'Coordinate.', grantAnyConnectionToChildren: true },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(await createdEventDetails(userId)).toEqual([
+        expect.objectContaining({ grantAnySkillToChildren: false, grantAnyConnectionToChildren: true }),
+      ]);
+    });
+
+    it('leaves the grant settings out of the agent.created audit detail when both are off', async () => {
+      const userId = await seedUser(db);
+      const token = await userToken(db, userId);
+      const app = await appWith({});
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/agents',
+        headers: { Authorization: `Bearer ${token}` },
+        payload: { name: 'Plain', prompt: 'Do things.' },
+      });
+
+      expect(res.statusCode).toBe(201);
+      const [detail] = await createdEventDetails(userId);
+      expect(detail).not.toHaveProperty('grantAnySkillToChildren');
+      expect(detail).not.toHaveProperty('grantAnyConnectionToChildren');
+    });
+
     it('POST /agents from a user leaves both settings false when omitted', async () => {
       const userId = await seedUser(db);
       const token = await userToken(db, userId);

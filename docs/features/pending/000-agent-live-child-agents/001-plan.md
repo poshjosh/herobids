@@ -2,7 +2,7 @@
 
 Status: Outline for future work (revision 1). Not scheduled. Details are open on purpose.
 Date: 2026-11-22
-Depends on: [Agent Child Execution Mode](../000-agent-child-execution-mode/001-plan.md) (ships first; refuses `live` with `agent.create.live_not_supported`) and [Agent Child Grant Scope](../000-agent-child-grant-scope/001-plan.md) (connection grants).
+Depends on: [Agent Child Execution Mode](docs/features/2026/11/22/001-agent-child-execution-mode/001-plan.md) (ships first; refuses `live` with `agent.create.live_not_supported`) and [Agent Child Grant Scope](docs/features/2026/11/22/002-agent-child-grant-scope/001-plan.md) (connection grants).
 Builds on: [Agent-Created Agents](../../2026/10/25/001-agent-creating-agents/001-plan.md) §5, §6.
 
 ## 1. Goal

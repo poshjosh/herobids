@@ -1220,6 +1220,10 @@ export async function agentRoutes(
       commitLocal: async (tx: DatabaseTransaction, markLocalCommitted): Promise<{ kind: 'ok' }> => {
         // Plan, allowance, depth, grant and permission checks run under the user's lock, in the same transaction as the insert.
         const lineage = await enforceAgentCreatePolicy(tx, agentCreatePolicyInput);
+        // A child never inherits the settings: only a user-created root agent can start with them on.
+        // Computed once so the stored row and the audit detail cannot drift apart.
+        const grantAnySkill = parentAgentId ? false : (parsed.data.grantAnySkillToChildren ?? false);
+        const grantAnyConnection = parentAgentId ? false : (parsed.data.grantAnyConnectionToChildren ?? false);
         await tx.insert(agents).values({
           id: agentId,
           userId: request.userId,
@@ -1229,9 +1233,8 @@ export async function agentRoutes(
           parentAgentId: lineage.parentAgentId,
           depth: lineage.depth,
           childAgentLimit: childAllowance?.childAgentLimit ?? 0,
-          // A child never inherits the settings: only a user-created root agent can start with them on.
-          grantAnySkillToChildren: parentAgentId ? false : (parsed.data.grantAnySkillToChildren ?? false),
-          grantAnyConnectionToChildren: parentAgentId ? false : (parsed.data.grantAnyConnectionToChildren ?? false),
+          grantAnySkillToChildren: grantAnySkill,
+          grantAnyConnectionToChildren: grantAnyConnection,
           prompt: parsed.data.prompt ?? '',
           status: 'stopped',
           toolPolicy: createFields.toolPolicy,
@@ -1266,7 +1269,13 @@ export async function agentRoutes(
             actorId: request.userId,
             action: 'agent.created',
             targetId: agentId,
-            detail: { depth: lineage.depth },
+            // Record a widened grant scope set at creation, so it is as visible as one set by the PUT route.
+            detail: {
+              depth: lineage.depth,
+              ...(grantAnySkill || grantAnyConnection
+                ? { grantAnySkillToChildren: grantAnySkill, grantAnyConnectionToChildren: grantAnyConnection }
+                : {}),
+            },
           });
         }
         if (childAllowance) {

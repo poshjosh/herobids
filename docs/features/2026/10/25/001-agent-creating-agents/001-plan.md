@@ -76,7 +76,7 @@ Agent callers and admin: `request.isAdmin` is `false` for agent keys (auth plugi
 
 Agent callers, fields (superseded in part by the 2026-11-22 update note below: `executionDefaults` is now allowed and no longer server-set): the body is an allowlist of `name`, `prompt`, `skillIds`, `connectionIds`. Any other present field, unknown keys included, returns 400 `agent.create.field_not_allowed` listing the fields. Nothing is stripped silently. Every other field is server-set for the child: `toolPolicy`, `telegramChatId`, `executionDefaults`, `capital`, `runtimePolicyOverrides`, `risk`, `dailySpendBudgetUsd`, `notificationPolicy` and the model fields take their defaults, and `permissionLevel` is the lower of the parent's level and `standard`.
 
-Update (2026-11-22): the allowlist now also includes `executionDefaults` (`mode` of `paper` or `shadow`, and `slippageBps`), so an agent can create a trading child. `capital`, `risk` and the other fields above stay server-set. `live` is refused with `agent.create.live_not_supported`. See [Agent Child Execution Mode](../../../../pending/000-agent-child-execution-mode/001-plan.md).
+Update (2026-11-22): the allowlist now also includes `executionDefaults` (`mode` of `paper` or `shadow`, and `slippageBps`), so an agent can create a trading child. `capital`, `risk` and the other fields above stay server-set. `live` is refused with `agent.create.live_not_supported`. See [Agent Child Execution Mode](../../../../2026/11/22/001-agent-child--mode/001-plan.md).
 
 Agent callers, preflight: before any profile-boundary write, the same allowance, depth, plan total, grant and permission rules run read-only (no locks). A refusal there makes no boundary call, so a refused child never writes to the boundary and needs no compensation. The authoritative check is still the one under the user's lock inside the insert transaction in `commitLocal`.
 
@@ -95,12 +95,12 @@ Agent reasoning and tools run inside each agent's container ([agent.ts](/Users/c
 
 **Credential boundary:** the agent container still has `DATABASE_URL` and `REDIS_URL` today. The API key does not remove that. Removing direct database access from the container is a separate task and is needed for the full benefit of this design.
 
-**Note (2026-11-22):** the "parent must hold it" grant rule below is superseded in part by [Agent Child Grant Scope](../../../../pending/000-agent-child-grant-scope/001-plan.md). The held-by-parent check now depends on two user-set per-agent flags and is skipped for a kind when its flag is on. The owner checks, the permission cap and the children-skill refusal are unchanged.
+**Note (2026-11-22):** the "parent must hold it" grant rule below is superseded in part by [Agent Child Grant Scope](../../../../2026/11/22/002-agent-child-grant-scope/001-plan.md). The held-by-parent check now depends on two user-set per-agent flags and is skipped for a kind when its flag is on. The owner checks, the permission cap and the children-skill refusal are unchanged.
 
 **Rules that stay the same:**
 
 - Child agents start with `childAgentLimit = 0`. Nothing is inherited automatically.
-- At creation, the parent may grant the child a chosen subset of its own skills and connections. The parent can grant only what it holds (superseded in part: the user can allow an agent to grant skills or connections it does not hold, per agent, with `grantAnySkillToChildren` and `grantAnyConnectionToChildren`; both default to off, so the rule below is the default. See [Agent Child Grant Scope](../../../../pending/000-agent-child-grant-scope/001-plan.md)); the child's plan entitlements still apply; the child's permission level cannot exceed the parent's; the grant is recorded like any user-created grant.
+- At creation, the parent may grant the child a chosen subset of its own skills and connections. The parent can grant only what it holds (superseded in part: the user can allow an agent to grant skills or connections it does not hold, per agent, with `grantAnySkillToChildren` and `grantAnyConnectionToChildren`; both default to off, so the rule below is the default. See [Agent Child Grant Scope](../../../../2026/11/22/002-agent-child-grant-scope/001-plan.md)); the child's plan entitlements still apply; the child's permission level cannot exceed the parent's; the grant is recorded like any user-created grant.
 - Children are created with `status = 'stopped'`. The user starts them. Creator agents cannot start children.
 
 ## 7. Creator Access to Direct Children
