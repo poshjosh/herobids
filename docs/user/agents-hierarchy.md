@@ -22,6 +22,19 @@ Each agent has a child allowance, which is the number of child agents it may cre
 
 An agent may also pause or stop its direct children, and send them messages. It cannot start, resume or edit them, and it cannot read their private memory.
 
+## Skills and connections for child agents
+Two settings on an agent decide what it may give its children. Only you can change them, on the same card as the child allowance, or when you create the agent. Both start off.
+
+- **Give children skills it does not have.** Off: a child can get only skills the creating agent has. On: a child can get any skill you could select yourself. This changes convenience and the creating agent's footprint, not what is reachable: an agent can already add any skill you may select to itself with its `add_skills` tool, so this setting is not a security limit.
+- **Give children any of my connections.** Off: a child can get only connections the creating agent has. On: a child can get any of your active connections. This changes account access. A child with a trading connection can trade on that account, so turn it on only when you want that.
+
+Things to know:
+
+- A child starts with both settings off, whatever its creator's settings are. Each agent has its own.
+- Turning a setting off affects future children only. Children that already exist keep what they were given.
+- The settings do not let an agent give a child the child-agent skill, or a skill or connection you could not assign yourself.
+- When a grant is refused, the agent reports it to you. Assign the skill or connection to the agent, or turn the setting on.
+
 ## Deleting an agent
 
 Open the delete dialog on the agent. If the agent has children, you can choose one of two options:

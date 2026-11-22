@@ -11,6 +11,7 @@ Every tool calls the platform API with the calling agent's own API key. The API 
 | `create_child_agent` | The agent's `childAgentLimit` is above 0 and its direct children are fewer than the limit. |
 | `get_child_agent_status`, `pause_child_agent`, `stop_child_agent`, `message_child_agent`, `delete_child_agent` | The agent has at least one direct child. |
 | `list_child_agents` | The agent holds the `child-agent-management` skill. Not gated on having a child, so the agent can learn it has none. |
+| `list_owner_connections` | The agent holds the `child-agent-management` skill and `grantAnyConnectionToChildren` is on for it. Not gated on `childAgentLimit` or on having a child. |
 
 All of these tools come from the `child-agent-management` skill, which only the user can assign. The agent cannot add it to itself, and it cannot grant it to a child. The `base` skill no longer lists these tools.
 
@@ -20,7 +21,8 @@ If the allowance has not been read, `create_child_agent` and the creator tools a
 
 | Tool | Input | What it does |
 |---|---|---|
-| `create_child_agent` | `name` (1–100 chars), `prompt` (1–8000 chars), optional `skillIds`, optional `connectionIds`, optional `executionDefaults` (`{ mode?: 'paper' \| 'shadow', slippageBps?: number \| null }`, trading child only), optional `start` (boolean, default `true`) | Creates a child agent. With `start` true (the default) the child is started through the same start the user uses. With `start: false` it stays `stopped`. Returns the new agent ID, its depth, its `status`, `duplicate`, `started`, `startError` (set when the start was refused; the child then stays created and stopped), `childAgentLimit` and `remainingChildAllowance`. A create whose name matches a direct child of the same parent, created within `agentCreation.duplicateChildWindowSeconds`, returns that child with `duplicate: true` and `started: false`. It creates and starts nothing, so a retry never makes a second child. Grants are limited to skills and connections the creating agent holds. The children skill cannot be granted (`skill.user_only`). See [Child execution mode](#child-execution-mode). |
+| `create_child_agent` | `name` (1–100 chars), `prompt` (1–8000 chars), optional `skillIds`, optional `connectionIds`, optional `executionDefaults` (`{ mode?: 'paper' \| 'shadow', slippageBps?: number \| null }`, trading child only), optional `start` (boolean, default `true`) | Creates a child agent. With `start` true (the default) the child is started through the same start the user uses. With `start: false` it stays `stopped`. Returns the new agent ID, its depth, its `status`, `duplicate`, `started`, `startError` (set when the start was refused; the child then stays created and stopped), `childAgentLimit` and `remainingChildAllowance`. A create whose name matches a direct child of the same parent, created within `agentCreation.duplicateChildWindowSeconds`, returns that child with `duplicate: true` and `started: false`. It creates and starts nothing, so a retry never makes a second child. Which skills and connections can be granted depends on the creating agent's two grant settings (see [Child grant scope](#child-grant-scope)). The children skill cannot be granted (`skill.user_only`). See [Child execution mode](#child-execution-mode). |
+| `list_owner_connections` | none | Read-only. Lists the owner's active connections the agent may pass to `create_child_agent` `connectionIds`: `id`, `provider`, `status`, `label` only, never credentials or provider references. The tool re-picks those four fields. Backed by `GET /agents/:id/owner-connections`, which returns up to 200 connections, oldest first, with no truncation signal. |
 | `list_child_agents` | none | Lists the direct children: ID, name, status, depth, number of their own children and `lastStartRefusal`. Returns an empty list when there are none. |
 | `get_child_agent_status` | `agentId` | Returns the status, runtime state, depth and `lastStartRefusal` of one direct child. |
 | `pause_child_agent` | `agentId`, optional `reason` (max 500 chars) | Pauses one direct child. The pause is recorded as requested by the creator. |
@@ -43,7 +45,7 @@ All inputs are strict. Unknown keys, such as `creatorId`, `parentAgentId`, `dept
 | Allowance | `agent.create.allowance_exhausted` | The agent already has `childAgentLimit` children. |
 | Depth | `agent.create.depth_exceeded` | Limited by `agentCreation.maxAgentDepth`. |
 | Plan total | `agent.create.plan_limit_exceeded` | Total agents, including children, may not exceed the plan's `maxAgents`. Admin owners bypass this rule. |
-| Grant | `agent.create.grant_not_held` | A requested skill or connection is not held by the creating agent. |
+| Grant | `agent.create.grant_not_held` | A requested skill is not held by the creating agent and `grantAnySkillToChildren` is off, or a requested connection is not held and `grantAnyConnectionToChildren` is off. The two flags are checked separately. `params` carries `kind` and `missing`. |
 | User-only grant | `agent.create.grant_user_only` | The requested skill is the children skill, which only the user may assign. |
 | Permission | `agent.create.permission_exceeds_parent` | The child's permission level cannot exceed the parent's. |
 | Fields | `agent.create.field_not_allowed` | An input field is outside the allowlist: `name`, `prompt`, `skillIds`, `connectionIds`, `executionDefaults`, `start`. |
@@ -68,6 +70,25 @@ Operator settings are in [Configuration: Agent creation limits](../../configurat
 - If the platform API is slow, down or refuses a request, the tool returns a retryable error and the agent continues.
 - The agent cannot start a child itself. A child whose launch was refused stays `stopped` until the user starts it. The skill tells the agent to report `lastStartRefusal` to the user and not to create another child to retry.
 
+### Child grant scope
+
+Design: [Agent Child Grant Scope](../../../features/pending/000-agent-child-grant-scope/001-plan.md). Two per-agent settings, both `false` by default, set only by the user:
+
+| Setting | Off | On |
+|---|---|---|
+| `grantAnySkillToChildren` | The child's skills must be a subset of the creating agent's skills. | The child may get any skill the owner may select. |
+| `grantAnyConnectionToChildren` | The child's connections must be a subset of the creating agent's connections. | The child may get any active connection the owner has. |
+
+- Unchanged by either flag: the owner checks (skill selectability and entitlement, connection exists, owned by the owner and `active`), `agent.create.grant_user_only` for the children skill, the permission level cap, allowance, depth, plan total and rate.
+- A child never inherits the flags. It starts with both off, whatever its creator's settings.
+- Turning a flag off affects future creates only. Existing children keep their grants.
+- Write route: `PUT /agents/:id/child-grant-scope`, user callers only (agent keys get 403). Strict body `{ grantAnySkillToChildren: boolean, grantAnyConnectionToChildren: boolean }`. It is scoped to the owner, so another user's agent returns 404. Audit action `agent.child_grant_scope_set`, written in the same transaction, with both values as detail. `POST /agents` accepts the two fields for user callers only; agent keys are refused by the allowlist. `PATCH` and `PUT /agents/:id` do not write them.
+- Read: `GET /agents/:id/child-allowance` returns both flags next to `childAgentLimit`. The worker reads them into its allowance, which drives the `list_owner_connections` visibility.
+- `GET /agents/:id/owner-connections` is agent-key only and self-scoped. It returns `403 agent.owner_connections.not_enabled` when `grantAnyConnectionToChildren` is off, and `404` when the agent is not the caller's own. The 200 body is `{ connections: [{ id, provider, status, label }] }`, active connections only, capped at 200.
+- Audit: the `agent.child_created` detail carries `grantedNotHeld: { skills: string[], connections: string[] }`, the requested ids the creating agent did not hold and the flags let through. Both arrays are empty when everything was held or the flags are off. Ids only.
+- The skill flag is not a hard security boundary. The broker's `add_skills` has no user-approval gate, so an agent can already assign itself any skill the owner may select (user-only skills and `base` are refused). The skill flag changes convenience and the parent's footprint. The connection flag changes account access, because a connection carries venue credentials and a child with a trading connection can trade on that account.
+- On `agent.create.grant_not_held` the tool tells the agent to report the missing ids to the user and not retry with other skills.
+
 ### Child execution mode
 
 A child that holds a trading skill takes the `executionDefaults` its parent passes. Design: [Agent Child Execution Mode](../../../features/pending/000-agent-child-execution-mode/001-plan.md).
@@ -86,6 +107,7 @@ On any 4xx the platform client attaches the bounded refusal body (`params`, vali
 
 ## Known gaps
 
+- `list_owner_connections` shows no truncation signal above 200 connections, and its `label` has no length cap.
 - `message_child_agent` says replies count against the same limit. This is not yet true. A child's reply goes through the child's own `send_message` and does not use the creator-child bucket.
 - The creator's pause and stop audit entry is written after the state change, so the two are not atomic.
 - A refused launch is not pushed to the parent. The parent sees `lastStartRefusal` only when it calls `get_child_agent_status` or `list_child_agents`. The parent's tick has no child-status wake source, so it does not get a note.

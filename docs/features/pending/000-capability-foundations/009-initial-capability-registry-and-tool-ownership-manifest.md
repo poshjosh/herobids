@@ -220,6 +220,7 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 | `stop_bot` | `external:trading` | Trading bot lifecycle. |
 | `create_child_agent` | `core` | Creates a child agent within the creator's allowance. |
 | `list_child_agents` | `core` | Lists direct child agents. |
+| `list_owner_connections` | `core` | Lists the owner's active connections (id, provider, status, label) when the agent may grant any connection to children. |
 | `get_child_agent_status` | `core` | Reads a direct child agent's status. |
 | `pause_child_agent` | `core` | Pauses a direct child agent. |
 | `stop_child_agent` | `core` | Stops a direct child agent. |

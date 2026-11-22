@@ -143,7 +143,7 @@ Check before coding:
 3. DONE — User-only route, audit and allowance read.
 4. DONE — Worker client and tool text. Add `list_owner_connections` only if the connection flag ships.
 5. DONE — UI: card, then create flow.
-6. PENDING — Docs: [agent-creation-tools.md](/Users/chinomso.ikwuagwu/dev_ai/herobids/docs/tech/agents/tools/agent-creation-tools.md) (Grant rule row and the creator action list), the parent plan's §6 note, user docs for the two settings, CHANGELOG.
+6. DONE — Docs: [agent-creation-tools.md](/Users/chinomso.ikwuagwu/dev_ai/herobids/docs/tech/agents/tools/agent-creation-tools.md) (Grant rule row and the creator action list), the parent plan's §6 note, user docs for the two settings, CHANGELOG.
 
 Steps 1 and 2 to 3 can ship separately. Step 5 depends on 3.
 
@@ -210,3 +210,10 @@ Refusal-body passthrough (rollout step 1) issues are recorded in the execution-m
 - Unverified: `hi`/`ar` strings need native-speaker review; no test for create-flow checkboxes disabled while submitting.
 - Unverified: no browser/visual check done (fieldset layout, RTL, contrast).
 - Integration to confirm: `PUT /child-grant-scope` accepted at limit 0.
+
+### Item 6 — Docs
+
+- Medium: `agent-creation-tools.md` says `GET /agents/:id/owner-connections` returns 404 for another agent; the code returns 403 (`requireSelfAgentOrUser`).
+- Medium: `docs/user/agents-hierarchy.md` paraphrases the UI labels; use the real label text.
+- Low: grant hint misquoted in `agent-creation-tools.md`; there is no `PUT /agents/:id` (PATCH only); user doc omits UI visibility conditions and the "Child agents start automatically" warning.
+- Low: "no user-approval gate" for `add_skills` was taken from the plan; the implementer reported reading the broker handler (step 4 finding).

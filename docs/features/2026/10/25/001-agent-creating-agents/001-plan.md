@@ -95,10 +95,12 @@ Agent reasoning and tools run inside each agent's container ([agent.ts](/Users/c
 
 **Credential boundary:** the agent container still has `DATABASE_URL` and `REDIS_URL` today. The API key does not remove that. Removing direct database access from the container is a separate task and is needed for the full benefit of this design.
 
+**Note (2026-11-22):** the "parent must hold it" grant rule below is superseded in part by [Agent Child Grant Scope](../../../../pending/000-agent-child-grant-scope/001-plan.md). The held-by-parent check now depends on two user-set per-agent flags and is skipped for a kind when its flag is on. The owner checks, the permission cap and the children-skill refusal are unchanged.
+
 **Rules that stay the same:**
 
 - Child agents start with `childAgentLimit = 0`. Nothing is inherited automatically.
-- At creation, the parent may grant the child a chosen subset of its own skills and connections. The parent can grant only what it holds; the child's plan entitlements still apply; the child's permission level cannot exceed the parent's; the grant is recorded like any user-created grant.
+- At creation, the parent may grant the child a chosen subset of its own skills and connections. The parent can grant only what it holds (superseded in part: the user can allow an agent to grant skills or connections it does not hold, per agent, with `grantAnySkillToChildren` and `grantAnyConnectionToChildren`; both default to off, so the rule below is the default. See [Agent Child Grant Scope](../../../../pending/000-agent-child-grant-scope/001-plan.md)); the child's plan entitlements still apply; the child's permission level cannot exceed the parent's; the grant is recorded like any user-created grant.
 - Children are created with `status = 'stopped'`. The user starts them. Creator agents cannot start children.
 
 ## 7. Creator Access to Direct Children
