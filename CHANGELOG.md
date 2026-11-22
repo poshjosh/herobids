@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.11.2 - 2026-11-22
+
 ### Added
 
 - Trading agents' portfolio block now refreshes without the agent calling `get_account_summary`. The agent runtime reads the account summary from Traderton once after a burst of fills or position closes (after `agentRuntime.portfolioRefresh.debounceMs` of quiet, default 3000), and at each decision wake (at most once per that window). There is no per-tick polling. Freshness comes from the summary's `asOf`. A failed read logs a warning and keeps the previous figures. Bug report: docs/bug-reports/2026/11/21/002-agent-portfolio-context-mislabels-initial-capital-as-available.md.
