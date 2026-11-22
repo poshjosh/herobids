@@ -22,6 +22,8 @@ export interface CreateChildAgentInput {
   prompt: string;
   skillIds?: string[];
   connectionIds?: string[];
+  /** Execution mode and slippage for a trading child. `live` is not offered: the API refuses it for agent-created children. */
+  executionDefaults?: { mode?: 'paper' | 'shadow'; slippageBps?: number | null };
   /** Start the child after it is created. The tool defaults this to true. */
   start: boolean;
 }

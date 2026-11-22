@@ -528,6 +528,12 @@ describe('child-agent-management skill', () => {
     ]);
   });
 
+  it('tells the agent to report a refused create, not retry with another mode or create a second child', () => {
+    expect(CHILD_AGENT_MANAGEMENT_SKILL.instructions).toContain(
+      'report the refusal to the user. Do not retry with another mode and do not create a second child.',
+    );
+  });
+
   it('is a system skill, so it is seeded with the others', () => {
     expect(SYSTEM_SKILLS).toContain(CHILD_AGENT_MANAGEMENT_SKILL);
     expect(CHILD_AGENT_MANAGEMENT_SKILL.slug).toBe('system/child-agent-management');

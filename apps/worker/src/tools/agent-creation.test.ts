@@ -131,6 +131,34 @@ describe('create_child_agent input schema', () => {
     expect(result.success).toBe(true);
   });
 
+  it.each(['paper', 'shadow'])('executionDefaults accepts mode %s and slippageBps', (mode) => {
+    const result = createAgentTool.parametersSchema.safeParse({
+      name: 'c', prompt: 'p', executionDefaults: { mode, slippageBps: 25 },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('executionDefaults is optional and may leave mode out', () => {
+    expect(createAgentTool.parametersSchema.safeParse({ name: 'c', prompt: 'p' }).success).toBe(true);
+    expect(createAgentTool.parametersSchema.safeParse({ name: 'c', prompt: 'p', executionDefaults: {} }).success).toBe(true);
+  });
+
+  it('executionDefaults rejects mode live', () => {
+    const result = createAgentTool.parametersSchema.safeParse({ name: 'c', prompt: 'p', executionDefaults: { mode: 'live' } });
+    expect(result.success).toBe(false);
+  });
+
+  it('executionDefaults rejects unknown keys such as capital', () => {
+    const result = createAgentTool.parametersSchema.safeParse({ name: 'c', prompt: 'p', executionDefaults: { capital: 1000 } });
+    expect(result.success).toBe(false);
+  });
+
+  it('the description says paper is the default, shadow needs a connection and live is not supported', () => {
+    expect(createAgentTool.description).toMatch(/defaults to paper/);
+    expect(createAgentTool.description).toMatch(/shadow needs a connection/);
+    expect(createAgentTool.description).toMatch(/live is not supported yet/);
+  });
+
   it('start defaults to true when omitted', () => {
     const result = createAgentTool.parametersSchema.parse({ name: 'Research child', prompt: 'Summarise the market.' });
     expect(result.start).toBe(true);
@@ -158,6 +186,16 @@ describe('create_child_agent execution', () => {
 
     expect(platform.createChildAgent).toHaveBeenCalledWith(expect.objectContaining({ start: true }));
     expect(result).toMatchObject({ success: true, data: { started: true, startError: null } });
+  });
+
+  it('passes executionDefaults through to the platform call', async () => {
+    const platform = fakePlatform();
+    await createAgentTool.execute(
+      parsedInput(createAgentTool, { name: 'c', prompt: 'p', executionDefaults: { mode: 'shadow', slippageBps: 10 } }),
+      makeCtx(platform),
+    );
+
+    expect(platform.createChildAgent).toHaveBeenCalledWith(expect.objectContaining({ executionDefaults: { mode: 'shadow', slippageBps: 10 } }));
   });
 
   it('start false creates the child stopped, and the result says so', async () => {

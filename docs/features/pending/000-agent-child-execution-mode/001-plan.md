@@ -100,7 +100,7 @@ No change to `AllowanceResponseSchema` or the allowance route.
 
 1. DONE — Pass the refusal body through for all 4xx (shared with the grant-scope plan).
 2. DONE — Route change: allowlist, schema requirement for agent callers, live refusal, metrics outcome, audit field.
-3. PENDING — Worker tool schema and description, skill text.
+3. DONE — Worker tool schema and description, skill text.
 4. PENDING — Docs: [agent-creation-tools.md](/Users/chinomso.ikwuagwu/dev_ai/herobids/docs/tech/agents/tools/agent-creation-tools.md) (tool inputs, the allowlist, the live refusal), the parent plan §5 note, CHANGELOG.
 
 Steps 1 and 2 can ship separately. No `.env` or operator config change, so no `.example` update. No migration.
@@ -159,3 +159,14 @@ Grouped by rollout item. Items shared with the grant-scope plan are recorded onc
 - Low: test helper `recordingSaga` uses `as unknown as`; prefer a typed stub.
 - Not verified: default-capital provisioning for agent-created trading children; whether the web agent page shows a child's execution mode (§9).
 - Note: `agent-child-create.integration.test.ts` is not in the `test:integration` script's file list.
+
+### Item 3 — Worker tool schema and skill text
+
+- Medium: `slippageBps` in the tool schema is unbounded (bot tool uses `.int().max(10000)`); consider capping in the tool.
+- Medium: new skill bullet ("do not retry with another mode, do not create a second child") is broader than the plan and conflicts with the grant hint ("do not retry with the same skills"). Scope it or reconcile.
+- Medium: confirm changed `CHILD_AGENT_MANAGEMENT_SKILL` text is upserted onto already-seeded system skills.
+- Low: duplicate `executionDefaults` shape between port and tool schema.
+- Low: prose-regex description tests are brittle.
+- Low: no test that `executionDefaults` is omitted from the body when undefined.
+- Low: no worker test tying `agent.create.live_not_supported` to the refusal body passthrough.
+- Low: "defaults to paper / live not supported" repeated in three places.

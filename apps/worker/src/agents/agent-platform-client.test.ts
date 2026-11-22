@@ -84,6 +84,28 @@ describe('agent platform client', () => {
     expect(result).toEqual({ ok: true, data: { id: 'child-1', depth: 1, status: 'starting', duplicate: false, started: true, startError: null } });
   });
 
+  it('forwards executionDefaults in the request body when creating a child', async () => {
+    const fetchImpl = fetchReturning(jsonResponse(201, {
+      id: 'child-1', depth: 1, status: 'starting', duplicate: false, started: true, startError: null,
+    }));
+    await makeClient(fetchImpl).createChildAgent({
+      name: 'Trader child',
+      prompt: 'Trade.',
+      connectionIds: ['conn-1'],
+      executionDefaults: { mode: 'shadow', slippageBps: 25 },
+      start: true,
+    });
+
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect(JSON.parse(String(init?.body))).toEqual({
+      name: 'Trader child',
+      prompt: 'Trade.',
+      connectionIds: ['conn-1'],
+      executionDefaults: { mode: 'shadow', slippageBps: 25 },
+      start: true,
+    });
+  });
+
   it('reads a duplicate create as the existing child with duplicate true and started false', async () => {
     const body = { id: 'child-1', depth: 1, status: 'stopped', duplicate: true, started: false, startError: null };
     const result = await makeClient(fetchReturning(jsonResponse(200, body))).createChildAgent({

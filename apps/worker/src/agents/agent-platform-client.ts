@@ -219,10 +219,11 @@ export function createAgentPlatformClient(options: AgentPlatformClientOptions): 
     },
 
     async createChildAgent(input: CreateChildAgentInput): Promise<Result<ChildAgentCreated, AgentPlatformError>> {
-      // Only the four allowed fields are forwarded; the API refuses anything else.
+      // Only the allowed fields are forwarded; the API refuses anything else.
       const body: Record<string, unknown> = { name: input.name, prompt: input.prompt, start: input.start };
       if (input.skillIds) body['skillIds'] = input.skillIds;
       if (input.connectionIds) body['connectionIds'] = input.connectionIds;
+      if (input.executionDefaults) body['executionDefaults'] = input.executionDefaults;
       return request('POST', '/agents', CreatedResponseSchema, body);
     },
 

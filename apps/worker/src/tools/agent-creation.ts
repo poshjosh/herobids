@@ -46,6 +46,10 @@ const CreateChildAgentParamsSchema = z.object({
   prompt: z.string().trim().min(1).max(8000).describe('Goal and instructions for the child agent'),
   skillIds: z.array(z.string().min(1)).optional().describe('Skills to grant the child from your own skills. Only skills you hold can be granted.'),
   connectionIds: z.array(z.string().min(1)).optional().describe('Connections to grant the child from your own connections. Only connections you hold can be granted.'),
+  executionDefaults: z.object({
+    mode: z.enum(['paper', 'shadow']).optional().describe('Execution mode for a trading child. Defaults to paper. shadow needs a connection granted to the child. live is not supported yet.'),
+    slippageBps: z.number().min(0).nullable().optional().describe('Allowed slippage in basis points (1 bps = 0.01%). Omit for the platform default.'),
+  }).strict().optional().describe('Execution settings for a child that holds a trading skill. Only valid for a trading child. Omit to use the defaults.'),
   start: z.boolean().default(true).describe('Start the child after it is created. Default true. Set false to create it stopped.'),
 }).strict();
 
@@ -101,7 +105,7 @@ function platformFailure(error: AgentPlatformError): ToolResult {
 
 const createChildAgentTool: AgentTool = {
   name: CREATE_CHILD_AGENT_TOOL_NAME,
-  description: 'Create a child agent with its own name and prompt. You may grant it some of your skills and connections. The child starts by default; pass start: false to create it stopped. Returns the new agent ID, its depth, its status, whether it started, and your remaining child allowance. A retry with the same name within the platform window returns the existing child with duplicate: true and does not start it again.',
+  description: 'Create a child agent with its own name and prompt. You may grant it some of your skills and connections. The child starts by default; pass start: false to create it stopped. For a child with a trading skill, executionDefaults sets its execution mode and slippage: the child takes whatever mode you pass and defaults to paper. shadow needs a connection granted to the child. live is not supported yet. Returns the new agent ID, its depth, its status, whether it started, and your remaining child allowance. A retry with the same name within the platform window returns the existing child with duplicate: true and does not start it again.',
   parametersSchema: CreateChildAgentParamsSchema,
   parameters: convertZodToJsonSchema(CreateChildAgentParamsSchema),
   category: 'write-database',
