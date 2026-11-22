@@ -8,7 +8,7 @@ import type { ScannerWakeContext } from '@herobids/domain';
  * positive result, writes an `agent_wake` notification with
  * `context.scannerKind === 'assessment_review'`. Herobids only delivers the
  * wake and builds the text. There is no billing and no platform assessor run —
- * the agent calls `assess_strategy_preset` (now a Traderton data-only tool)
+ * the agent calls `assess_strategy_preset` (a local proxy that forwards to Traderton's data-only tool)
  * and reads the flags per the skill guidance.
  */
 export function buildAssessmentReviewMessage(

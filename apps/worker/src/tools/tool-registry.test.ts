@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { describe, expect, it, vi } from 'vitest';
-import { BASE_SKILL, KNOWN_AGENT_TOOL_NAMES, SYSTEM_SKILLS, PROGRAMMING_SKILL, FILE_MANAGEMENT_SKILL, WEB_ACCESS_SKILL, EMAIL_SKILL, AGENT_STYLE_RUNTIME_DEFAULTS } from '@herobids/domain';
+import { BASE_SKILL, KNOWN_AGENT_TOOL_NAMES, TOOL_CATALOG, SYSTEM_SKILLS, PROGRAMMING_SKILL, FILE_MANAGEMENT_SKILL, WEB_ACCESS_SKILL, EMAIL_SKILL, AGENT_STYLE_RUNTIME_DEFAULTS } from '@herobids/domain';
 import type { AgentTool, ToolContext } from '@herobids/domain';
 import { botManagementTools } from './bots.js';
 import { ToolRegistry, convertZodToJsonSchema } from './registry.js';
@@ -9,6 +9,7 @@ import { messagingTools } from './messaging.js';
 import { marketDataTools } from './market-data.js';
 import { tradingTools } from './trading.js';
 import { filesystemTools } from './filesystem.js';
+import { strategyPresetTools } from './strategy-presets.js';
 
 function createToolContext(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
@@ -161,6 +162,15 @@ describe('tool registry extracted tools', () => {
       expect(knownToolNames.has(tool.name)).toBe(true);
     }
   });
+
+  it.each(strategyPresetTools.map((tool) => [tool.name, tool.category] as const))(
+    'registers %s as a known tool with the category its catalog entry declares',
+    (name, category) => {
+      expect(KNOWN_AGENT_TOOL_NAMES as readonly string[]).toContain(name);
+      expect(TOOL_CATALOG[name]?.category).toBe(category);
+      expect(createToolRegistry().get(name)?.category).toBe(category);
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------

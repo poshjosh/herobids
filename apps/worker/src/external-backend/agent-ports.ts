@@ -92,7 +92,7 @@ export function buildAgentExternalBackendPorts(input: AgentExternalBackendPortsI
   );
   logger.info(
     { backendId: definition.backendId, baseUrl: definition.endpoint.baseUrl },
-    'Traderton read + write boundaries enabled — read tools + risk-limit writes route over REST',
+    'Traderton read + write boundaries enabled — read tools + side-effecting writes route over REST',
   );
   const read = createExternalBackendReadBoundary(client, subject, definition.endpoint.requestTimeoutMs);
   // The binding mints one idempotency key per write; tools supply only tool

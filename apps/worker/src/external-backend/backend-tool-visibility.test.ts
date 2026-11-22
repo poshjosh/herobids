@@ -59,7 +59,7 @@ function resolvedConfigJson(opts: { family?: string; discoveryRetry?: Record<str
   });
 }
 
-const logger = { info: vi.fn(), warn: vi.fn() };
+const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
 function tool(name: string, refs: string[]): DiscoveredBackendTool {
   return { name, description: `d:${name}`, inputSchema: { type: 'object' }, skillRefs: refs };
@@ -107,14 +107,15 @@ describe('buildBackendToolVisibility', () => {
     expect(result.outcomes[0]?.outcome).toBe('tools_exposed');
   });
 
-  it('records each tagged tool that was not made visible, with the reason, and logs it', async () => {
+  it('records each tagged tool that was not made visible, with the reason, and logs one error for the skill', async () => {
     const warn = vi.fn();
+    const error = vi.fn();
     const info = vi.fn();
     const result = await buildBackendToolVisibility({
       rawConfigJson: resolvedConfigJson(),
       resolvedSkills: [skill({ id: 'ext', sourceRef: APPROVED_REF })],
       registryToolNames: new Set(['get_price']),
-      logger: { info, warn },
+      logger: { info, warn, error },
       discoverTools: async () => [
         tool('get_price', [APPROVED_REF]),
         tool('ghost_tool', [APPROVED_REF]),
@@ -125,10 +126,19 @@ describe('buildBackendToolVisibility', () => {
     expect(outcome.toolNames).toEqual(['get_price']);
     expect(outcome.taggedToolCount).toBe(2);
     expect(outcome.droppedTools).toEqual([{ name: 'ghost_tool', reason: 'not_in_local_registry' }]);
-    expect(warn).toHaveBeenCalledWith(
-      expect.objectContaining({ tool: 'ghost_tool', reason: 'not_in_local_registry' }),
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skillId: 'ext',
+        sourceRef: APPROVED_REF,
+        droppedToolNames: ['ghost_tool'],
+        droppedTools: [{ name: 'ghost_tool', reason: 'not_in_local_registry' }],
+        visibleToolCount: 1,
+        taggedToolCount: 2,
+      }),
       expect.any(String),
     );
+    expect(warn).not.toHaveBeenCalled();
     expect(info).toHaveBeenCalledWith(
       expect.objectContaining({ discoveredToolCount: 3, taggedToolCount: 2, toolCount: 1 }),
       expect.any(String),
@@ -195,7 +205,7 @@ describe('buildBackendToolVisibility', () => {
       rawConfigJson: resolvedConfigJson({ family: 'trading' }),
       resolvedSkills: [skill({ id: 'ext', sourceRef: APPROVED_REF })],
       registryToolNames: new Set(['submit_decision']),
-      logger: { info: vi.fn(), warn },
+      logger: { info: vi.fn(), warn, error: vi.fn() },
     });
     expect(result.outcomes[0]?.outcome).toBe('backend_unreachable');
     expect(warn).toHaveBeenCalledWith(
@@ -216,7 +226,7 @@ describe('buildBackendToolVisibility', () => {
         rawConfigJson: resolvedConfigJson({ family: 'trading', discoveryRetry: { maxAttempts: 3, baseDelayMs: 1, maxDelayMs: 1 } }),
         resolvedSkills: [skill({ id: 'ext', sourceRef: APPROVED_REF })],
         registryToolNames: new Set(['submit_decision']),
-        logger: { info, warn: vi.fn() },
+        logger: { info, warn: vi.fn(), error: vi.fn() },
       });
 
       expect(result.outcomes[0]?.outcome).toBe('tools_exposed');
@@ -237,7 +247,7 @@ describe('buildBackendToolVisibility', () => {
         rawConfigJson: resolvedConfigJson({ family: 'trading', discoveryRetry: { maxAttempts: 3, baseDelayMs: 1, maxDelayMs: 1 } }),
         resolvedSkills: [skill({ id: 'ext', sourceRef: APPROVED_REF })],
         registryToolNames: new Set(['submit_decision']),
-        logger: { info: vi.fn(), warn },
+        logger: { info: vi.fn(), warn, error: vi.fn() },
       });
 
       expect(result.outcomes[0]?.outcome).toBe('backend_unreachable');
@@ -257,7 +267,7 @@ describe('buildBackendToolVisibility', () => {
         rawConfigJson: resolvedConfigJson({ family: 'trading', discoveryRetry: { maxAttempts: 3, baseDelayMs: 1, maxDelayMs: 1 } }),
         resolvedSkills: [skill({ id: 'ext', sourceRef: APPROVED_REF })],
         registryToolNames: new Set(['submit_decision']),
-        logger: { info, warn: vi.fn() },
+        logger: { info, warn: vi.fn(), error: vi.fn() },
       });
 
       expect(discoverExternalBackendTools).toHaveBeenCalledTimes(1);

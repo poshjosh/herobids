@@ -1,0 +1,10 @@
+{
+  "pbtResults": {
+    "1. Write bug condition exploration tests (BEFORE the fix)": {
+      "status": "passed",
+      "failingExample": "Bug confirmed on unfixed code: missing/dropped = list_strategy_presets, assess_strategy_preset, change_strategy_preset (reason not_in_local_registry); toolCount 19 of taggedToolCount 22; createToolRegistry().get(name) is undefined for all three",
+      "lastRunTimestamp": 1795290419668
+    }
+  },
+  "executionHistory": {}
+}

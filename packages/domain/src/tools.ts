@@ -126,9 +126,11 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'adjust_bot_config',
   'adjust_risk_limits',
   'append_file',
+  'assess_strategy_preset',
   'cancel_reminder',
   'browse_interactive',
   'browse_url',
+  'change_strategy_preset',
   'check_regime',
   'check_watches',
   'complete_task',
@@ -166,6 +168,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'list_providers',
   'list_reminders',
   'list_skills',
+  'list_strategy_presets',
   'list_tasks',
   'list_watches',
   'message_child_agent',
@@ -259,6 +262,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   start_bot:           { category: 'write-database',      description: 'Start a stopped bot. Resumes trading per its configuration.' },
   adjust_bot_config:   { category: 'write-database',      description: 'Update configuration for a specific bot. Changes merged and take effect next tick.' },
   adjust_risk_limits:  { category: 'write-database',      description: 'Adjust mutable risk limits. Only operator-default-derived limits can be changed.' },
+  change_strategy_preset: { category: 'write-database',    description: 'Switch your active strategy preset using a fresh assessment artifact and a reason shown on the review screen.' },
   add_skills:          { category: 'write-database',      description: 'Add skills to this agent from the skill catalog. Skills become available immediately.' },
   remove_skills:       { category: 'write-database',      description: 'Remove skills from this agent. Tools from removed skills become unavailable immediately.' },
   request_connection:  { category: 'write-database',      description: 'Request a connection to a provider. Returns a short-lived link to send to the user.' },
@@ -271,6 +275,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   get_funding_rates:   { category: 'read-market-data',    description: 'Get current funding rates for perpetual contracts.' },
   get_market_overview: { category: 'read-market-data',    description: 'Aggregated market overview: top movers, volume leaders, market breadth metrics.' },
   get_price:           { category: 'read-market-data',    description: 'Look up current price of a token. Hyperliquid perps use mark price; DEX tokens use oracle price.' },
+  assess_strategy_preset: { category: 'read-market-data', description: 'Get computed, data-only evidence and per-preset scorecards and flags for one or more symbols, to decide whether to switch preset. Free.' },
 
   // read-web
   search_web:          { category: 'read-web',            description: 'Search the internet using Tavily. Returns top results with titles, URLs, text extracts.' },
@@ -280,6 +285,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   read_document:       { category: 'read-web',            description: 'Fetch and extract text from a document URL (currently PDF). HTTPS only; SSRF protected.' },
 
   // read-config
+  list_strategy_presets: { category: 'read-config',       description: 'List the strategy presets you can choose from (key, name, description, strategy type, signal bias, behavior version).' },
   get_schema:          { category: 'read-config',         description: "Fetch JSON Schema for named config parameters or tool sub-schemas. Call with name='all' to list all." },
   search_app_docs:     { category: 'read-config',         description: 'Search platform docs, schemas, and mappings. Returns ranked results with excerpts.' },
   list_app_docs:       { category: 'read-config',         description: 'List all available documentation pages, schemas, and reference materials.' },

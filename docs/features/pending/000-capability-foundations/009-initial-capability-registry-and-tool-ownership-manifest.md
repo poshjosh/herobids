@@ -149,9 +149,11 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 | `adjust_bot_config` | `external:trading` | Trading bot configuration. |
 | `adjust_risk_limits` | `external:trading` | Trading risk policy. |
 | `append_file` | `core` | Agent workspace operation. |
+| `assess_strategy_preset` | `external:trading` | Trading strategy-preset assessment (data-only proxy to Traderton). |
 | `browse_url` | `general` | Reusable web-research expertise. |
 | `browse_interactive` | `external:automation` | Interactive browser automation — requires external stateful resource with provider lifecycle. |
 | `cancel_reminder` | `core` | Base-skill reminder management. |
+| `change_strategy_preset` | `external:trading` | Trading strategy-preset change (side-effecting proxy to Traderton). |
 | `check_regime` | `external:trading` | Trading market-regime analysis. |
 | `check_watches` | `external:trading` | Trading price-watch evaluation. |
 | `complete_task` | `core` | Base-skill task management. |
@@ -184,6 +186,7 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 | `list_providers` | `core` | Platform provider discovery. |
 | `list_reminders` | `core` | Base-skill reminder management. |
 | `list_skills` | `core` | Agent skill discovery. |
+| `list_strategy_presets` | `external:trading` | Trading strategy-preset catalog (read proxy to Traderton). |
 | `list_tasks` | `core` | Base-skill task management. |
 | `list_watches` | `external:trading` | Trading price-watch state. |
 | `load_skill` | `core` | Agent skill assignment plus instruction load (add_skills then read_skill). |

@@ -162,8 +162,7 @@ Tools that need gating wired, grouped by capability:
 | `bot_query` | `list_bots`, `get_bot_status`, `resolve_bot` | `bots.ts`, `resolvers.ts` |
 | `manage_agent_skills` | `add_skills`, `remove_skills` | `skills.ts` |
 | `search_skills` | `search_skills`, `list_skills` | `skills.ts` |
-| `assess_strategy_preset` | `assess_strategy_preset` | (broker-mediated, gating already happens via broker reply — verify and document) |
-| `change_strategy_preset` | `change_strategy_preset` | (broker-mediated, same as above — verify and document) |
+| (none) | `list_strategy_presets`, `assess_strategy_preset`, `change_strategy_preset` | Not broker-mediated and not gated. They are external-backend proxies in `strategy-presets.ts` that forward to Traderton and never call `checkAccess`. See the note under D6 |
 
 Tools intentionally excluded from gating:
 
@@ -179,6 +178,8 @@ Tools intentionally excluded from gating:
 | `get_schema` | Pure in-memory lookup |
 
 ### D6. `assess_strategy_preset` and `change_strategy_preset` gating
+
+> **Update (2026-11-21, bug report `docs/bug-reports/2026/11/21/001-preset-tools-dropped-no-local-registry-entry.md`):** the broker route described below no longer exists. Commit `88e67c98` deleted the broker-mediated tools and their broker routes. They are now ordinary external-backend proxies (`list_strategy_presets`, `assess_strategy_preset`, `change_strategy_preset`) in `apps/worker/src/tools/strategy-presets.ts`. They forward to Traderton, never call `checkAccess`, and have no capability grant. Treat them like the other boundary proxies and skip tool-level gating. Warning: adding a literal `checkAccess('<name>')` for any of them without a `DEFAULT_CAPABILITY_GRANTS` entry would recreate the `make_http_request` failure (`docs/bug-reports/2026/11/17/002-gated-tools-without-default-grant-denied-for-every-agent.md`). The text below is the original decision and is kept for history.
 
 **Decision:** Verify whether these tools already receive broker-level capability enforcement (similar to `submit_decision`). If they do, document and skip tool-level gating. If they don't, wire them with `withCapabilityGating`.
 
@@ -236,7 +237,7 @@ Add `withCapabilityGating` calls to:
 - `apps/worker/src/tools/skills.ts` — `add_skills`, `remove_skills` (capability: `manage_agent_skills`); `search_skills`, `list_skills` (capability: `search_skills`)
 - `apps/worker/src/tools/resolvers.ts` — `resolve_bot` (capability: `bot_query`)
 
-For broker-mediated tools (`assess_strategy_preset`, `change_strategy_preset`): verify broker-side enforcement per D6. If present, add a code comment documenting why tool-level gating is skipped. If absent, wire them.
+For the strategy preset tools (`list_strategy_presets`, `assess_strategy_preset`, `change_strategy_preset`): they are no longer broker-mediated (see the D6 update). They are external-backend proxies in `strategy-presets.ts`, so no tool-level gating and no grant. Do not wire them.
 
 **1.5 — Document `submit_decision` exclusion**
 
@@ -332,8 +333,9 @@ For `browse_interactive` timeout cleanup:
 | `bot_query` | Yes | **Yes (new)** | `list_bots`, `get_bot_status`, `resolve_bot` |
 | `manage_agent_skills` | Yes | **Yes (new)** | `add_skills`, `remove_skills` |
 | `search_skills` | Yes | **Yes (new)** | `search_skills`, `list_skills` |
-| `assess_strategy_preset` | Yes | Verify (D6) | Broker-mediated; may already be covered |
-| `change_strategy_preset` | Yes | Verify (D6) | Broker-mediated; may already be covered |
+| `assess_strategy_preset` | No | No (D6 update) | External-backend proxy in `strategy-presets.ts`; never calls `checkAccess` |
+| `change_strategy_preset` | No | No (D6 update) | External-backend proxy in `strategy-presets.ts`; never calls `checkAccess` |
+| `list_strategy_presets` | No | No (D6 update) | External-backend proxy in `strategy-presets.ts`; never calls `checkAccess` |
 | `venue_api` | Yes (never) | N/A | `tier: 'never'` — blocked at grant level |
 | `raw_secrets` | Yes (never) | N/A | `tier: 'never'` — blocked at grant level |
 | `database_write` | Yes (never) | N/A | `tier: 'never'` — blocked at grant level |

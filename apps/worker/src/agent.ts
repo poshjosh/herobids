@@ -1897,8 +1897,7 @@ function buildAgentConfigOps(): ToolContext['agentConfigOps'] {
 
     // c4.9i Gap (traderton docs/001): journal_events is Traderton-owned. The
     // agent-activity journal write was dropped here — herobids no longer writes
-    // to journal_events. Kept as a no-op to satisfy the agentConfigOps contract
-    // consumed by change_strategy_preset.
+    // to journal_events. Kept as a no-op to satisfy the agentConfigOps contract.
     async appendJournal(_type, _payload) {
       // intentionally no-op — see c4.9i Gap above
     },
@@ -3398,9 +3397,11 @@ async function runActiveTick(): Promise<void> {
       // be injected into the user context after buildTickUserContext runs.
       // The scout/judge loop handles tool routing normally.
       //
-      // NOTE: Transition tools (assess_strategy_preset,
-      // change_strategy_preset) are now implemented and registered.
-      // The agent can act on assessment review messages using these tools.
+      // NOTE: The review tools (list_strategy_presets, assess_strategy_preset,
+      // change_strategy_preset) are local proxies in tools/strategy-presets.ts
+      // that forward to Traderton, which owns assessment, policy, cooldowns and
+      // the change itself. They are visible only when Traderton tags them to the
+      // agent's approved skill.
       //
       // No unit-test file exists for the agent runtime tick routing logic.
       // Integration testing of the preset_review wake path will be covered
@@ -3410,14 +3411,15 @@ async function runActiveTick(): Promise<void> {
     // ── 002: Assessment-review wake routing ─────────────────────────────────
     // When a scanner wake carries scannerKind === 'assessment_review', route to
     // the transition-review flow (same as preset_review). The agent is presented
-    // with the deterministic scanner pre-check results and can use assessment
-    // tools to request a full platform assessment, evaluate, and apply preset
-    // changes. The wake is advice-only — no billing, no assessor run, no artifact
-    // creation occurs solely because of the wake.
+    // with the deterministic scanner pre-check results and can call
+    // `assess_strategy_preset` (data-only, free), read the flags, and call
+    // `change_strategy_preset` if the data clearly shows a better fit. The wake is
+    // advice-only — no billing, no assessor run, no artifact creation occurs solely
+    // because of the wake.
     //
     // DESIGN NOTE: We intentionally fall through to the scout/judge loop rather
     // than using the single-shot hybrid evaluator. The assessment workflow
-    // (assess_strategy_preset → review rankings → change_strategy_preset)
+    // (assess_strategy_preset → read flags → change_strategy_preset)
     // requires multi-turn tool calls that only the scout/judge loop supports.
     // The hybrid evaluator can only submit_decision — it cannot run assessments.
     // canRouteToHybridEvaluator() also excludes assessment_review wakes to

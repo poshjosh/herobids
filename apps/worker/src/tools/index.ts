@@ -16,6 +16,7 @@ import { watchTools } from './watch.js';
 import { webAccessTools } from './web-access.js';
 import { createTaskTools } from './tasks.js';
 import { riskLimitsTools } from './risk-limits.js';
+import { strategyPresetTools } from './strategy-presets.js';
 import { schemaTools } from './schema.js';
 import { accountTools } from './account.js';
 import { instrumentTools } from './find-instrument.js';
@@ -123,6 +124,7 @@ export function createToolRegistry(deps?: ToolRegistryDeps): ToolRegistry {
     ...httpClientTools,
     ...createTaskTools({ reminders: deps?.reminders ?? DEFAULT_REMINDER_CONFIG }),
     ...riskLimitsTools,
+    ...strategyPresetTools,
     ...schemaTools,
     ...accountTools,
     ...instrumentTools,

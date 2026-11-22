@@ -1,0 +1,60 @@
+{
+  "source": {
+    "repo": "traderton",
+    "file": "packages/boundary/src/mcp/skill-tool-map.ts",
+    "commit": "0ea5654",
+    "note": "one commit after tag v0.2.2; update when re-copied",
+    "refresh": "To refresh: re-copy the tool names (names only) from SKILL_TOOL_MAP in the source file above into \"skills\", set \"commit\" to the Traderton commit you copied from, and do it in the same change that adds the matching local proxy. This file only guards the tools it lists; it cannot see a tool Traderton adds. The live detector for that is the per-skill 'Backend tool visibility' error log (droppedToolNames)."
+  },
+  "skills": {
+    "traderton/skills/crypto-trading": [
+      "get_market_overview",
+      "check_regime",
+      "get_price",
+      "get_funding_rates",
+      "search_tokens",
+      "discover_tokens",
+      "get_risk_limits",
+      "get_account_summary",
+      "get_funding_info",
+      "get_analytics",
+      "list_positions",
+      "watch_token",
+      "list_watches",
+      "remove_watch",
+      "resolve_watch",
+      "check_watches",
+      "find_instrument",
+      "submit_decision",
+      "adjust_risk_limits",
+      "list_strategy_presets",
+      "assess_strategy_preset",
+      "change_strategy_preset"
+    ],
+    "traderton/skills/crypto-bot-management": [
+      "create_bot",
+      "stop_bot",
+      "start_bot",
+      "adjust_bot_config",
+      "list_bots",
+      "get_bot_status",
+      "get_analytics",
+      "list_positions",
+      "resolve_bot"
+    ],
+    "traderton/skills/crypto-risk-monitoring": [
+      "list_positions",
+      "get_analytics",
+      "get_price",
+      "watch_token",
+      "list_watches",
+      "remove_watch",
+      "resolve_watch",
+      "check_watches",
+      "get_risk_limits",
+      "get_account_summary",
+      "adjust_risk_limits"
+    ]
+  },
+  "notExposed": {}
+}

@@ -27,6 +27,7 @@ import {
 export interface BackendToolVisibilityLogger {
   info(fields: Record<string, unknown>, message: string): void;
   warn(fields: Record<string, unknown>, message: string): void;
+  error(fields: Record<string, unknown>, message: string): void;
 }
 
 export interface BuildBackendToolVisibilityInput {
@@ -218,10 +219,19 @@ export async function buildBackendToolVisibility(
       },
       'Backend tool visibility: approved skill tools resolved from MCP tools/list',
     );
-    for (const dropped of droppedTools) {
-      logger.warn(
-        { skillId: skill.id, sourceRef: ref, tool: dropped.name, reason: dropped.reason },
-        'Backend tool visibility: tool tagged for this skill was not made visible',
+    if (droppedTools.length > 0) {
+      // A dropped tagged tool is deployment skew (the backend is ahead of this build)
+      // and never heals without a code change, so it is an error, once per skill.
+      logger.error(
+        {
+          skillId: skill.id,
+          sourceRef: ref,
+          droppedToolNames: droppedTools.map((dropped) => dropped.name),
+          droppedTools,
+          visibleToolCount: visible.length,
+          taggedToolCount: tagged.length,
+        },
+        'Backend tool visibility: backend tags tools for this skill that this runtime cannot call',
       );
     }
   }

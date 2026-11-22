@@ -6,6 +6,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Agents with the `crypto-trading` skill can now use `list_strategy_presets`, `assess_strategy_preset` and `change_strategy_preset`. Herobids dropped all three on every start because it had no local tool for them (`not_in_local_registry`), so agents saw 19 of 22 tools while the review wake and the skill text told them to call tools they did not have. The three are now thin proxies to Traderton (reads for list and assess, a side-effecting write with a 30 s deadline and a fresh idempotency key per call for change). Assess and change send the agent's selected venue account and return `connection.missing` or `connection.provisioning` without calling Traderton when none is ready. `list_strategy_presets` and `change_strategy_preset` also need the matching Traderton release; until it is deployed they return Traderton's "preset assessment not available in this context" error.
+- A tool that Traderton tags to an approved skill but Herobids cannot call is now logged once per skill at `error` (`droppedToolNames`) instead of one `warn` per tool, and a test fails when a tool in the checked-in Traderton skill-map fixture has no local tool.
+
 ## v0.11.1 - 2026-11-20
 
 ### Fixed

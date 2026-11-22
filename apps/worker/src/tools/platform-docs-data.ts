@@ -1713,7 +1713,7 @@ Instructions:
     content: `
 Trading skill (id: trading) — used for direct trade decisions and state inspection.
 
-Required tools: get_market_overview, check_regime, get_price, get_funding_rates, search_tokens, discover_tokens, get_risk_limits, get_account_summary, get_analytics, list_positions, watch_token, list_watches, remove_watch, resolve_watch, check_watches, find_instrument, submit_decision, adjust_risk_limits, assess_strategy_preset, change_strategy_preset.
+Required tools: get_market_overview, check_regime, get_price, get_funding_rates, search_tokens, discover_tokens, get_risk_limits, get_account_summary, get_analytics, list_positions, watch_token, list_watches, remove_watch, resolve_watch, check_watches, find_instrument, submit_decision, adjust_risk_limits, list_strategy_presets, assess_strategy_preset, change_strategy_preset.
 
 Capability families: trading.
 
@@ -1722,7 +1722,7 @@ Binding requirements: At least 1 trading binding in "ready" state.
 Instructions (by workflow phase):
 Observe: get_market_overview, check_regime, get_price, get_funding_rates, search_tokens, discover_tokens.
 Assess: get_risk_limits, get_account_summary, get_analytics, list_positions, watch_token, list_watches, remove_watch, resolve_watch, check_watches.
-Decide: find_instrument (resolve instrumentId before submit_decision), submit_decision, adjust_risk_limits, assess_strategy_preset, change_strategy_preset.
+Decide: find_instrument (resolve instrumentId before submit_decision), submit_decision, adjust_risk_limits, list_strategy_presets, assess_strategy_preset, change_strategy_preset.
 
 Use find_instrument to resolve an instrumentId by symbol, name, or pair before calling submit_decision. Filter by venue (e.g. venue="jupiter" for Solana, venue="hyperliquid" for perpetuals).
 `,
