@@ -249,7 +249,13 @@ export type {
   WebCacheConfig,
 } from './schema.js';
 
-export { resolveStyleTradingTickIntervalMs, deriveStyleMaxHoldDurationMs, resolveTradingTickIntervalMs } from './agent-schedule.js';
+export {
+  resolveStyleTradingTickIntervalMs,
+  deriveStyleMaxHoldDurationMs,
+  resolveTradingTickIntervalMs,
+  resolveEffectiveTickIntervalMs,
+} from './agent-schedule.js';
+export type { EffectiveTickIntervalSource } from './agent-schedule.js';
 
 export type { ProvidersYaml, ProviderConfig } from '../models/llm-models.js';
 

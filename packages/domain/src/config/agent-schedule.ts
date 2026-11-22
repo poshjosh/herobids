@@ -31,3 +31,24 @@ export function resolveTradingTickIntervalMs(input: {
   }
   return input.currentTickIntervalMs;
 }
+
+export type EffectiveTickIntervalSource = 'user' | 'non_trading_default' | 'unset';
+
+/**
+ * Single precedence for the tick an agent runs with, before cost-profile applies it:
+ * explicit stored value, then the operator non-trading default, else unset (null)
+ * so the preset/style cadence applies.
+ */
+export function resolveEffectiveTickIntervalMs(input: {
+  storedTickIntervalMs: number | null;
+  hasTradingCapability: boolean;
+  nonTradingDefaultTickIntervalMs: number;
+}): { tickIntervalMs: number | null; source: EffectiveTickIntervalSource } {
+  if (input.storedTickIntervalMs !== null) {
+    return { tickIntervalMs: input.storedTickIntervalMs, source: 'user' };
+  }
+  if (!input.hasTradingCapability) {
+    return { tickIntervalMs: input.nonTradingDefaultTickIntervalMs, source: 'non_trading_default' };
+  }
+  return { tickIntervalMs: null, source: 'unset' };
+}

@@ -212,7 +212,7 @@ Read before implementing — this plan must not contradict them:
 
 ## Detailed Plan
 
-### 1. Domain: precedence helper + resolver wiring
+### 1. Domain: precedence helper + resolver wiring — DONE
 
 Files:
 - `packages/domain/src/config/schema.ts`
@@ -236,7 +236,7 @@ Changes:
   informational only; the authoritative application of the tick stays in the
   worker's cost-profile step.
 
-### 2. Backend consumption: session-manager (worker path)
+### 2. Backend consumption: session-manager (worker path) — PENDING
 
 Files:
 - `apps/worker/src/agents/agent-session-manager.ts`
@@ -259,7 +259,7 @@ Changes:
   so the preset/style cadence applies. Verify `effectiveTickIntervalMs` still
   seeds correctly.
 
-### 3. API: create/patch + response decoration
+### 3. API: create/patch + response decoration — PENDING
 
 Files:
 - `apps/api/src/routes/agents.ts`
@@ -291,7 +291,7 @@ Changes:
   on the resolved value, not the raw stored null. Ensure non-trading + null still
   validates as 24 h for the max-hold invariant.
 
-### 4. Frontend: stop pre-filling, display effective default
+### 4. Frontend: stop pre-filling, display effective default — PENDING
 
 Files:
 - `apps/web/src/features/agents/style-mapping.ts`
@@ -353,7 +353,7 @@ the user typed one.
 - **Hydration of max hold:** show only a stored explicit max-hold override. Never
   fill it from the tick interval. See "Remove client-side max-hold logic" above.
 
-### 5. Migration / back-compat for existing ~1440 agents
+### 5. Migration / back-compat for existing ~1440 agents — PENDING
 
 Files:
 - `docs/features/.../000-...` note; no data migration required (recommended).
@@ -374,7 +374,7 @@ Decision & rationale:
   newly-created one shows it as a placeholder default (field empty). This is
   cosmetic and expected.
 
-### 6. Operator config / `.env` twins
+### 6. Operator config / `.env` twins — PENDING
 
 Files:
 - `config/default.yaml` (confirm `agentRuntime.nonTradingDefaults.tickIntervalMs`
@@ -519,3 +519,14 @@ Decided 2026-11-22:
    helper/placeholder; flow + render tests.
 5. Cross-check against plans 070 and 071; update their notes if needed.
 6. `pnpm lint` + focused test suites.
+
+## Outstanding Issues
+
+Grouped by plan item.
+
+### Item 1 — Domain helper
+
+- Low: the optional read-only `resolvedTickIntervalMs` on `ResolvedAgentRuntimePolicy` was not added (Open Decision 1 recommends the standalone helper). Record that in the plan if kept.
+- Low: test title uses `%i` with millisecond values; use a labelled table.
+- Low: add a test that `storedTickIntervalMs: 0` is treated as a user value.
+- Low: callers in items 2 and 3 must never pass `undefined` for the stored value (signature is `number | null`); normalise partial selects.
