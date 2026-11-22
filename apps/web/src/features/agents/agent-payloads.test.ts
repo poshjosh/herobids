@@ -1374,3 +1374,27 @@ describe('agent payloads — Telegram is user-level only', () => {
     expect(buildUpdateAgentPayload(BASE_UPDATE_INPUT)).not.toHaveProperty('chatAddresses');
   });
 });
+
+describe('buildUpdateAgentPayload — unreadable trading profile', () => {
+  const TRADING_INPUT = { ...BASE_UPDATE_INPUT, hasTradingCapability: true, capabilityMode: 'intelligence' as const, executionMode: 'test' as const, capital: '' };
+
+  it('omits capital, risk and executionDefaults so a blank form cannot clear stored values', () => {
+    const payload = buildUpdateAgentPayload({ ...TRADING_INPUT, tradingProfileAvailable: false });
+
+    expect(payload).not.toHaveProperty('capital');
+    expect(payload).not.toHaveProperty('risk');
+    expect(payload).not.toHaveProperty('executionDefaults');
+  });
+
+  it('sends capital, risk and executionDefaults when the profile was readable', () => {
+    const payload = buildUpdateAgentPayload({ ...TRADING_INPUT, capital: '3000', tradingProfileAvailable: true });
+
+    expect(payload.capital).toBe('3000');
+    expect(payload).toHaveProperty('risk');
+    expect(payload).toHaveProperty('executionDefaults');
+  });
+
+  it('treats an absent flag as readable', () => {
+    expect(buildUpdateAgentPayload({ ...TRADING_INPUT, capital: '3000' }).capital).toBe('3000');
+  });
+});

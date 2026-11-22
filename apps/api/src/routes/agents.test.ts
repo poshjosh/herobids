@@ -1632,6 +1632,120 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
     expect(planTradingProfileReconciliation(stagedSaga.plannerInputs[0]!)).toMatchObject({ upserts: [], clears: [] });
   });
 
+  it('returns the selected trading profile capital on GET so the edit form is prefilled', async () => {
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([
+      { connectionId: 'conn-1', venueAccountId: 'venue-1', active: true, ready: true, isDefault: true },
+    ]);
+    const { agentRoutes } = await import('./agents.js');
+    const agentRow = { id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null };
+    const { db } = buildDb({ agentRows: [agentRow], activeLinkRows: [agentRow] });
+    const stagedSaga = makeStagedProfileSaga(db, {
+      remoteProfiles: new Map([['venue-1', {
+        actorId: 'agent-1', venueAccountId: 'venue-1', capital: '3000', riskPosture: null,
+        executionDefaults: { mode: 'paper' }, scanMode: null, creatorStrategy: null,
+      } satisfies TypedTradingProfile]]),
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+
+    const res = await app.inject({ method: 'GET', url: '/agents/agent-1' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ tradingProfileAvailable: true, capital: '3000', executionDefaults: { mode: 'paper' } });
+  });
+
+  describe('GET /agents/:id trading profile overlay', () => {
+    async function getAgent(options: {
+      unifiedConfig?: unknown;
+      connections: Array<Record<string, unknown>>;
+      saga?: ReturnType<typeof makeStagedProfileSaga>;
+      readError?: Error;
+    }) {
+      vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue(options.connections as never);
+      const { agentRoutes } = await import('./agents.js');
+      const agentRow = { id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null, unifiedConfig: options.unifiedConfig ?? null };
+      const { db } = buildDb({ agentRows: [agentRow], activeLinkRows: [agentRow] });
+      const stagedSaga = options.saga ?? makeStagedProfileSaga(db);
+      if (options.readError) stagedSaga.readCurrentProfiles.mockRejectedValue(options.readError);
+      const app = Fastify();
+      decorateWithAuth(app);
+      await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+      const res = await app.inject({ method: 'GET', url: '/agents/agent-1' });
+      return { res, stagedSaga };
+    }
+
+    const boundConnections = [
+      { connectionId: 'conn-1', venueAccountId: 'venue-1', active: true, ready: true, isDefault: true },
+    ];
+
+    it('reads only the selected binding from the boundary', async () => {
+      const { res, stagedSaga } = await getAgent({
+        connections: [
+          { connectionId: 'conn-0', venueAccountId: 'venue-0', active: true, ready: true, isDefault: false },
+          { connectionId: 'conn-1', venueAccountId: 'venue-1', active: true, ready: true, isDefault: true },
+        ],
+      });
+
+      expect(res.statusCode).toBe(200);
+      const requested = stagedSaga.readCurrentProfiles.mock.calls[0]![2];
+      expect(requested).toHaveLength(1);
+      expect(requested[0]).toMatchObject({ connectionId: requested[0]!.connectionId });
+      expect(new Set(requested.map((connection) => connection.venueAccountId)).size).toBe(1);
+    });
+
+    it('returns the unifiedConfig snapshot for an unbound agent without calling the boundary', async () => {
+      const { res, stagedSaga } = await getAgent({
+        connections: [],
+        unifiedConfig: { capital: '2500', execution: { mode: 'paper' } },
+      });
+
+      expect(res.json()).toMatchObject({ tradingProfileAvailable: true, capital: '2500', executionDefaults: { mode: 'paper' } });
+      expect(stagedSaga.readCurrentProfiles).not.toHaveBeenCalled();
+    });
+
+    it('ignores a non-string snapshot capital and a non-object snapshot execution', async () => {
+      const { res } = await getAgent({
+        connections: [],
+        unifiedConfig: { capital: 2500, execution: 'paper' },
+      });
+
+      expect(res.json()).toMatchObject({ tradingProfileAvailable: true, capital: null, executionDefaults: null });
+    });
+
+    it('returns no capital for an unbound agent with no snapshot', async () => {
+      const { res } = await getAgent({ connections: [] });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ tradingProfileAvailable: true, capital: null });
+    });
+
+    it('reports the profile unavailable, not the stale snapshot, when the boundary read fails', async () => {
+      const { res } = await getAgent({
+        connections: boundConnections,
+        unifiedConfig: { capital: '999', execution: { mode: 'live' } },
+        readError: new Error('traderton timeout'),
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.tradingProfileAvailable).toBe(false);
+      expect(body.capital).toBeUndefined();
+      expect(body.executionDefaults).not.toEqual({ mode: 'live' });
+    });
+
+    it('reports the profile unavailable when the selected venue is missing from the read', async () => {
+      const db0 = buildDb({}).db;
+      const { res } = await getAgent({
+        connections: boundConnections,
+        saga: makeStagedProfileSaga(db0, { remoteProfiles: new Map() }),
+      });
+
+      expect(res.json().tradingProfileAvailable).toBe(false);
+    });
+  });
+
   it('rejects explicit execution mode for non-trading agents on create', async () => {
     const { agentRoutes } = await import('./agents.js');
     const { db } = buildDb({

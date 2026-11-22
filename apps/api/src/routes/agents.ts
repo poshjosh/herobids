@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import { requireAgentKeyCaller, requireDirectChildOfActingAgent, requireSelfAgentOrUser, requireUserCaller } from '../plugins/auth.js';
@@ -79,6 +79,7 @@ import {
   loadActiveTradingProfileConnections,
 } from '../agents/trading-profile-reconciliation-adapter.js';
 import { proposeTradingProfiles, selectExecutionBinding } from '../agents/trading-profile-reconciliation.js';
+import type { TypedTradingProfile } from '../agents/trading-profile-reconciliation.js';
 import { TradingProfileReconciliationSaga, TradingProfileCeilingViolationError, TradingProfileScanValidationError } from '../agents/trading-profile-reconciliation-saga.js';
 import { resolveAgentStrategyPreset } from '../agents/strategy-preset-resolver.js';
 import { deriveProfileScanConfig } from '../agents/profile-scan-config.js';
@@ -502,6 +503,29 @@ function extractPresetMeta(unifiedConfig: unknown): { strategyPreset: string | n
   };
 }
 
+type AgentTradingStateResponse =
+  | {
+    tradingProfileAvailable: true;
+    capital: string | null;
+    risk?: TypedTradingProfile['riskPosture'];
+    executionDefaults: TypedTradingProfile['executionDefaults'] | Record<string, unknown> | null;
+  }
+  | { tradingProfileAvailable: false };
+
+/** Unbound trading agents keep mode/capital in the unifiedConfig snapshot (no venue, so no profile). */
+function readUnboundTradingState(unifiedConfig: unknown): AgentTradingStateResponse {
+  const uc = unifiedConfig !== null && typeof unifiedConfig === 'object' ? unifiedConfig as Record<string, unknown> : null;
+  const capital = uc?.['capital'];
+  const execution = uc?.['execution'];
+  return {
+    tradingProfileAvailable: true,
+    capital: typeof capital === 'string' ? capital : null,
+    executionDefaults: execution !== null && typeof execution === 'object' && !Array.isArray(execution)
+      ? execution as Record<string, unknown>
+      : null,
+  };
+}
+
 /** Build the extra response fields derived from unifiedConfig. */
 function enrichAgentResponse(agent: typeof agents.$inferSelect & { skillIds?: string[] }): {
   technical: unknown;
@@ -629,6 +653,38 @@ export async function agentRoutes(
       }),
     },
   );
+
+  // Capital, risk and execution defaults are Traderton profile state (ADR 010), not
+  // agent columns. Overlay the selected profile so the edit form can show them; an
+  // unbound agent falls back to its unifiedConfig snapshot (Resolution B).
+  // When a bound agent's profile cannot be read, report `tradingProfileAvailable: false`
+  // instead of guessing: clients must not write these fields back (a blank form value
+  // would clear the stored capital). The stale snapshot is deliberately not used here.
+  const readTradingStateForResponse = async (
+    request: FastifyRequest,
+    agent: typeof agents.$inferSelect,
+  ): Promise<AgentTradingStateResponse> => {
+    try {
+      const connections = await loadActiveTradingProfileConnections(db, agent.id);
+      const binding = selectExecutionBinding(connections);
+      if (!binding) return readUnboundTradingState(agent.unifiedConfig);
+      // Only the selected venue is read: one boundary call, and a failing
+      // non-selected venue cannot hide the selected profile.
+      const selectedConnections = connections.filter((connection) => connection.connectionId === binding.connectionId);
+      const profiles = await stagedProfileReconciliationSaga.readCurrentProfiles(request.userId, agent.id, selectedConnections);
+      const profile = profiles.get(binding.venueAccountId);
+      if (!profile) throw new Error('selected trading profile missing from boundary read');
+      return {
+        tradingProfileAvailable: true,
+        capital: profile.capital,
+        risk: profile.riskPosture,
+        executionDefaults: profile.executionDefaults,
+      };
+    } catch (error) {
+      request.log.warn({ err: error, agentId: agent.id }, 'agent.trading_profile_read_failed: trading profile fields unavailable');
+      return { tradingProfileAvailable: false };
+    }
+  };
 
   // Fallback read deadline when the operator boundary timeout is not supplied.
   const readDeadlineMs = tradertonReadTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
@@ -1439,7 +1495,8 @@ export async function agentRoutes(
       .orderBy(desc(agentRuntimeSessions.startedAt));
 
     const skillIds = await listSkillIdsForAgent(db, id);
-    const [agentOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...agent, skillIds }), ...enrichAgentResponse(agent), activeSession: session ? toPublicRuntimeSession(session, startupProgressGate) : null }]);
+    const tradingState = await readTradingStateForResponse(request, agent);
+    const [agentOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...agent, ...tradingState, skillIds }), ...enrichAgentResponse(agent), activeSession: session ? toPublicRuntimeSession(session, startupProgressGate) : null }]);
     return reply.send(agentOut);
   });
 

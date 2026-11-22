@@ -160,6 +160,8 @@ export interface UpdateAgentPayloadInput {
   stopLossCooldownSecs: string;
   tickIntervalMins: string;
   capital: string;
+  /** false = the agent's trading profile was unreadable when the form loaded; capital, risk and executionDefaults are then omitted so they are not cleared. Default true. */
+  tradingProfileAvailable?: boolean;
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
   modelOverrideEnabled: boolean;
   modelForm: {
@@ -286,7 +288,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   risk?: Record<string, unknown> | null;
   executionDefaults?: Record<string, unknown> | null;
   tickIntervalMs: number | null;
-  capital: string | null;
+  capital?: string | null;
   provider: string | null;
   lightModel: string | null;
   heavyModel: string | null;
@@ -304,6 +306,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   authorizationMode?: 'direct' | 'approval_required' | null;
   permissionLevel?: 'restricted' | 'standard' | 'full';
 } {
+  const profileWritable = input.tradingProfileAvailable !== false;
   // Build canonical risk posture (WP4 shared value object)
   const risk: Record<string, unknown> = {};
   if (input.dailyMaxLossPct?.trim()) risk.dailyMaxLossPct = parseFloat(input.dailyMaxLossPct);
@@ -354,10 +357,12 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     ...(input.connectionIds !== undefined ? { connectionIds: input.connectionIds } : {}),
     costPreset: input.costPreset || null,
     dailySpendBudgetUsd: input.dailySpendBudgetUsd ? parseFloat(input.dailySpendBudgetUsd) : null,
-    risk,
-    ...(executionDefaults.mode !== null ? { executionDefaults } : {}),
+    // Trading profile fields are omitted when the profile was unreadable at load:
+    // the form holds blanks, and sending them would clear the stored values.
+    ...(profileWritable ? { risk } : {}),
+    ...(profileWritable && executionDefaults.mode !== null ? { executionDefaults } : {}),
     tickIntervalMs,
-    capital: input.capital.trim() || null,
+    ...(profileWritable ? { capital: input.capital.trim() || null } : {}),
     ...(normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) ? { openPositionEscalationToJudgePolicy: normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) } : {}),
     provider: includeIntelligence && input.modelOverrideEnabled ? input.modelForm.provider || null : null,
     lightModel: includeIntelligence && input.modelOverrideEnabled ? input.modelForm.lightModel || null : null,

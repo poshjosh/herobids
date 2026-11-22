@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The edit agent form no longer opens with a blank capital field. `GET /agents/:id` now returns capital, risk and execution defaults from the agent's selected Traderton trading profile (falling back to the unbound agent's saved config). If a bound agent's profile cannot be read, the response carries `tradingProfileAvailable: false` and the edit form leaves capital, risk and execution defaults out of the save, so they are not cleared. See `docs/bug-reports/2026/11/22/001-edit-agent-form-capital-blank.md`.
+
 ## v0.11.2 - 2026-11-22
 
 ### Added

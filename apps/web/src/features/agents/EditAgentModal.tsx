@@ -453,6 +453,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         preserveOriginalTickIntervalMs: !tickIntervalTouched,
         originalTickIntervalMs: initialData.tickIntervalMs ?? null,
         capital: form.capital,
+        tradingProfileAvailable: initialData.tradingProfileAvailable,
         openPositionEscalationToJudgePolicy: normalizeEscalationPolicy(form.openPositionEscalationToJudgePolicy),
         modelOverrideEnabled,
         modelForm,

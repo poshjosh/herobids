@@ -1059,6 +1059,8 @@ export interface Agent {
   stopLossCooldownMs: number | null;
   tickIntervalMs: number | null;
   capital: string | null;
+  /** false when the Traderton trading profile could not be read: capital/risk/executionDefaults are then absent and must not be written back. Absent = available. */
+  tradingProfileAvailable?: boolean;
   style: string | null;
   runtimePolicyOverrides: Record<string, unknown> | null;
   resolvedRuntimePolicy: Record<string, unknown> | null;
