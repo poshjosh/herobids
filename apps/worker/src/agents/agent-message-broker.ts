@@ -628,8 +628,8 @@ export class AgentMessageBroker {
   private async parentUnavailableBody(agent: { name: string; userId: string; parentAgentId: string | null }, body: string): Promise<string> {
     const parent = agent.parentAgentId ? await this.agentRepo.getAgent(agent.parentAgentId) : null;
     const parentName = parent && parent.userId === agent.userId ? parent.name : null;
-    const who = parentName ? `Child agent "${agent.name}" of "${parentName}"` : `Child agent "${agent.name}"`;
-    return `${who} (parent unavailable): ${body}`;
+    const who = parentName ? `from child ${agent.name} of parent ${parentName}` : `from child ${agent.name}`;
+    return `${who}, parent unavailable: ${body}`;
   }
 
   /**

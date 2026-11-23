@@ -966,7 +966,7 @@ describe('AgentMessageBroker — child reports', () => {
 
     expect(result.accepted).toBe(true);
     expect(redis.xadd).not.toHaveBeenCalled();
-    const label = 'Child agent "Research Bot" of "Parent Bot" (parent unavailable): Hello from agent';
+    const label = 'from child Research Bot of parent Parent Bot, parent unavailable: Hello from agent';
     expect(conversations.recordAgentMessage).toHaveBeenCalledWith(expect.objectContaining({ ownerUserId: 'user-1', agentId: 'agent-1', channel: 'web', body: label }));
     expect(chatSend).toHaveBeenCalledWith('agent-1', expect.objectContaining({ body: label }));
   });
@@ -1045,7 +1045,7 @@ describe('AgentMessageBroker — child reports', () => {
     expect(redis.xadd).not.toHaveBeenCalled();
     expect(conversations.recordAgentMessage).toHaveBeenCalledTimes(1);
     expect(conversations.recordAgentMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ ownerUserId: 'user-1', agentId: 'agent-1', body: 'Child agent "Research Bot" (parent unavailable): Hello from agent' }),
+      expect.objectContaining({ ownerUserId: 'user-1', agentId: 'agent-1', body: 'from child Research Bot, parent unavailable: Hello from agent' }),
     );
   });
 
@@ -1062,7 +1062,7 @@ describe('AgentMessageBroker — child reports', () => {
     expect(result.accepted).toBe(true);
     expect(redis.xadd).not.toHaveBeenCalled();
     expect(conversations.recordAgentMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ ownerUserId: 'user-1', agentId: 'agent-1', body: 'Child agent "Research Bot" of "Parent Bot" (parent unavailable): Hello from agent' }),
+      expect.objectContaining({ ownerUserId: 'user-1', agentId: 'agent-1', body: 'from child Research Bot of parent Parent Bot, parent unavailable: Hello from agent' }),
     );
   });
 

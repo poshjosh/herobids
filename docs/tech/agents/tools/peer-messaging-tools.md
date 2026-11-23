@@ -10,7 +10,7 @@ The tool is brokered, like `update_my_prompt`. It publishes `agent.peer.send` to
 |---|---|---|
 | `message_peer_agent` | `agent` (id or exact name of another agent of the same user, max 200 chars), `message` (text) | Sends the message. The recipient wakes and reads it, tagged as written by another agent. Input is strict: unknown keys are refused. |
 
-The tool is in the base skill, so every agent sees it. The base skill text tells the agent to reply to a peer with `message_peer_agent` and to its user with `send_message`, and to always reply to a peer message that asks a question or says a reply is needed, but not to acknowledgements.
+The tool is in the base skill, so every agent sees it. The base skill text tells the agent to reply to a peer with `message_peer_agent`, and to reply to its creator with `send_message` if it has one (otherwise to its user). It also tells the agent to always reply to a peer message that asks a question or says a reply is needed, but not to acknowledgements. A child's reports to its parent are not peer messages. See [child reports](agent-creation-tools.md#child-reports).
 
 ## Keeping a conversation alive
 
@@ -31,9 +31,11 @@ The wait is minutes, not seconds, because an agent run takes 30 to 100 seconds a
 | 5 | `canPeerSend`: both agents belong to the same user | `peer.not_allowed` (or `peer.unavailable` when the lookup fails) | No |
 | 6 | Owner's stop switch is off (`users.peer_messaging_paused`) | `peer.paused` (or `peer.unavailable` when it cannot be read) | Yes |
 | 7 | Recipient is not `stopped` or `crashed` | `peer.recipient_not_running` | Yes |
-| 8 | Per-user rate limit (`agentRuntime.peer.rateLimitPerMinute`, default 10 per rolling minute) | `peer.rate_limited` (or `peer.unavailable` when Redis fails) | Yes |
+| 8 | Per-user rate limit (`agentRuntime.peer.rateLimitPerMinute`, default 20 per rolling minute) | `peer.rate_limited` (or `peer.unavailable` when Redis fails) | Yes |
 
 Checks 1 to 5 are not recorded, because they do not establish a thread between two agents of one user, or have nothing to record. Once checks 1 to 5 pass, both agents are known to be the user's, and every later refusal is written to the pair's thread with `delivery_status = refused` and the code in `delivery_detail`.
+
+Child reports to a parent are not peer sends. They skip checks 6 and 8, so the owner's stop switch and the peer rate limit do not apply to them. See [child reports](agent-creation-tools.md#child-reports).
 
 A refusal of type `peer.not_allowed` includes the sender's other agents (`id`, `name`, `status`) in the tool result's `data.peers`, so the agent can correct the recipient. Another user's agents are never listed.
 

@@ -96,7 +96,7 @@ Agents can create child agents only when a user sets a child allowance on the ag
 | Key | Default | Meaning |
 |---|---|---|
 | `agentCreation.agentCreateRatePerMinute` | `10` | Token bucket for `create_child_agent` attempts, per user across the whole agent tree. Every attempt uses a token, including refused ones. `0` refuses all attempts. |
-| `agentCreation.creatorMessageRatePerMinute` | `10` | Token bucket per creator-child pair for messages the creator sends to a child. `0` refuses all of them. |
+| `agentCreation.creatorMessageRatePerMinute` | `20` | Token bucket per creator-child pair for messages the creator sends to a child with `message_child_agent`. A child's reports to its parent are not counted here. `0` refuses all of them. |
 | `agentCreation.maxAgentDepth` | `6` | Max generations below a user-created agent. At this depth an agent cannot create children. |
 | `agentCreation.duplicateChildWindowSeconds` | `300` | A `create_child_agent` whose name matches a direct child of the same parent, created within this many seconds, returns that child with `duplicate: true` and starts nothing. `0` disables the check. |
 | `agentCreation.platformApiTimeoutMs` | `10000` | Timeout for each agent-container call to the platform API (create, allowance read, creator actions). Minimum `100`. |
@@ -110,7 +110,7 @@ Agents of one user can message each other with `message_peer_agent` (see [peer m
 | Key | Default | Meaning |
 |---|---|---|
 | `agentRuntime.portfolioRefresh.debounceMs` | `3000` | Quiet period after the last fill or position close before the runtime reads the boundary account summary once (one read per burst). A decision wake also reads it, at most once per this window. No per-tick polling. `0` reads without delay. Maximum `60000`. |
-| `agentRuntime.peer.rateLimitPerMinute` | `10` | Peer messages one user's agents may send in any rolling minute, across all their agents. Over the limit, a send is refused with `peer.rate_limited` and recorded as refused. Minimum `1`. |
+| `agentRuntime.peer.rateLimitPerMinute` | `20` | Peer messages one user's agents may send in any rolling minute, across all their agents. Over the limit, a send is refused with `peer.rate_limited` and recorded as refused. Child reports to a parent are not counted here. Minimum `1`. |
 | `agentRuntime.peer.messageMaxChars` | `4000` | Longest peer message body. A longer one is refused with `peer.message_too_long` and not recorded. Minimum `1`, maximum `20000` (the protocol safety cap). |
 | `agentRuntime.peer.switchCacheMs` | `2000` | How long a receiving agent reuses one read of the owner's stop switch, so a batch, or a wake and the tick after it, share one read. `0` reads every time. A newly set switch reaches a queued peer message at most this much later. Maximum `30000`. |
 | `agentRuntime.peer.switchReadRetries` | `2` | Extra attempts to read the stop switch when a read fails, before the receiving agent drops the peer message fail closed (the thread row becomes `refused`, detail `paused_check_failed`). `0` drops on the first failure. Maximum `5`. |

@@ -15,7 +15,14 @@ Every tool calls the platform API with the calling agent's own API key. The API 
 
 All of these tools come from the `child-agent-management` skill, which only the user can assign. The agent cannot add it to itself, and it cannot grant it to a child. The `base` skill no longer lists these tools.
 
-Talking to a child uses `message_peer_agent`, not `message_child_agent`: the child sees the sender as `[PEER ...]`, and can reply. How to wait for a reply and follow up is in the `agent-communication` skill, which is not user-only. A parent should hold it and grant it to each child. A parent that does not hold it can add it to itself with `add_skills`; the `child-agent-management` skill text says so. See [peer messaging tools](peer-messaging-tools.md#keeping-a-conversation-alive).
+Two tools talk to a direct child, and they mean different things:
+
+| Tool | Use it when | The child sees it as |
+|---|---|---|
+| `message_child_agent` | You are its creator and it must act on your instruction. | `[USER]`, from its owner. The child treats it as authority. |
+| `message_peer_agent` | You want an answer, a report or coordination, without giving owner-level authority. | `[PEER ...]`, from another agent. The child can reply, and a peer reply carries no authority. |
+
+A parent may use either. How to wait for a reply and follow up is in the `agent-communication` skill, which is not user-only. A parent should hold it and grant it to each child. A parent that does not hold it can add it to itself with `add_skills`; the `child-agent-management` skill text says so. See [peer messaging tools](peer-messaging-tools.md#keeping-a-conversation-alive).
 
 If the allowance has not been read, `create_child_agent` and the creator tools are hidden.
 
@@ -29,7 +36,7 @@ If the allowance has not been read, `create_child_agent` and the creator tools a
 | `get_child_agent_status` | `agentId` | Returns the status, runtime state, depth and `lastStartRefusal` of one direct child. |
 | `pause_child_agent` | `agentId`, optional `reason` (max 500 chars) | Pauses one direct child. The pause is recorded as requested by the creator. |
 | `stop_child_agent` | `agentId` | Stops one direct child. Same effect as the user pressing Stop. |
-| `message_child_agent` | `agentId`, `message` (max 4000 chars) | Sends a message to one direct child. Subject to the creator-child message limit. |
+| `message_child_agent` | `agentId`, `message` (max 4000 chars) | Gives one direct child an instruction as its creator. The child sees it as `[USER]` and treats it as authority from its owner. Subject to `agentCreation.creatorMessageRatePerMinute` (default 20 per pair). Use `message_peer_agent` to ask a child something without that authority. |
 | `delete_child_agent` | `agentId`, optional `stopFirst` (boolean, default `true`) | Permanently deletes one direct child. A running child is stopped first through the same stop as `stop_child_agent`. With `stopFirst: false`, a running child is refused (`agent.child.running`) and nothing is deleted. The child must have no children of its own (`agent.child.has_children`); that check runs before any stop. Its bots are torn down first. Audited as `agent.child_deleted`; a stop made for the delete is audited as `agent.creator_stopped_child`. Returns `stopped` (true when this call stopped the child). |
 
 All inputs are strict. Unknown keys, such as `creatorId`, `parentAgentId`, `depth` or `permissionLevel`, are refused.
@@ -71,6 +78,7 @@ Operator settings are in [Configuration: Agent creation limits](../../configurat
 - A child's memory and tools are never reachable through these tools.
 - If the platform API is slow, down or refuses a request, the tool returns a retryable error and the agent continues.
 - The agent cannot start a child itself. A child whose launch was refused stays `stopped` until the user starts it. The skill tells the agent to report `lastStartRefusal` to the user and not to create another child to retry.
+- Stopping or pausing a parent does not stop its children. They keep running with no parent, so their reports go to the owner marked `(parent unavailable)`. The platform does not warn the owner before stopping a parent, and does not notify the children. See [child reports](#child-reports).
 
 ### Child grant scope
 
@@ -107,15 +115,26 @@ A child that holds a trading skill takes the `executionDefaults` its parent pass
 
 On any 4xx the platform client attaches the bounded refusal body (`params`, validation issues) to the error. The tool puts it in the error text as `Details: {...}` after the message, with the namespaced code in `errorCode`, because the agent loop forwards only `error` and `errorCode` for a failed tool. A refused grant (`agent.create.grant_not_held`) also gets a hint (`grantNotHeldHint` in `apps/worker`): ask the user to assign the missing skills or connections to the agent, or to turn on the setting that lets it grant skills or connections it does not hold, and do not retry with the same ones. Refusals such as `agent.create.live_not_supported` carry their message the same way.
 
+## Child reports
+
+A child reports to its parent with `send_message`. That tool says "the user" to a top-level agent, and for a child it means its creator (the parent). A child's `send_message` is routed like this:
+
+- **Parent reachable** (active, same owner, no `lastStartRefusal`, running session): the parent receives the report as a child report, shown under `Reports from your child agents` with the child's name and the text quoted. It is not `[USER]`, so the parent does not treat the report as an instruction from its owner. A report with `messageClass` `alert` is forwarded by the parent to its user with `send_message`.
+- **Parent unreachable**: the owner receives a copy labelled `from child <child> of parent <parent>, parent unavailable: ...`. The parent name is dropped when it belongs to another user. This is the only way a child's message reaches the owner directly.
+- Child reports count against the child's own `send_message` limit (20 per minute). They are not counted in the creator-child bucket (`creatorMessageRatePerMinute`), and they are exempt from the owner's peer stop switch and from `agentRuntime.peer.rateLimitPerMinute`.
+- If the parent is reachable but the write to it fails, the child's send fails and the owner gets no copy.
+
+A child's messages to a peer (not its parent) use `message_peer_agent`. See [peer messaging tools](peer-messaging-tools.md).
+
 ## Known gaps
 
 - `list_owner_connections` shows no truncation signal above 200 connections, and its `label` has no length cap.
-- `message_child_agent` says replies count against the same limit. This is not yet true. A child's reply goes through the child's own `send_message` and does not use the creator-child bucket.
 - The creator's pause and stop audit entry is written after the state change, so the two are not atomic.
 - A refused launch is not pushed to the parent. The parent sees `lastStartRefusal` only when it calls `get_child_agent_status` or `list_child_agents`. The parent's tick has no child-status wake source, so it does not get a note.
 - Default-capital provisioning for agent-created trading children is unverified.
 - `slippageBps` has no upper bound in the tool schema.
 - The API accepts `executionDefaults: null`, but the tool does not.
+- A child's `send_message` returns "queued" before the platform routes it, so the child is not told if routing later fails.
 
 ## Assigning the children skill
 

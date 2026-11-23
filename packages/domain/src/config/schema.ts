@@ -589,7 +589,7 @@ export const AgentApprovalsConfigSchema = z.object({
 export const AgentCreationConfigSchema = z.object({
   /** Token bucket capacity and refill per minute for create_child_agent attempts, per user across the whole tree. */
   agentCreateRatePerMinute: z.number().int().min(0).default(10),
-  /** Token bucket capacity and refill per minute for messages per creator-child pair, in either direction. */
+  /** Token bucket capacity and refill per minute for messages a creator sends to a child, per creator-child pair. */
   creatorMessageRatePerMinute: z.number().int().min(0).default(20),
   /** Max number of generations below a user-created agent. */
   maxAgentDepth: z.number().int().min(0).default(6),
