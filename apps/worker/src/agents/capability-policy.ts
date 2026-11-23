@@ -167,7 +167,7 @@ export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
     capability: 'send_message',
     tier: 'brokered',
     enabled: true,
-    limits: { maxPerMinute: 10, maxConcurrent: 5, timeoutMs: 10_000, maxResponseBytes: 4096 },
+    limits: { maxPerMinute: 20, maxConcurrent: 5, timeoutMs: 10_000, maxResponseBytes: 4096 },
   },
   {
     // manage_bot is OFF by default — only enabled for agents with the 'trading' skill preset

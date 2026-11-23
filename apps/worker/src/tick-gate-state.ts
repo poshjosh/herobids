@@ -61,16 +61,29 @@ export function extractPeerOrigin(message: Record<string, unknown>): { agentId: 
 }
 
 /**
+ * The reporting child of a child report, or null for any other user-message envelope. A child's send_message to its
+ * running parent is an `agent.user.message` whose payload carries `childReport` (set by the platform when it publishes).
+ */
+export function extractChildReportOrigin(message: Record<string, unknown>): { agentId: string; agentName: string } | null {
+  if (message['type'] !== AGENT_USER_MESSAGE_TYPE || message['initiatorType'] !== 'agent') return null;
+  const report = (message['payload'] as { childReport?: { childAgentId?: unknown; childName?: unknown } } | null | undefined)?.childReport;
+  if (typeof report?.childAgentId !== 'string' || typeof report.childName !== 'string') return null;
+  return { agentId: report.childAgentId, agentName: report.childName };
+}
+
+/**
  * The activity-timeline entry for a user-message envelope, or null when it has no text. A message written by another
- * agent becomes a `PEER` entry, so it is never shown, or counted as answered, as the user's.
+ * agent becomes a `PEER` entry, and a child's report a `CHILD_REPORT` entry, so neither is shown, or counted as answered,
+ * as the user's.
  */
 export function timelineEventForUserMessage(message: Record<string, unknown>, timestamp: number): ActivityTimelineEvent | null {
   const text = extractUserMessageText(message);
   if (text.length === 0) return null;
   const peer = extractPeerOrigin(message);
-  return peer
-    ? { kind: 'PEER', fromAgentId: peer.agentId, fromAgentName: peer.agentName, text, timestamp }
-    : { kind: 'USER', text, timestamp };
+  if (peer) return { kind: 'PEER', fromAgentId: peer.agentId, fromAgentName: peer.agentName, text, timestamp };
+  const child = extractChildReportOrigin(message);
+  if (child) return { kind: 'CHILD_REPORT', fromAgentId: child.agentId, fromAgentName: child.agentName, text, timestamp };
+  return { kind: 'USER', text, timestamp };
 }
 
 export interface BuildTickGateStateParams {

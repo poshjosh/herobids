@@ -84,8 +84,26 @@ describe('windowEntryFromConversationRow', () => {
     expect(windowEntryFromConversationRow(row({ senderType: 'agent', senderId: AGENT }), AGENT)?.kind).toBe('AGENT');
   });
 
-  it('maps a creator agent\'s row to a USER entry, as the live capture does', () => {
-    expect(windowEntryFromConversationRow(row({ senderType: 'agent', senderId: 'creator-1' }), AGENT)?.kind).toBe('USER');
+  it('maps the creator agent\'s row to a USER entry, as the live capture does', () => {
+    expect(windowEntryFromConversationRow(row({ senderType: 'agent', senderId: 'creator-1' }), AGENT, new Map(), 'creator-1')?.kind).toBe('USER');
+  });
+
+  it('maps a row from a child of this agent to a CHILD_REPORT entry named after the child, timed by createdAt', () => {
+    const senders = new Map([['child-1', { name: 'Scout' }]]);
+
+    expect(windowEntryFromConversationRow(row({ senderType: 'agent', senderId: 'child-1', createdAt: new Date(at(2)), queuedAt: new Date(at(9)) }), AGENT, senders, 'creator-1'))
+      .toEqual({ id: 'a3f9c1d2-0000-4000-8000-000000000001', kind: 'CHILD_REPORT', text: 'hello', timestamp: at(2), fromAgentId: 'child-1', fromAgentName: 'Scout' });
+  });
+
+  it('never maps an agent row from an unknown or deleted sender to USER', () => {
+    const entry = windowEntryFromConversationRow(row({ senderType: 'agent', senderId: 'deleted-1' }), AGENT, new Map(), 'creator-1');
+
+    expect(entry).toMatchObject({ kind: 'CHILD_REPORT', fromAgentId: 'deleted-1', fromAgentName: 'unknown agent', text: 'hello' });
+  });
+
+  it('never maps an unattributed agent row to USER', () => {
+    expect(windowEntryFromConversationRow(row({ senderType: 'agent', senderId: null }), AGENT, new Map(), 'creator-1'))
+      .toMatchObject({ kind: 'CHILD_REPORT', fromAgentName: 'unknown agent' });
   });
 
   it('skips rows that never reached their recipient: failed user messages too', () => {

@@ -32,6 +32,7 @@ import {
   PeerDropPayloadSchema,
   PeerSendPayloadSchema,
   isUserOnlySkill,
+  AGENT_STREAM_MAXLEN,
 } from '@herobids/domain';
 import type { ConversationService, NotificationClass, PeerMessagingService, PeerSendResult } from '@herobids/domain';
 import type { AgentRepository, ConnectionOwnershipRepository, Database } from '@herobids/db';
@@ -52,11 +53,12 @@ import type { ExternalBackendWriteBoundary } from '../external-backend/write-ada
 import type { ExternalBackendClientResult, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { createLogger } from '../logger.js';
 import { markThreadDelivery } from '../thread-delivery.js';
+import { AGENT_USER_MESSAGE_TYPE } from '../tick-gate-state.js';
 
 const logger = createLogger('agent-message-broker');
 
 /** Brokered send_message rate limit: max messages per agent per minute. */
-const SEND_MESSAGE_MAX_PER_MINUTE = 10;
+const SEND_MESSAGE_MAX_PER_MINUTE = 20;
 /** Max body length enforced server-side (matches domain schema). */
 const SEND_MESSAGE_MAX_BODY_LENGTH = 2000;
 
@@ -554,6 +556,19 @@ export class AgentMessageBroker {
     if (!this.conversations) {
       throw new Error('conversation_store_not_configured');
     }
+
+    // A child's message goes to its running parent as a child report. The owner's peer stop switch and peer limiter do
+    // not apply here (they belong to the peer path, which this does not call).
+    const parent = agent.parentAgentId ? await this.reachableParent(agent.userId, agent.parentAgentId) : null;
+    if (parent) {
+      // A reachable parent takes the report or the send fails. The owner gets no copy: the parent may already hold it.
+      await this.deliverChildReport(this.conversations, agent, parent, payload, body, messageClass);
+      return;
+    }
+    // A child whose parent is unreachable goes to the owner, labelled so the owner copy says the parent was unavailable.
+    const parentUnavailable = Boolean(agent.parentAgentId);
+    const ownerBody = parentUnavailable ? await this.parentUnavailableBody(agent, body) : body;
+
     const recorded = await this.conversations.recordAgentMessage({
       // The worker's id, so the stored row matches the Conversation window; a broker redelivery reuses the row.
       ...(payload.messageId ? { id: payload.messageId } : {}),
@@ -561,7 +576,7 @@ export class AgentMessageBroker {
       agentId: agent.id,
       channel: 'web',
       subject: payload.subject,
-      body,
+      body: ownerBody,
       messageClass,
     });
     if (!recorded.ok) {
@@ -575,7 +590,7 @@ export class AgentMessageBroker {
       ? await this.chatDelivery.send(agent.id, {
         agentName: agent.name,
         subject: payload.subject,
-        body,
+        body: ownerBody,
         messageClass,
         replyRequested,
       })
@@ -587,15 +602,106 @@ export class AgentMessageBroker {
       if (result.error.code === 'chat.address_lookup_failed') {
         throw new Error(result.error.message);
       }
-      logger.warn({ agentId: agent.id, error: result.error }, 'send_message chat delivery failed');
+      logger.warn({ agentId: agent.id, error: result.error, parentUnavailable }, 'send_message chat delivery failed');
     } else {
-      logger.info({ agentId: agent.id, msgId }, 'Agent send_message delivered via chat');
+      logger.info({ agentId: agent.id, msgId, parentUnavailable }, 'Agent send_message delivered via chat');
     }
 
     await this.notifyAgentMessage(agent, msgId, replyRequested ? 'agent.question' : 'agent.reply');
 
     // Email fanout from send_message has been removed (Item 5).
     // Agents should use the dedicated send_email tool for email delivery.
+  }
+
+  /** The parent agent when it is running, owned by the same user, and can take a child report; null when it is not. */
+  private async reachableParent(ownerUserId: string, parentAgentId: string): Promise<{ id: string; userId: string } | null> {
+    const parent = await this.agentRepo.getAgent(parentAgentId);
+    if (!parent || parent.userId !== ownerUserId || parent.status !== 'active' || parent.lastStartRefusal) return null;
+    const session = await this.agentRepo.getActiveSession(parent.id);
+    return session?.status === 'running' ? parent : null;
+  }
+
+  /**
+   * The owner copy of a child message whose parent is unavailable. The parent is named only when it belongs to the same
+   * owner, so another user's agent name never reaches this owner.
+   */
+  private async parentUnavailableBody(agent: { name: string; userId: string; parentAgentId: string | null }, body: string): Promise<string> {
+    const parent = agent.parentAgentId ? await this.agentRepo.getAgent(agent.parentAgentId) : null;
+    const parentName = parent && parent.userId === agent.userId ? parent.name : null;
+    const who = parentName ? `Child agent "${agent.name}" of "${parentName}"` : `Child agent "${agent.name}"`;
+    return `${who} (parent unavailable): ${body}`;
+  }
+
+  /**
+   * Records a child report in the parent's conversation (sender `agent`), then publishes it to the parent's inbound
+   * stream as an `agent.user.message` with a `childReport` marker. The payload has no `peer`, so the peer gate does not
+   * treat the report as peer traffic. Throws when the report is not recorded or not published; the caller has already
+   * found the parent reachable and does not fall back to the owner.
+   */
+  private async deliverChildReport(
+    conversations: Pick<ConversationService, 'recordAgentMessage' | 'markDelivery'>,
+    child: { id: string; name: string },
+    parent: { id: string; userId: string },
+    payload: SendMessagePayload,
+    body: string,
+    messageClass: string,
+  ): Promise<void> {
+    const recorded = await conversations.recordAgentMessage({
+      ...(payload.messageId ? { id: payload.messageId } : {}),
+      ownerUserId: parent.userId,
+      agentId: parent.id,
+      senderAgentId: child.id,
+      channel: 'web',
+      subject: payload.subject,
+      body,
+      messageClass,
+    });
+    if (!recorded.ok) {
+      throw new Error(`conversation_record_failed:${recorded.error.code}`);
+    }
+    const msgId = recorded.data.message.id;
+
+    try {
+      await this.redis.xadd(
+        `agent:outbound:${parent.id}`,
+        'MAXLEN', '~', AGENT_STREAM_MAXLEN,
+        '*',
+        'envelope',
+        JSON.stringify({
+          schemaVersion: 'v1',
+          messageId: msgId,
+          correlationId: randomUUID(),
+          initiatorType: 'agent',
+          initiatorId: child.id,
+          agentId: parent.id,
+          type: AGENT_USER_MESSAGE_TYPE,
+          createdAt: new Date().toISOString(),
+          queuedAt: recorded.data.message.createdAt.toISOString(),
+          payload: {
+            message: body,
+            subject: payload.subject,
+            messageClass,
+            childReport: { childAgentId: child.id, childName: child.name },
+          },
+        }),
+      );
+    } catch (error) {
+      // A throwing XADD may still have been accepted, so the status can read failed even if the parent got the report.
+      // No owner copy is written, to avoid a duplicate.
+      logger.warn({ err: error, agentId: child.id, parentAgentId: parent.id, msgId }, 'Child report publish failed');
+      try {
+        await conversations.markDelivery({ messageId: msgId, status: 'failed', detail: 'publish_failed' });
+      } catch (markError) {
+        logger.warn({ err: markError, msgId }, 'Child report publish failure not recorded');
+      }
+      throw new Error('child_report_publish_failed');
+    }
+    try {
+      await conversations.markDelivery({ messageId: msgId, status: 'sent' });
+    } catch (error) {
+      logger.warn({ err: error, msgId }, 'Child report sent but delivery status not recorded');
+    }
+    logger.info({ agentId: child.id, parentAgentId: parent.id, msgId }, 'Agent send_message routed to parent as child report');
   }
 
   /**

@@ -590,7 +590,7 @@ export const AgentCreationConfigSchema = z.object({
   /** Token bucket capacity and refill per minute for create_child_agent attempts, per user across the whole tree. */
   agentCreateRatePerMinute: z.number().int().min(0).default(10),
   /** Token bucket capacity and refill per minute for messages per creator-child pair, in either direction. */
-  creatorMessageRatePerMinute: z.number().int().min(0).default(10),
+  creatorMessageRatePerMinute: z.number().int().min(0).default(20),
   /** Max number of generations below a user-created agent. */
   maxAgentDepth: z.number().int().min(0).default(6),
   /** Seconds in which a retried create with the same name, under the same parent, returns the existing child. 0 disables the check. */
@@ -1514,7 +1514,7 @@ export const AgentRuntimeConfigSchema = z.object({
   /** Agent-to-agent messaging (A2A MVP, DEC-42). One limit only: a per-user rate limit. */
   peer: z.object({
     /** Peer messages one user's agents may send in any rolling one-minute window. Over the limit, a send is refused and recorded as refused. */
-    rateLimitPerMinute: z.number().int().min(1).default(10),
+    rateLimitPerMinute: z.number().int().min(1).default(20),
     /** Longest peer message body, in characters. Cannot exceed the protocol's safety cap. */
     messageMaxChars: z.number().int().min(1).max(PEER_MESSAGE_SAFETY_MAX_CHARS).default(4000),
     /**

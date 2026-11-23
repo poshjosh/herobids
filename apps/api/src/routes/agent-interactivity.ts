@@ -433,7 +433,7 @@ export async function agentInteractivityRoutes(
   });
 
   // POST /agents/:id/message — deliver a message to a running agent.
-  // A user is rate-limited to 10/min across their agents. A creator agent key may message a direct child,
+  // A user is rate-limited to 20/min across their agents. A creator agent key may message a direct child,
   // limited per creator-child pair (creatorMessageRatePerMinute, 001-agent-creating-agents §7).
   app.post<{ Params: { id: string }; Body: unknown }>('/agents/:id/message', {
     config: { agentAccess: 'creator' },
@@ -502,12 +502,12 @@ export async function agentInteractivityRoutes(
     }
 
     if (actingAgentId === null) {
-      // Rate limit: 10 new publishes per user per minute
+      // Rate limit: 20 new publishes per user per minute
       const rateLimitKey = `ratelimit:agent:message:${request.userId}`;
       const count = await redisClient.incr(rateLimitKey);
       if (count === 1) await redisClient.expire(rateLimitKey, 60);
-      if (count > 10) {
-        return reply.status(429).send({ error: 'rate_limited', message: 'Maximum 10 messages per minute' });
+      if (count > 20) {
+        return reply.status(429).send({ error: 'rate_limited', message: 'Maximum 20 messages per minute' });
       }
     }
 

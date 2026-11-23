@@ -8,9 +8,12 @@ import { parseDocumentNoticeText } from '@herobids/documents/agent-document-noti
 export interface ConversationWindowEntry {
   /** The message id: a full UUID, or the 8-hex short form when the reply came from the send_message tool result. */
   id: string;
-  kind: 'USER' | 'AGENT';
+  kind: 'USER' | 'AGENT' | 'CHILD_REPORT';
   text: string;
   timestamp: number;
+  /** The reporting agent's id and name, on a CHILD_REPORT entry. */
+  fromAgentId?: string;
+  fromAgentName?: string;
 }
 
 /**
@@ -55,7 +58,7 @@ export function truncateHeadTail(text: string, maxChars: number): { text: string
 /** Hard cap on the window, as a multiple of `maxMessages`: unanswered messages are only dropped beyond this. */
 const UNANSWERED_CAP_MULTIPLIER = 3;
 
-/** A USER entry the agent has not yet answered (newer than the answered marker). AGENT entries are never awaiting. */
+/** A USER entry the agent has not yet answered (newer than the answered marker). AGENT and CHILD_REPORT entries are never awaiting. */
 export function isAwaitingEntry(entry: ConversationWindowEntry, answeredUpToTs: number | null): boolean {
   return entry.kind === 'USER' && (answeredUpToTs === null || entry.timestamp > answeredUpToTs);
 }
@@ -95,23 +98,44 @@ export function trimConversationWindow(
   return { entries: kept, evicted };
 }
 
+/** The names of the agents that sent into a thread. An agent that is missing here (deleted, unknown) has no name. */
+export type ThreadSenders = ReadonlyMap<string, { name: string }>;
+
+/** The name a report is shown under when its sender cannot be resolved. */
+export const UNKNOWN_AGENT_NAME = 'unknown agent';
+
 /**
- * The window entry for a stored conversation row, as the live capture would have made it. A creator agent's message
- * is a USER entry (the live path has no peer tag for it), the agent's own messages are AGENT entries, and platform
- * rows and the agent's failed or refused messages are skipped.
+ * The window entry for a stored conversation row, as the live capture would have made it. The creator agent's message
+ * is a USER entry (message_child_agent is the authority), the agent's own messages are AGENT entries, and platform rows
+ * and the agent's failed or refused messages are skipped. Every other agent-sent row is a CHILD_REPORT entry, named from
+ * `senders` or as an unknown agent, so no agent's text is ever presented as the user's.
  */
 export function windowEntryFromConversationRow(
   row: Pick<ConversationMessage, 'id' | 'senderType' | 'senderId' | 'body' | 'createdAt' | 'queuedAt' | 'deliveryStatus'>,
   agentId: string,
+  senders: ThreadSenders = new Map(),
+  creatorAgentId: string | null = null,
 ): ConversationWindowEntry | null {
   // Platform rows, and any row that never reached its recipient (failed, or refused by the peer switch), are not history.
   if (row.senderType === 'platform' || row.deliveryStatus === 'failed' || row.deliveryStatus === 'refused') return null;
   if (row.senderType === 'agent' && row.senderId === agentId) {
     return { id: row.id, kind: 'AGENT', text: row.body, timestamp: row.createdAt.getTime() };
   }
+  if (row.senderType === 'agent' && (row.senderId === null || row.senderId !== creatorAgentId)) {
+    const fromAgentName = row.senderId === null ? undefined : senders.get(row.senderId)?.name;
+    return {
+      id: row.id,
+      kind: 'CHILD_REPORT',
+      text: row.body,
+      timestamp: row.createdAt.getTime(),
+      fromAgentId: row.senderId ?? undefined,
+      fromAgentName: fromAgentName ?? UNKNOWN_AGENT_NAME,
+    };
+  }
   // A user message is timed by when it became deliverable, the same value its envelope carries to live capture.
   return { id: row.id, kind: 'USER', text: row.body, timestamp: row.queuedAt.getTime() };
 }
+
 
 /** The `queuedAt` a user-message envelope carries (ms), or null when it has none or it is not a date. */
 export function userMessageQueuedAt(message: Record<string, unknown>): number | null {

@@ -1954,13 +1954,13 @@ describe('AppConfigSchema — agentCreation', () => {
     },
   };
 
-  it('defaults the agent-creation limits to 10 / 10 / 6 with a 300 s duplicate window when the block is absent', () => {
+  it('defaults the agent-creation limits to 10 / 20 / 6 with a 300 s duplicate window when the block is absent', () => {
     const result = AppConfigSchema.safeParse(minimalAppConfig);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.agentCreation).toEqual({
         agentCreateRatePerMinute: 10,
-        creatorMessageRatePerMinute: 10,
+        creatorMessageRatePerMinute: 20,
         maxAgentDepth: 6,
         duplicateChildWindowSeconds: 300,
         platformApiTimeoutMs: 10000,

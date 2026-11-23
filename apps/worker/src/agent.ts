@@ -1557,8 +1557,20 @@ async function hydrateConversationWindow(): Promise<void> {
     }
     const hasEarlierMessages = page.data.length > maxMessages;
     const visibleRows = hasEarlierMessages ? page.data.slice(1) : page.data;
+    // The names of the agents that sent into this thread, and the creator whose messages stay USER. Without the creator
+    // id every agent row would look like a report, so a failed self lookup leaves creatorAgentId null.
+    const senders = new Map<string, { name: string }>();
+    let creatorAgentId: string | null = null;
+    if (agentRepo) {
+      creatorAgentId = (await agentRepo.getAgent(AGENT_ID!))?.parentAgentId ?? null;
+      const senderIds = new Set(visibleRows.flatMap((row) => (row.senderType === 'agent' && row.senderId && row.senderId !== AGENT_ID ? [row.senderId] : [])));
+      for (const senderId of senderIds) {
+        const sender = await agentRepo.getAgent(senderId);
+        if (sender) senders.set(senderId, { name: sender.name });
+      }
+    }
     runtimeState.metrics.conversationWindow = visibleRows.flatMap((row) => {
-      const entry = windowEntryFromConversationRow(row, AGENT_ID!);
+      const entry = windowEntryFromConversationRow(row, AGENT_ID!, senders, creatorAgentId);
       return entry ? [entry] : [];
     });
     runtimeState.metrics.hasEarlierMessages = hasEarlierMessages;
@@ -3039,8 +3051,9 @@ async function runActiveTick(): Promise<void> {
     }
 
     // The user.message envelope carries its text at payload.message (not a top-level `content`); empty messages are skipped.
-    // A user's message goes to the Conversation window. A message written by another agent is a PEER entry, which stays
-    // in the activity timeline, so it is never shown, or counted as answered, as the user's.
+    // A user's message goes to the Conversation window, and so does a child's report, under the same stored id a hydrated
+    // copy carries, so the two never appear twice. A message written by a peer agent is a PEER entry, which stays in the
+    // activity timeline, so it is never shown, or counted as answered, as the user's.
     if (agentRuntimePolicy.promptStyle === 'enriched') {
       const maxEvents = agentRuntimePolicy.promptEnrichment.activityTimeline.maxEvents;
       for (const message of incomingMessages) {
@@ -3049,8 +3062,17 @@ async function runActiveTick(): Promise<void> {
         if (!event) continue;
         if (event.kind === 'USER' && conversationWindowEnabled()) {
           appendConversationEntry({ id: userMessageWindowId(message), kind: 'USER', text: event.text, timestamp: userMessageCaptureTime(message) });
+        } else if (event.kind === 'CHILD_REPORT' && conversationWindowEnabled()) {
+          appendConversationEntry({
+            id: userMessageWindowId(message),
+            kind: 'CHILD_REPORT',
+            text: event.text,
+            timestamp: userMessageCaptureTime(message),
+            fromAgentId: event.fromAgentId,
+            fromAgentName: event.fromAgentName,
+          });
         } else if (agentRuntimePolicy.promptEnrichment.activityTimeline.enabled) {
-          // PEER always lands here. A USER message lands here only when the window is off, so it still reaches the prompt.
+          // PEER always lands here. A USER or CHILD_REPORT message lands here only when the window is off, so it still reaches the prompt.
           runtimeState.metrics.activityTimeline.push(event);
         }
       }

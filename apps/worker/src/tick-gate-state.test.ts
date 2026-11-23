@@ -487,6 +487,16 @@ describe('timelineEventForUserMessage', () => {
     expect(timelineEventForUserMessage({ type: 'agent.user.message', initiatorType: 'agent', payload: { message: 'do it' } }, 5)).toMatchObject({ kind: 'USER' });
   });
 
+  it('records a child report as CHILD_REPORT with the child name, not as USER', () => {
+    const event = timelineEventForUserMessage({
+      type: 'agent.user.message',
+      initiatorType: 'agent',
+      payload: { message: 'Order filled', subject: 'fill', messageClass: 'routine', childReport: { childAgentId: 'child-1', childName: 'Scout' } },
+    }, 5);
+
+    expect(event).toEqual({ kind: 'CHILD_REPORT', fromAgentId: 'child-1', fromAgentName: 'Scout', text: 'Order filled', timestamp: 5 });
+  });
+
   it('skips a message with no text', () => {
     expect(timelineEventForUserMessage({ type: 'user.message', payload: { message: '  ' } }, 5)).toBeNull();
   });

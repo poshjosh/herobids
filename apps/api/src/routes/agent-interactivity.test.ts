@@ -972,7 +972,7 @@ describe('POST /agents/:id/message', () => {
   });
 
   it('returns 429 when rate limit exceeded', async () => {
-    const { app, conversations } = await buildMessageApp({ redis: buildMockRedis({ incr: vi.fn().mockResolvedValue(11) }) });
+    const { app, conversations } = await buildMessageApp({ redis: buildMockRedis({ incr: vi.fn().mockResolvedValue(21) }) });
 
     const res = await app.inject({
       method: 'POST',

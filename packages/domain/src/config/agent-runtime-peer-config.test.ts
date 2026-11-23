@@ -31,10 +31,10 @@ function parseWithPeer(peer?: Record<string, unknown>) {
   }).agentRuntime.peer;
 }
 
-const DEFAULT_PEER = { rateLimitPerMinute: 10, messageMaxChars: 4000, switchCacheMs: 2000, switchReadRetries: 2, switchRetryBackoffMs: 250 };
+const DEFAULT_PEER = { rateLimitPerMinute: 20, messageMaxChars: 4000, switchCacheMs: 2000, switchReadRetries: 2, switchRetryBackoffMs: 250 };
 
 describe('agentRuntime.peer schema (DEC-42)', () => {
-  it('defaults to 10 peer messages per minute, a 4000 character message and a 2 s switch cache with 2 retries', () => {
+  it('defaults to 20 peer messages per minute, a 4000 character message and a 2 s switch cache with 2 retries', () => {
     expect(parseWithPeer()).toEqual(DEFAULT_PEER);
   });
 

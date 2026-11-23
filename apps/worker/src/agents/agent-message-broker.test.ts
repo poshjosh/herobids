@@ -850,18 +850,29 @@ function makeNotifier(options: {
   return { dispatcher, notify, listActiveForUser };
 }
 
-function makeConversations(recorded: unknown = { ok: true, data: { message: { id: 'out-1' }, created: true } }) {
+function makeConversations(recorded: unknown = { ok: true, data: { message: { id: 'out-1', createdAt: new Date(0) }, created: true } }) {
   return {
     recordAgentMessage: vi.fn(async (_input: unknown) => recorded),
     markDelivery: vi.fn(async (_input: unknown) => ({ ok: true, data: {} })),
   };
 }
 
-function makeSendBroker(options: { chatOk: boolean; chatErrorCode?: string; notifications?: AgentMessageNotifier; conversations?: ReturnType<typeof makeConversations> | null }) {
+function makeSendBroker(options: {
+  chatOk: boolean;
+  chatErrorCode?: string;
+  notifications?: AgentMessageNotifier;
+  conversations?: ReturnType<typeof makeConversations> | null;
+  agents?: Record<string, object>;
+  runningAgentIds?: string[];
+  redis?: { xadd: ReturnType<typeof vi.fn> };
+  peerMessaging?: { send: ReturnType<typeof vi.fn>; recordDropped: ReturnType<typeof vi.fn> };
+}) {
   const conversations = options.conversations === null ? undefined : options.conversations ?? makeConversations();
+  const redis = options.redis ?? { xadd: vi.fn(async () => '1-0') };
   const agentRepo = makeAgentRepo({
-    getAgent: vi.fn().mockResolvedValue(SENDING_AGENT),
-    getActiveSession: vi.fn().mockResolvedValue({ id: 'session-1', status: 'running' }),
+    getAgent: vi.fn(async (id: string) => (options.agents ? options.agents[id] ?? null : SENDING_AGENT)),
+    getActiveSession: vi.fn(async (id: string) =>
+      !options.runningAgentIds || options.runningAgentIds.includes(id) ? { id: 'session-1', status: 'running' } : null),
   });
   const delivery = new ChatDelivery(
     { getEffectiveChatAddress: vi.fn(), isChatAddressSuppressed: vi.fn() },
@@ -873,7 +884,7 @@ function makeSendBroker(options: { chatOk: boolean; chatErrorCode?: string; noti
     : { ok: false, error: { code: options.chatErrorCode ?? 'chat.no_address', message: 'no_chat_address' } };
   const chatSend = vi.spyOn(delivery, 'send').mockImplementation(vi.fn().mockResolvedValue(chatResult));
   const broker = new AgentMessageBroker(
-    makeRedis(),
+    redis as unknown as Redis,
     agentRepo,
     makeDecisionHandler(),
     makeSessionManager(),
@@ -883,9 +894,236 @@ function makeSendBroker(options: { chatOk: boolean; chatErrorCode?: string; noti
     undefined, undefined, undefined, undefined, undefined, undefined,
     options.notifications,
     conversations as never,
+    options.peerMessaging as never,
   );
-  return { broker, agentRepo, chatSend, conversations };
+  return { broker, agentRepo, chatSend, conversations, redis };
 }
+
+describe('AgentMessageBroker — child reports', () => {
+  const CHILD = { id: 'agent-1', name: 'Research Bot', userId: 'user-1', toolPolicy: null, parentAgentId: 'parent-1', status: 'active', lastStartRefusal: null };
+  const PARENT = { id: 'parent-1', name: 'Parent Bot', userId: 'user-1', toolPolicy: null, parentAgentId: null, status: 'active', lastStartRefusal: null };
+
+  function publishedEnvelope(redis: { xadd: ReturnType<typeof vi.fn> }) {
+    const call = redis.xadd.mock.calls[0];
+    return { key: call[0] as string, envelope: JSON.parse(call.at(-1) as string) };
+  }
+
+  it('routes a child message to a running parent as a child report, not to the owner', async () => {
+    const { broker, conversations, chatSend, redis } = makeSendBroker({
+      chatOk: true,
+      agents: { 'agent-1': CHILD, 'parent-1': PARENT },
+      runningAgentIds: ['agent-1', 'parent-1'],
+      redis: { xadd: vi.fn(async () => '1-0') },
+    });
+
+    const result = await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(result.accepted).toBe(true);
+    expect(conversations.recordAgentMessage).toHaveBeenCalledTimes(1);
+    expect(conversations.recordAgentMessage).toHaveBeenCalledWith(expect.objectContaining({
+      ownerUserId: 'user-1',
+      agentId: 'parent-1',
+      senderAgentId: 'agent-1',
+      channel: 'web',
+    }));
+    expect(chatSend).not.toHaveBeenCalled();
+    const { key, envelope } = publishedEnvelope(redis);
+    expect(key).toBe('agent:outbound:parent-1');
+    expect(envelope).toEqual(expect.objectContaining({ type: 'agent.user.message', initiatorId: 'agent-1', agentId: 'parent-1', messageId: 'out-1' }));
+    expect(envelope.payload).toEqual({ message: 'Hello from agent', messageClass: 'routine', childReport: { childAgentId: 'agent-1', childName: 'Research Bot' } });
+    expect(conversations.markDelivery).toHaveBeenCalledWith({ messageId: 'out-1', status: 'sent' });
+  });
+
+  it('does not hold a child report behind the owner peer stop switch or peer limiter', async () => {
+    const peerMessaging = {
+      send: vi.fn(async () => ({ ok: false, error: { code: 'peer.paused', message: 'paused' } })),
+      recordDropped: vi.fn(),
+    };
+    const { broker, redis } = makeSendBroker({
+      chatOk: true,
+      agents: { 'agent-1': CHILD, 'parent-1': PARENT },
+      runningAgentIds: ['agent-1', 'parent-1'],
+      redis: { xadd: vi.fn(async () => '1-0') },
+      peerMessaging,
+    });
+
+    const result = await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(result.accepted).toBe(true);
+    expect(peerMessaging.send).not.toHaveBeenCalled();
+    expect(publishedEnvelope(redis).envelope.payload).toHaveProperty('childReport');
+  });
+
+  it.each(['stopped', 'paused', 'crashed'])('falls back to the owner when the parent is %s', async (parentStatus) => {
+    const { broker, conversations, chatSend, redis } = makeSendBroker({
+      chatOk: true,
+      agents: { 'agent-1': CHILD, 'parent-1': { ...PARENT, status: parentStatus } },
+      runningAgentIds: ['agent-1'],
+      redis: { xadd: vi.fn(async () => '1-0') },
+    });
+
+    const result = await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(result.accepted).toBe(true);
+    expect(redis.xadd).not.toHaveBeenCalled();
+    const label = 'Child agent "Research Bot" of "Parent Bot" (parent unavailable): Hello from agent';
+    expect(conversations.recordAgentMessage).toHaveBeenCalledWith(expect.objectContaining({ ownerUserId: 'user-1', agentId: 'agent-1', channel: 'web', body: label }));
+    expect(chatSend).toHaveBeenCalledWith('agent-1', expect.objectContaining({ body: label }));
+  });
+
+  it('falls back to the owner when the parent is active but has no running session', async () => {
+    const { broker, conversations, redis } = makeSendBroker({
+      chatOk: true,
+      agents: { 'agent-1': CHILD, 'parent-1': PARENT },
+      runningAgentIds: ['agent-1'],
+      redis: { xadd: vi.fn(async () => '1-0') },
+    });
+
+    const result = await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(result.accepted).toBe(true);
+    expect(conversations.recordAgentMessage).toHaveBeenCalledWith(expect.objectContaining({ ownerUserId: 'user-1', agentId: 'agent-1' }));
+    expect(redis.xadd).not.toHaveBeenCalled();
+  });
+
+  it('keeps a top-level agent on the owner path', async () => {
+    const { broker, conversations, redis } = makeSendBroker({ chatOk: true, redis: { xadd: vi.fn(async () => '1-0') } });
+
+    const result = await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(result.accepted).toBe(true);
+    expect(conversations.recordAgentMessage).toHaveBeenCalledWith(expect.objectContaining({ ownerUserId: 'user-1', agentId: 'agent-1' }));
+    expect(redis.xadd).not.toHaveBeenCalled();
+  });
+
+  it('counts child sends against the per-agent limit of 20 per minute', async () => {
+    const { broker } = makeSendBroker({
+      chatOk: true,
+      agents: { 'agent-1': CHILD, 'parent-1': PARENT },
+      runningAgentIds: ['agent-1', 'parent-1'],
+      redis: { xadd: vi.fn(async () => '1-0') },
+    });
+
+    const results = [];
+    for (let i = 0; i < 21; i++) {
+      results.push(await broker.processInbound(makeSendMessageEnvelope({ messageId: `msg-${i}` })));
+    }
+
+    expect(results.slice(0, 20).every((r) => r.accepted)).toBe(true);
+    expect(results[20].accepted).toBe(false);
+  });
+
+  it('carries the subject and message class in the child report envelope', async () => {
+    const { broker, redis } = makeSendBroker({
+      chatOk: true,
+      agents: { 'agent-1': CHILD, 'parent-1': PARENT },
+      runningAgentIds: ['agent-1', 'parent-1'],
+      redis: { xadd: vi.fn(async () => '1-0') },
+    });
+
+    await broker.processInbound(makeSendMessageEnvelope({ payload: { body: 'Done', subject: 'Scan complete', messageClass: 'alert' } }));
+
+    expect(publishedEnvelope(redis).envelope.payload).toEqual({
+      message: 'Done',
+      subject: 'Scan complete',
+      messageClass: 'alert',
+      childReport: { childAgentId: 'agent-1', childName: 'Research Bot' },
+    });
+  });
+
+  it('does not route to a parent owned by another user', async () => {
+    const { broker, conversations, redis } = makeSendBroker({
+      chatOk: true,
+      agents: { 'agent-1': CHILD, 'parent-1': { ...PARENT, userId: 'user-2' } },
+      runningAgentIds: ['agent-1', 'parent-1'],
+      redis: { xadd: vi.fn(async () => '1-0') },
+    });
+
+    const result = await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(result.accepted).toBe(true);
+    expect(redis.xadd).not.toHaveBeenCalled();
+    expect(conversations.recordAgentMessage).toHaveBeenCalledTimes(1);
+    expect(conversations.recordAgentMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ ownerUserId: 'user-1', agentId: 'agent-1', body: 'Child agent "Research Bot" (parent unavailable): Hello from agent' }),
+    );
+  });
+
+  it('falls back to the owner when the parent has a start refusal', async () => {
+    const { broker, conversations, redis } = makeSendBroker({
+      chatOk: true,
+      agents: { 'agent-1': CHILD, 'parent-1': { ...PARENT, lastStartRefusal: { reason: 'budget' } } },
+      runningAgentIds: ['agent-1', 'parent-1'],
+      redis: { xadd: vi.fn(async () => '1-0') },
+    });
+
+    const result = await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(result.accepted).toBe(true);
+    expect(redis.xadd).not.toHaveBeenCalled();
+    expect(conversations.recordAgentMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ ownerUserId: 'user-1', agentId: 'agent-1', body: 'Child agent "Research Bot" of "Parent Bot" (parent unavailable): Hello from agent' }),
+    );
+  });
+
+  it('does not copy a reachable parent failure to the owner when publishing to the parent throws', async () => {
+    const CHILD_MSG_ID = '6f1c2a3e-8b7d-4c9e-9a1f-2b3c4d5e6f70';
+    const { broker, conversations, chatSend, redis } = makeSendBroker({
+      chatOk: true,
+      agents: { 'agent-1': CHILD, 'parent-1': PARENT },
+      runningAgentIds: ['agent-1', 'parent-1'],
+      redis: { xadd: vi.fn(async () => { throw new Error('redis down'); }) },
+    });
+
+    const result = await broker.processInbound(makeSendMessageEnvelope({ payload: { body: 'Hello from agent', messageId: CHILD_MSG_ID } }));
+
+    expect(result).toEqual(expect.objectContaining({ accepted: false, error: 'child_report_publish_failed' }));
+    expect(redis.xadd).toHaveBeenCalledTimes(1);
+    expect(conversations.markDelivery).toHaveBeenCalledWith({ messageId: 'out-1', status: 'failed', detail: 'publish_failed' });
+    expect(conversations.recordAgentMessage).toHaveBeenCalledTimes(1);
+    expect(conversations.recordAgentMessage).toHaveBeenCalledWith(expect.objectContaining({ id: CHILD_MSG_ID, agentId: 'parent-1' }));
+    expect(conversations.recordAgentMessage).not.toHaveBeenCalledWith(expect.objectContaining({ ownerUserId: 'user-1', agentId: 'agent-1' }));
+    expect(chatSend).not.toHaveBeenCalled();
+  });
+
+  it('does not copy a reachable parent failure to the owner when recording the failed publish status also throws', async () => {
+    const CHILD_MSG_ID = '6f1c2a3e-8b7d-4c9e-9a1f-2b3c4d5e6f70';
+    const conversations = makeConversations();
+    conversations.markDelivery.mockRejectedValueOnce(new Error('db down'));
+    const { broker, chatSend, redis } = makeSendBroker({
+      chatOk: true,
+      agents: { 'agent-1': CHILD, 'parent-1': PARENT },
+      runningAgentIds: ['agent-1', 'parent-1'],
+      conversations,
+      redis: { xadd: vi.fn(async () => { throw new Error('redis down'); }) },
+    });
+
+    const result = await broker.processInbound(makeSendMessageEnvelope({ payload: { body: 'Hello from agent', messageId: CHILD_MSG_ID } }));
+
+    expect(result).toEqual(expect.objectContaining({ accepted: false, error: 'child_report_publish_failed' }));
+    expect(redis.xadd).toHaveBeenCalledTimes(1);
+    expect(conversations.recordAgentMessage).toHaveBeenCalledTimes(1);
+    expect(conversations.recordAgentMessage).not.toHaveBeenCalledWith(expect.objectContaining({ ownerUserId: 'user-1', agentId: 'agent-1' }));
+    expect(chatSend).not.toHaveBeenCalled();
+  });
+
+  it('still reports the send as delivered when recording the sent status fails', async () => {
+    const conversations = makeConversations();
+    conversations.markDelivery.mockRejectedValueOnce(new Error('db down'));
+    const { broker, redis } = makeSendBroker({
+      chatOk: true,
+      agents: { 'agent-1': CHILD, 'parent-1': PARENT },
+      runningAgentIds: ['agent-1', 'parent-1'],
+      conversations,
+      redis: { xadd: vi.fn(async () => '1-0') },
+    });
+
+    const result = await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(result.accepted).toBe(true);
+    expect(redis.xadd).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('AgentMessageBroker — send_message push notifications', () => {
   it('sends one push per active subscription and keeps the Telegram send unchanged', async () => {

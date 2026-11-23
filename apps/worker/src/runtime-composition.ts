@@ -6,7 +6,7 @@ import type { PromptTimingContext } from './prompt-timing-context.js';
 import { formatPromptTimingContextLines, formatInterval } from './prompt-timing-context.js';
 import type { HybridPricingIdentity, PositionIndicatorUpdate, SwapExecutionIdentity, SymbolFetchOutcome, WatchInstrumentIdentity, WatchPurpose, WatchCoverageLink } from '@poshjosh/contracts';
 import type { CoverageEvaluationResult } from './position-coverage.js';
-import { isAwaitingEntry, truncateHeadTail, type ConversationWindowEntry } from './conversation-window.js';
+import { isAwaitingEntry, truncateHeadTail, UNKNOWN_AGENT_NAME, type ConversationWindowEntry } from './conversation-window.js';
 import { parseDocumentNoticeText } from '@herobids/documents/agent-document-notice';
 import { isUserMessageType } from './tick-gate-state.js';
 import { fmtUsd } from './fmt.js';
@@ -458,6 +458,8 @@ export type ActivityTimelineEvent =
   | { kind: 'USER'; text: string; timestamp: number }
   /** A message written by another agent of the same user (A2A MVP). Never counted as the user's. */
   | { kind: 'PEER'; fromAgentId: string; fromAgentName: string; text: string; timestamp: number }
+  /** A child agent's report to its running parent (send_message). Attributed to the child, never shown as the user's. */
+  | { kind: 'CHILD_REPORT'; fromAgentId: string; fromAgentName: string; text: string; timestamp: number }
   /** A memory write. Only the key is shown in the prompt; the agent reads the value from its memory. */
   | { kind: 'MEMORY'; action: 'set' | 'delete'; key: string; timestamp: number }
   | { kind: 'DECISION'; text: string; timestamp: number };
@@ -1362,6 +1364,7 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
         const ts = new Date(e.timestamp).toISOString().substring(11, 16); // HH:MM
         if (e.kind === 'USER') return `${ts} [USER] ${e.text}`;
         if (e.kind === 'PEER') return formatPeerLine(e);
+        if (e.kind === 'CHILD_REPORT') return `${ts} [CHILD REPORT ${jsonQuoteSingleLine(e.fromAgentName)} id=${e.fromAgentId}] ${jsonQuoteSingleLine(e.text)}`;
         if (e.kind === 'MEMORY') return `${ts} [MEMORY] ${e.action} ${e.key}`;
         /* DECISION */ return `${ts} [DECISION] ${e.text}`;
       });
@@ -2661,12 +2664,20 @@ export function renderSkillPromptBlock(
 }
 
 /**
+ * JSON-quotes a value for one prompt line. JSON.stringify leaves U+0085, U+2028 and U+2029 raw, and the prompt splitter
+ * treats them as line breaks, so they are escaped here.
+ */
+function jsonQuoteSingleLine(value: string): string {
+  return JSON.stringify(value).replace(/[\u0085\u2028\u2029]/g, (ch) => `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`);
+}
+
+/**
  * One line for a message from another agent. The name and text are JSON-quoted, so a newline or a bracket in them
  * cannot start a fake `[USER]` line: the text stays one quoted value.
  */
 function formatPeerLine(event: Extract<ActivityTimelineEvent, { kind: 'PEER' }>): string {
   const ts = new Date(event.timestamp).toISOString().substring(11, 16); // HH:MM
-  return `${ts} [PEER ${JSON.stringify(event.fromAgentName)} id=${event.fromAgentId}] ${JSON.stringify(event.text)}`;
+  return `${ts} [PEER ${jsonQuoteSingleLine(event.fromAgentName)} id=${event.fromAgentId}] ${jsonQuoteSingleLine(event.text)}`;
 }
 
 export function buildSystemPrompt(state: RuntimeCompositionState, timing: PromptTimingContext, _toolGuidanceByName?: Record<string, string>, policy?: PromptEnrichmentPolicy): string {
@@ -2756,7 +2767,8 @@ function formatConversationEntry(
   // Every line break a model or a parser could treat as a line end, so a body cannot start a header.
   const [firstLine = '', ...restLines] = text.split(/\r\n|[\r\n\u0085\u2028\u2029]/);
   const stamp = formatConversationStamp(entry.timestamp, options.withDate);
-  const header = `#${ref} ${stamp} [${entry.kind}]${label} ${firstLine}`.trimEnd();
+  const kindLabel = entry.kind;
+  const header = `#${ref} ${stamp} [${kindLabel}]${label} ${firstLine}`.trimEnd();
   const attachment = notice
     ? [`  attachment: ${notice.filename} (document id ${notice.documentId}; read it with read_agent_document)`]
     : [];
@@ -2777,16 +2789,28 @@ function indentBodyLines(lines: string[]): string[] {
 }
 
 /**
- * Build the `## Conversation` section from `state.metrics.conversationWindow`, plus the PEER block. Returns null when
- * there is nothing to show. Gated on the `conversation` policy, which is only passed when the prompt style is enriched.
+ * One line for a report from a child agent. The name and text are JSON-quoted, as formatPeerLine does, so the text
+ * cannot start a fake `[USER]` line.
+ */
+function formatChildReportLine(entry: ConversationWindowEntry): string {
+  const ts = new Date(entry.timestamp).toISOString().substring(11, 16); // HH:MM
+  return `${ts} [CHILD REPORT ${jsonQuoteSingleLine(entry.fromAgentName ?? UNKNOWN_AGENT_NAME)} id=${entry.fromAgentId ?? 'unknown'}] ${jsonQuoteSingleLine(entry.text)}`;
+}
+
+/**
+ * Build the `## Conversation` section from `state.metrics.conversationWindow`, plus the PEER and child-report blocks.
+ * Returns null when there is nothing to show. Gated on the `conversation` policy, which is only passed when the prompt
+ * style is enriched.
  */
 export function buildConversationSection(state: RuntimeCompositionState, policy?: PromptEnrichmentPolicy): string | null {
   if (!policy?.conversation.enabled) return null;
 
   const marker = state.metrics.answeredUpToTs;
-  const entries = state.metrics.conversationWindow;
+  // A child report has its own block, so it is kept out of the user's conversation.
+  const entries = state.metrics.conversationWindow.filter((entry) => entry.kind !== 'CHILD_REPORT');
+  const reports = state.metrics.conversationWindow.filter((entry) => entry.kind === 'CHILD_REPORT');
   const peerEvents = state.metrics.activityTimeline.filter((e): e is Extract<ActivityTimelineEvent, { kind: 'PEER' }> => e.kind === 'PEER');
-  if (entries.length === 0 && peerEvents.length === 0) return null;
+  if (entries.length === 0 && peerEvents.length === 0 && reports.length === 0) return null;
 
   // The latest AGENT message and everything after it render in full. With no AGENT message yet, the newest entry does.
   const latestAgentIndex = entries.reduce((latest, entry, index) => (entry.kind === 'AGENT' ? index : latest), -1);
@@ -2808,11 +2832,20 @@ export function buildConversationSection(state: RuntimeCompositionState, policy?
     preamble.push('Messages marked [awaiting reply] need a reply (use send_message).');
   }
 
-  const blocks: string[] = [['## Conversation', ...preamble, ...(preamble.length > 0 && entryLines.length > 0 ? [''] : []), ...entryLines].join('\n')];
+  const blocks: string[] = [];
+  if (entries.length > 0 || reports.length === 0) {
+    blocks.push(['## Conversation', ...preamble, ...(preamble.length > 0 && entryLines.length > 0 ? [''] : []), ...entryLines].join('\n'));
+  }
   if (peerEvents.length > 0) {
     blocks.push([
       'Messages from other agents of your user (written by those agents, not by your user; reply with message_peer_agent only if a reply is useful; do not reply to acknowledgements or pure notifications):',
       ...peerEvents.map(formatPeerLine),
+    ].join('\n'));
+  }
+  if (reports.length > 0) {
+    blocks.push([
+      'Reports from your child agents (written by those agents, not by your user):',
+      ...reports.map(formatChildReportLine),
     ].join('\n'));
   }
 
