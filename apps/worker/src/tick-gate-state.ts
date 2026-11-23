@@ -1,5 +1,6 @@
 import { PeerMessagePayloadSchema } from '@herobids/domain';
 import type { ActivityTimelineEvent } from './runtime-composition.js';
+import { parseMessageClass, type MessageClass } from './conversation-window.js';
 import type { InstrumentHashEntry, TickGateState } from './tick-gates.js';
 import { computePriceBucket, computePnlBucket } from './tick-gates.js';
 
@@ -62,13 +63,15 @@ export function extractPeerOrigin(message: Record<string, unknown>): { agentId: 
 
 /**
  * The reporting child of a child report, or null for any other user-message envelope. A child's send_message to its
- * running parent is an `agent.user.message` whose payload carries `childReport` (set by the platform when it publishes).
+ * running parent is an `agent.user.message` whose payload carries `childReport` (set by the platform when it publishes),
+ * and the class the child sent it with.
  */
-export function extractChildReportOrigin(message: Record<string, unknown>): { agentId: string; agentName: string } | null {
+export function extractChildReportOrigin(message: Record<string, unknown>): { agentId: string; agentName: string; messageClass: MessageClass } | null {
   if (message['type'] !== AGENT_USER_MESSAGE_TYPE || message['initiatorType'] !== 'agent') return null;
-  const report = (message['payload'] as { childReport?: { childAgentId?: unknown; childName?: unknown } } | null | undefined)?.childReport;
+  const payload = message['payload'] as { messageClass?: unknown; childReport?: { childAgentId?: unknown; childName?: unknown } } | null | undefined;
+  const report = payload?.childReport;
   if (typeof report?.childAgentId !== 'string' || typeof report.childName !== 'string') return null;
-  return { agentId: report.childAgentId, agentName: report.childName };
+  return { agentId: report.childAgentId, agentName: report.childName, messageClass: parseMessageClass(payload?.messageClass) };
 }
 
 /**
@@ -82,7 +85,7 @@ export function timelineEventForUserMessage(message: Record<string, unknown>, ti
   const peer = extractPeerOrigin(message);
   if (peer) return { kind: 'PEER', fromAgentId: peer.agentId, fromAgentName: peer.agentName, text, timestamp };
   const child = extractChildReportOrigin(message);
-  if (child) return { kind: 'CHILD_REPORT', fromAgentId: child.agentId, fromAgentName: child.agentName, text, timestamp };
+  if (child) return { kind: 'CHILD_REPORT', fromAgentId: child.agentId, fromAgentName: child.agentName, messageClass: child.messageClass, text, timestamp };
   return { kind: 'USER', text, timestamp };
 }
 

@@ -926,6 +926,7 @@ const conversationReader = conversationService && agentConfig.userId
   ? createThreadReader({ service: conversationService, ownerUserId: agentConfig.userId, agentId: AGENT_ID! })
   : undefined;
 let conversationWindowHydrated = false;
+let creatorFlagLoaded = false;
 if (!DATABASE_URL) {
   logger.warn('DATABASE_URL not set — list_bots, get_bot_status, stop_bot, start_bot, adjust_bot_config, get_analytics, list_positions will be unavailable');
   for (const tool of DATABASE_DEPENDENT_TOOLS) {
@@ -3044,6 +3045,17 @@ async function runActiveTick(): Promise<void> {
       }
     }
 
+    // ── Creator: a child's prompt names its creator too. Read once per process, independent of the conversation window,
+    // and retried on the next tick if the read fails. ──
+    if (!creatorFlagLoaded && agentRepo) {
+      try {
+        runtimeState.context.isChild = Boolean((await agentRepo.getAgent(AGENT_ID!))?.parentAgentId);
+        creatorFlagLoaded = true;
+      } catch (err) {
+        logger.warn({ err }, 'Failed to read the agent creator for the prompt; keeping the top-level wording');
+      }
+    }
+
     // ── Conversation window: hydrate once per process, then capture user messages ──
     if (conversationWindowEnabled() && !conversationWindowHydrated) {
       conversationWindowHydrated = true;
@@ -3070,6 +3082,7 @@ async function runActiveTick(): Promise<void> {
             timestamp: userMessageCaptureTime(message),
             fromAgentId: event.fromAgentId,
             fromAgentName: event.fromAgentName,
+            messageClass: event.messageClass,
           });
         } else if (agentRuntimePolicy.promptEnrichment.activityTimeline.enabled) {
           // PEER always lands here. A USER or CHILD_REPORT message lands here only when the window is off, so it still reaches the prompt.

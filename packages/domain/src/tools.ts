@@ -314,7 +314,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   check_watches:       { category: 'write-memory',        description: 'Evaluate all active price watches against current prices. Optionally auto-remove triggered.' },
 
   // write-messaging
-  message_child_agent: { category: 'write-messaging',    description: 'Send a message to one of your direct child agents. Subject to a per-pair rate limit shared with replies.' },
+  message_child_agent: { category: 'write-messaging',    description: 'Send your instruction or direction to one of your direct child agents. The child treats it as authority from its creator. Use message_peer_agent for collaboration or a second opinion, which carries no authority. Subject to a per-pair rate limit.' },
   message_peer_agent:  { category: 'write-messaging',    description: 'Send a message to another agent of the same user. The recipient wakes and reads it. Subject to a per-user rate limit and the user\'s pause switch.' },
   send_message:        { category: 'write-messaging',     description: 'Send a message to the user via the platform messaging system. For user-directed communication only — use send_email for email delivery.' },
   send_email:          { category: 'write-messaging',     description: 'Send an email via a connected email account. Supports cc, bcc, and optional fromConnectionId.' },

@@ -1,6 +1,14 @@
 import type { ConversationMessage } from '@herobids/domain';
 import { parseDocumentNoticeText } from '@herobids/documents/agent-document-notice';
 
+/** The class send_message sets on a message. */
+export type MessageClass = 'routine' | 'alert' | 'reminder';
+
+/** The class of a stored or published message. A missing or unknown value is routine. */
+export function parseMessageClass(value: unknown): MessageClass {
+  return value === 'alert' || value === 'reminder' ? value : 'routine';
+}
+
 /**
  * The Conversation window: the user's and the agent's messages, chronological, kept apart from the activity timeline
  * so that a shared, short timeline cannot evict the user's original request.
@@ -14,6 +22,8 @@ export interface ConversationWindowEntry {
   /** The reporting agent's id and name, on a CHILD_REPORT entry. */
   fromAgentId?: string;
   fromAgentName?: string;
+  /** The class the child sent the report with, on a CHILD_REPORT entry. */
+  messageClass?: MessageClass;
 }
 
 /**
@@ -108,10 +118,10 @@ export const UNKNOWN_AGENT_NAME = 'unknown agent';
  * The window entry for a stored conversation row, as the live capture would have made it. The creator agent's message
  * is a USER entry (message_child_agent is the authority), the agent's own messages are AGENT entries, and platform rows
  * and the agent's failed or refused messages are skipped. Every other agent-sent row is a CHILD_REPORT entry, named from
- * `senders` or as an unknown agent, so no agent's text is ever presented as the user's.
+ * `senders` or as an unknown agent, with the class the row was stored with, so no agent's text is ever presented as the user's.
  */
 export function windowEntryFromConversationRow(
-  row: Pick<ConversationMessage, 'id' | 'senderType' | 'senderId' | 'body' | 'createdAt' | 'queuedAt' | 'deliveryStatus'>,
+  row: Pick<ConversationMessage, 'id' | 'senderType' | 'senderId' | 'body' | 'createdAt' | 'queuedAt' | 'deliveryStatus'> & { messageClass?: ConversationMessage['messageClass'] },
   agentId: string,
   senders: ThreadSenders = new Map(),
   creatorAgentId: string | null = null,
@@ -130,6 +140,7 @@ export function windowEntryFromConversationRow(
       timestamp: row.createdAt.getTime(),
       fromAgentId: row.senderId ?? undefined,
       fromAgentName: fromAgentName ?? UNKNOWN_AGENT_NAME,
+      messageClass: parseMessageClass(row.messageClass),
     };
   }
   // A user message is timed by when it became deliverable, the same value its envelope carries to live capture.

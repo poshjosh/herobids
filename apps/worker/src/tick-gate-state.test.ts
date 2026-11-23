@@ -494,7 +494,28 @@ describe('timelineEventForUserMessage', () => {
       payload: { message: 'Order filled', subject: 'fill', messageClass: 'routine', childReport: { childAgentId: 'child-1', childName: 'Scout' } },
     }, 5);
 
-    expect(event).toEqual({ kind: 'CHILD_REPORT', fromAgentId: 'child-1', fromAgentName: 'Scout', text: 'Order filled', timestamp: 5 });
+    expect(event).toEqual({ kind: 'CHILD_REPORT', fromAgentId: 'child-1', fromAgentName: 'Scout', messageClass: 'routine', text: 'Order filled', timestamp: 5 });
+  });
+
+  it('keeps the class a child report was sent with, so an alert reaches the parent marked as one', () => {
+    const event = timelineEventForUserMessage({
+      type: 'agent.user.message',
+      initiatorType: 'agent',
+      payload: { message: 'Stop-loss hit', messageClass: 'alert', childReport: { childAgentId: 'child-1', childName: 'Scout' } },
+    }, 5);
+
+    expect(event).toMatchObject({ kind: 'CHILD_REPORT', messageClass: 'alert' });
+  });
+
+  it('reads a child report with a missing or unknown class as routine', () => {
+    const report = (messageClass: unknown) => timelineEventForUserMessage({
+      type: 'agent.user.message',
+      initiatorType: 'agent',
+      payload: { message: 'done', messageClass, childReport: { childAgentId: 'child-1', childName: 'Scout' } },
+    }, 5);
+
+    expect(report(undefined)).toMatchObject({ kind: 'CHILD_REPORT', messageClass: 'routine' });
+    expect(report('urgent')).toMatchObject({ kind: 'CHILD_REPORT', messageClass: 'routine' });
   });
 
   it('skips a message with no text', () => {

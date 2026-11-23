@@ -6,7 +6,7 @@ import type { PromptTimingContext } from './prompt-timing-context.js';
 import { formatPromptTimingContextLines, formatInterval } from './prompt-timing-context.js';
 import type { HybridPricingIdentity, PositionIndicatorUpdate, SwapExecutionIdentity, SymbolFetchOutcome, WatchInstrumentIdentity, WatchPurpose, WatchCoverageLink } from '@poshjosh/contracts';
 import type { CoverageEvaluationResult } from './position-coverage.js';
-import { isAwaitingEntry, truncateHeadTail, UNKNOWN_AGENT_NAME, type ConversationWindowEntry } from './conversation-window.js';
+import { isAwaitingEntry, truncateHeadTail, UNKNOWN_AGENT_NAME, type ConversationWindowEntry, type MessageClass } from './conversation-window.js';
 import { parseDocumentNoticeText } from '@herobids/documents/agent-document-notice';
 import { isUserMessageType } from './tick-gate-state.js';
 import { fmtUsd } from './fmt.js';
@@ -459,7 +459,7 @@ export type ActivityTimelineEvent =
   /** A message written by another agent of the same user (A2A MVP). Never counted as the user's. */
   | { kind: 'PEER'; fromAgentId: string; fromAgentName: string; text: string; timestamp: number }
   /** A child agent's report to its running parent (send_message). Attributed to the child, never shown as the user's. */
-  | { kind: 'CHILD_REPORT'; fromAgentId: string; fromAgentName: string; text: string; timestamp: number }
+  | { kind: 'CHILD_REPORT'; fromAgentId: string; fromAgentName: string; messageClass: MessageClass; text: string; timestamp: number }
   /** A memory write. Only the key is shown in the prompt; the agent reads the value from its memory. */
   | { kind: 'MEMORY'; action: 'set' | 'delete'; key: string; timestamp: number }
   | { kind: 'DECISION'; text: string; timestamp: number };
@@ -558,6 +558,8 @@ export interface ExternalSkillSessionState {
 
 export interface RuntimeCompositionContext {
   workspaceRoot: string | null;
+  /** True for a child agent, whose creator is the one who instructs it. Its prompt names the creator as well as the user. */
+  isChild?: boolean;
 }
 
 export interface RuntimeContextBlock {
@@ -1364,7 +1366,7 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
         const ts = new Date(e.timestamp).toISOString().substring(11, 16); // HH:MM
         if (e.kind === 'USER') return `${ts} [USER] ${e.text}`;
         if (e.kind === 'PEER') return formatPeerLine(e);
-        if (e.kind === 'CHILD_REPORT') return `${ts} [CHILD REPORT ${jsonQuoteSingleLine(e.fromAgentName)} id=${e.fromAgentId}] ${jsonQuoteSingleLine(e.text)}`;
+        if (e.kind === 'CHILD_REPORT') return `${ts} ${childReportTag(e.fromAgentName, e.fromAgentId, e.messageClass)} ${jsonQuoteSingleLine(e.text)}`;
         if (e.kind === 'MEMORY') return `${ts} [MEMORY] ${e.action} ${e.key}`;
         /* DECISION */ return `${ts} [DECISION] ${e.text}`;
       });
@@ -1854,6 +1856,7 @@ export function createRuntimeCompositionState(
     tickCount: 0,
     context: {
       workspaceRoot: context.workspaceRoot ?? null,
+      isChild: context.isChild ?? false,
     },
     externalSkills: {
       availability: new Map(),
@@ -2699,6 +2702,9 @@ export function buildSystemPrompt(state: RuntimeCompositionState, timing: Prompt
     ? EMPTY_JOB_DEFAULT_TEXT
     : `${formatAgentGoalLiteralBlock(state.runtimeDescriptor.goal)}\n\n${JOB_CHANGE_GUIDANCE}`;
 
+  // A child's creator instructs it, so its prompt names the creator as well. Top-level agents keep "the user".
+  const reader = state.context.isChild ? 'your creator or user' : 'the user';
+
   return [
     resolveAgentIdentityLine(state.runtimeDescriptor.skillPresetId, identityName),
     skillInstructions,
@@ -2711,9 +2717,9 @@ export function buildSystemPrompt(state: RuntimeCompositionState, timing: Prompt
     ...(guardRailLines.length > 0 ? ['## Guardrails', ...guardRailLines] : []),
     staticContext ? `## Runtime Context\n\n${staticContext}` : '',
     '## Instructions',
-    'Check if the user has sent a message, to which you have not yet responded.',
+    `Check if ${reader} has sent a message, to which you have not yet responded.`,
     'Reply to such message(s) using `send_message`. Respond even if it is unrelated to your job.',
-    'Text you write outside a tool call isn\'t shown to the user. Use `send_message` for any text the user should read. If you reply in plain text instead, wrap only the text the user should read in <reply>…</reply> tags.',
+    `Text you write outside a tool call isn't shown to ${reader}. Use \`send_message\` for any text ${reader} should read. If you reply in plain text instead, wrap only the text ${reader} should read in <reply>…</reply> tags.`,
     'After responding, continue your job, if any. If there is nothing to answer and nothing to do, respond with a short status update.',
     CHECK_IN_AND_QUESTION_GUIDANCE,
   ]
@@ -2789,12 +2795,21 @@ function indentBodyLines(lines: string[]): string[] {
 }
 
 /**
+ * The `[CHILD REPORT ...]` tag of a report line. An alert or reminder names its class after the id, so the parent sees
+ * it asked for attention; a routine report keeps the plain tag.
+ */
+function childReportTag(fromAgentName: string, fromAgentId: string, messageClass: MessageClass): string {
+  const classSuffix = messageClass === 'routine' ? '' : ` ${messageClass}`;
+  return `[CHILD REPORT ${jsonQuoteSingleLine(fromAgentName)} id=${fromAgentId}${classSuffix}]`;
+}
+
+/**
  * One line for a report from a child agent. The name and text are JSON-quoted, as formatPeerLine does, so the text
  * cannot start a fake `[USER]` line.
  */
 function formatChildReportLine(entry: ConversationWindowEntry): string {
   const ts = new Date(entry.timestamp).toISOString().substring(11, 16); // HH:MM
-  return `${ts} [CHILD REPORT ${jsonQuoteSingleLine(entry.fromAgentName ?? UNKNOWN_AGENT_NAME)} id=${entry.fromAgentId ?? 'unknown'}] ${jsonQuoteSingleLine(entry.text)}`;
+  return `${ts} ${childReportTag(entry.fromAgentName ?? UNKNOWN_AGENT_NAME, entry.fromAgentId ?? 'unknown', entry.messageClass ?? 'routine')} ${jsonQuoteSingleLine(entry.text)}`;
 }
 
 /**

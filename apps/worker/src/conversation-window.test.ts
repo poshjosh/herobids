@@ -55,7 +55,7 @@ describe('trimConversationWindow', () => {
 });
 
 describe('windowEntryFromConversationRow', () => {
-  const row = (overrides: Partial<ConversationMessage>): Pick<ConversationMessage, 'id' | 'senderType' | 'senderId' | 'body' | 'createdAt' | 'queuedAt' | 'deliveryStatus'> => ({
+  const row = (overrides: Partial<ConversationMessage>): Pick<ConversationMessage, 'id' | 'senderType' | 'senderId' | 'body' | 'createdAt' | 'queuedAt' | 'deliveryStatus'> & { messageClass?: ConversationMessage['messageClass'] } => ({
     id: 'a3f9c1d2-0000-4000-8000-000000000001',
     senderType: 'user',
     senderId: 'u1',
@@ -92,7 +92,23 @@ describe('windowEntryFromConversationRow', () => {
     const senders = new Map([['child-1', { name: 'Scout' }]]);
 
     expect(windowEntryFromConversationRow(row({ senderType: 'agent', senderId: 'child-1', createdAt: new Date(at(2)), queuedAt: new Date(at(9)) }), AGENT, senders, 'creator-1'))
-      .toEqual({ id: 'a3f9c1d2-0000-4000-8000-000000000001', kind: 'CHILD_REPORT', text: 'hello', timestamp: at(2), fromAgentId: 'child-1', fromAgentName: 'Scout' });
+      .toEqual({ id: 'a3f9c1d2-0000-4000-8000-000000000001', kind: 'CHILD_REPORT', text: 'hello', timestamp: at(2), fromAgentId: 'child-1', fromAgentName: 'Scout', messageClass: 'routine' });
+  });
+
+  it('keeps the class a child row was stored with, so an alert stays marked on hydration', () => {
+    const senders = new Map([['child-1', { name: 'Scout' }]]);
+
+    expect(windowEntryFromConversationRow(row({ senderType: 'agent', senderId: 'child-1', messageClass: 'alert' }), AGENT, senders, 'creator-1'))
+      .toMatchObject({ kind: 'CHILD_REPORT', messageClass: 'alert' });
+  });
+
+  it('reads a child row with a null or unknown stored class as routine', () => {
+    const senders = new Map([['child-1', { name: 'Scout' }]]);
+
+    expect(windowEntryFromConversationRow(row({ senderType: 'agent', senderId: 'child-1', messageClass: null }), AGENT, senders, 'creator-1'))
+      .toMatchObject({ messageClass: 'routine' });
+    expect(windowEntryFromConversationRow(row({ senderType: 'agent', senderId: 'child-1', messageClass: 'urgent' }), AGENT, senders, 'creator-1'))
+      .toMatchObject({ messageClass: 'routine' });
   });
 
   it('never maps an agent row from an unknown or deleted sender to USER', () => {

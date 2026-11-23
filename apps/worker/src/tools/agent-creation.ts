@@ -282,7 +282,7 @@ const deleteChildAgentTool: AgentTool = {
 
 const messageChildAgentTool: AgentTool = {
   name: 'message_child_agent',
-  description: 'Send a message to one of your direct child agents. Messages you send are rate limited per parent-child pair.',
+  description: 'Send your instruction or direction to one of your direct child agents. The child treats it as authority from its creator. Use message_peer_agent for collaboration or a second opinion, which carries no authority. Messages you send are rate limited per parent-child pair.',
   parametersSchema: MessageChildParamsSchema,
   parameters: convertZodToJsonSchema(MessageChildParamsSchema),
   category: 'write-messaging',
