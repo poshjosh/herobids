@@ -29,6 +29,14 @@ interface TaskRecord {
 // The record shape and validation live in ../reminders/reminder-record.ts.
 
 const MINUTE_MS = 60_000;
+const SECOND_MS = 1_000;
+
+const INVALID_TIME_ERROR = 'reminder.invalid_time: provide exactly one valid triggerAt or delaySeconds';
+
+/** Models often fill unused optional fields with `""` or `null`. Treat both as "not provided". */
+function blankToUndefined(value: unknown): unknown {
+  return value === '' || value === null ? undefined : value;
+}
 
 function remindersKey(agentId: string): string {
   return `agent:reminders:${agentId}`;
@@ -135,15 +143,34 @@ function buildScheduleReminderParamsSchema(reminders: ReminderConfig) {
   const { minMinutes, maxMinutes } = repeatBoundsMinutes(reminders);
   return z.object({
     message: z.string().min(1).max(500).describe('Reminder message that will be injected into your context at trigger time'),
-    triggerAt: z.string().datetime().describe('Absolute trigger datetime in ISO 8601 UTC format (must be in the future). For a repeating reminder this is the first occurrence.'),
-    repeatEveryMinutes: z
-      .number()
-      .int()
-      .positive()
-      .optional()
-      .describe(`If set, the reminder repeats on this interval in minutes. Allowed range: ${minMinutes} to ${maxMinutes} minutes. Values outside this range are rejected.`),
-    key: z.string().regex(REMINDER_KEY_PATTERN).optional().describe('Stable identifier for this reminder. Scheduling again with the same key replaces the existing reminder.'),
+    triggerAt: z.preprocess(
+      blankToUndefined,
+      z.string().datetime().optional().describe('Absolute trigger datetime in ISO 8601 UTC format (must be in the future). For a repeating reminder this is the first occurrence. Provide this or `delaySeconds`, not both.'),
+    ),
+    delaySeconds: z.preprocess(
+      blankToUndefined,
+      z.number().int().positive().optional().describe('Trigger this many seconds from now. Use this instead of `triggerAt` when you only know a wait time. For a repeating reminder this is the delay to the first occurrence. Provide this or `triggerAt`, not both.'),
+    ),
+    repeatEveryMinutes: z.preprocess(
+      blankToUndefined,
+      z.number().int().positive().optional()
+        .describe(`If set, the reminder repeats on this interval in minutes. Allowed range: ${minMinutes} to ${maxMinutes} minutes. Values outside this range are rejected.`),
+    ),
+    key: z.preprocess(
+      blankToUndefined,
+      z.string().regex(REMINDER_KEY_PATTERN).optional().describe('Stable identifier for this reminder. Scheduling again with the same key replaces the existing reminder.'),
+    ),
   });
+}
+
+/** Resolve the first trigger time from an absolute `triggerAt` or a relative `delaySeconds`. Null when neither or both are given. */
+function resolveTriggerAt(triggerAt: string | undefined, delaySeconds: number | undefined): string | null {
+  if (triggerAt !== undefined && delaySeconds === undefined) return triggerAt;
+  if (triggerAt === undefined && delaySeconds !== undefined) {
+    const date = new Date(Date.now() + delaySeconds * SECOND_MS);
+    return isNaN(date.getTime()) ? null : date.toISOString();
+  }
+  return null;
 }
 
 function buildScheduleReminderTool(reminders: ReminderConfig): AgentTool {
@@ -151,13 +178,18 @@ function buildScheduleReminderTool(reminders: ReminderConfig): AgentTool {
   return {
     name: 'schedule_reminder',
     description:
-      'Schedule a reminder at an absolute datetime (ISO 8601 UTC). It can repeat with `repeatEveryMinutes`. Scheduling with an existing `key` replaces that reminder.',
+      'Schedule a reminder at an absolute datetime (`triggerAt`, ISO 8601 UTC) or after a wait (`delaySeconds`); give exactly one. It can repeat with `repeatEveryMinutes`. Scheduling with an existing `key` replaces that reminder.',
     parametersSchema: ScheduleReminderParamsSchema,
     parameters: convertZodToJsonSchema(ScheduleReminderParamsSchema),
     category: 'write-memory',
     async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
-      const { message, triggerAt, repeatEveryMinutes, key } =
+      const { message, triggerAt: requestedTriggerAt, delaySeconds, repeatEveryMinutes, key } =
         params as z.infer<typeof ScheduleReminderParamsSchema>;
+
+      const triggerAt = resolveTriggerAt(requestedTriggerAt, delaySeconds);
+      if (triggerAt === null) {
+        return { success: false, error: INVALID_TIME_ERROR, fault: false };
+      }
 
       const triggerDate = new Date(triggerAt);
       if (isNaN(triggerDate.getTime())) {
@@ -287,19 +319,16 @@ const listRemindersTool: AgentTool = {
 
 // --- cancel_reminder ---
 
-const CancelReminderParamsSchema = z
-  .object({
-    reminderId: z.string().min(1).optional().describe('The reminderId to cancel'),
-    key: z.string().min(1).optional().describe('The reminder key to cancel'),
-  })
-  .refine(
-    (p) => (p.reminderId !== undefined) !== (p.key !== undefined),
-    { message: 'reminder.invalid_target' },
-  );
+// The exactly-one-of check is in `execute`, not a schema `.refine`: wrapping the object would make the JSON schema
+// shown to the model mark both fields as required (see `normalizeRequiredFields`), which pushes models to fill both.
+const CancelReminderParamsSchema = z.object({
+  reminderId: z.preprocess(blankToUndefined, z.string().min(1).optional().describe('The reminderId to cancel')),
+  key: z.preprocess(blankToUndefined, z.string().min(1).optional().describe('The reminder key to cancel')),
+});
 
 const cancelReminderTool: AgentTool = {
   name: 'cancel_reminder',
-  description: 'Cancel a scheduled reminder by its reminderId or by its key. Provide exactly one.',
+  description: 'Cancel a scheduled reminder by its reminderId or by its key. Provide exactly one; empty or null values count as not provided.',
   parametersSchema: CancelReminderParamsSchema,
   parameters: convertZodToJsonSchema(CancelReminderParamsSchema),
   category: 'write-memory',
@@ -309,6 +338,9 @@ const cancelReminderTool: AgentTool = {
       return { success: false, error: 'reminder.invalid_target', fault: false };
     }
     const { reminderId, key } = parsedParams.data;
+    if ((reminderId !== undefined) === (key !== undefined)) {
+      return { success: false, error: 'reminder.invalid_target', fault: false };
+    }
     const hashKey = remindersKey(ctx.agentId);
 
     if (reminderId !== undefined) {

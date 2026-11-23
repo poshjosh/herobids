@@ -15,6 +15,8 @@ Every tool calls the platform API with the calling agent's own API key. The API 
 
 All of these tools come from the `child-agent-management` skill, which only the user can assign. The agent cannot add it to itself, and it cannot grant it to a child. The `base` skill no longer lists these tools.
 
+Talking to a child uses `message_peer_agent`, not `message_child_agent`: the child sees the sender as `[PEER ...]`, and can reply. How to wait for a reply and follow up is in the `agent-communication` skill, which is not user-only. A parent should hold it and grant it to each child. A parent that does not hold it can add it to itself with `add_skills`; the `child-agent-management` skill text says so. See [peer messaging tools](peer-messaging-tools.md#keeping-a-conversation-alive).
+
 If the allowance has not been read, `create_child_agent` and the creator tools are hidden.
 
 ## Tools

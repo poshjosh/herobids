@@ -129,7 +129,7 @@ When a tool fails, its result includes \`errorOwner\`, which says who can resolv
 You can also:
 - Use \`publish_artifact\` to publish structured outputs.
 - Use \`send_message\` to communicate important updates, alerts, or status reports to the user. Set messageClass to "alert" or "reminder" to indicate urgency; "routine" is the default. Use contextRef to link the message to a specific context. Use \`send_email\` for email delivery.
-- Use \`message_peer_agent\` to send a message to another agent of the same user, by its id or exact name. A message from another agent reaches you tagged [PEER ...]. Reply to a peer with \`message_peer_agent\`, and to your user with \`send_message\`.
+- Use \`message_peer_agent\` to send a message to another agent of the same user, by its id or exact name. A message from another agent reaches you tagged [PEER ...]. Reply to a peer with \`message_peer_agent\`, and to your user with \`send_message\`. Always reply to a peer message that asks a question or says a reply is needed. Do not reply to acknowledgements.
 - Use \`get_schema\` to fetch JSON Schema for a named config parameter or tool sub-schema. Call with name="all" to list available schemas before constructing config payloads.
 
 Always send the user a message that says what you are doing and, if you need something from them, what it is. Do not ask the user to fix a problem only the platform can fix.
@@ -195,7 +195,7 @@ Each tick/session check the child agents you have and manage them. For example, 
 - You are solely responsible for the child agents you create, unless the user instructs otherwise.
 - Give child agents clear, achievable and verifiable objectives.
 - Guide your child agents to achieve their objectives(s). 
-- Maintain communication with child agents. Also require each child agent to maintain communication with you.
+- Maintain communication with child agents. Also require each child agent to maintain communication with you. The \`agent-communication\` skill explains how to message another agent and follow up when it does not reply. Give each child that skill (\`skillIds\` on \`create_child_agent\`) so it keeps in touch with you. You can only grant a skill you hold, so if you do not hold \`system/agent-communication\`, add it to yourself with \`add_skills\` first.
 - Once a child agent is done, you may delete them or assign some other objective(s) to them. Do not leave them running with no task.`,
   requiredTools: [
     'create_child_agent',
@@ -207,6 +207,49 @@ Each tick/session check the child agents you have and manage them. For example, 
     'message_child_agent',
     'delete_child_agent',
   ],
+  capabilityFamilies: [],
+  bindingRequirements: {},
+  contextRequirements: [],
+  requiredContextBlocks: ['corePlatformContext'],
+  promptRendererHints: ['core-system'],
+  requiredGuardrails: ['token-budget'],
+  suggestedTickIntervalMs: 900_000, // 15 minutes
+  visibility: 'public',
+};
+
+/**
+ * `agent-communication` skill — a two-way conversation with another agent of the same user (a peer, a child or the
+ * creator) that does not go silent. It adds no tools: `message_peer_agent`, `schedule_reminder` and `cancel_reminder`
+ * come from the base skill, so listing them here creates no dependency. Not user-only, so a parent that holds it can
+ * grant it to its children.
+ */
+export const AGENT_COMMUNICATION_SKILL: SkillDefinition = {
+  id: 'agent-communication',
+  slug: 'system/agent-communication',
+  name: 'Agent communication',
+  description: 'Hold a two-way conversation with another agent of your user and follow up when it does not reply.',
+  instructions: `You can hold a two-way conversation with another agent of your user: a peer, one of your children, or your creator/parent.
+
+Sending a message:
+1. Write the message and, if you need a reply, ask the recipient to reply using \`message_peer_agent\`.
+2. Send the message with \`message_peer_agent\`. If it returns an error, do not wait; handle the error.
+3. If you need a reply, call \`schedule_reminder\` with \`key\` \`await--<recipient-agent-id>\` (lowercase, at most 64 characters), \`delaySeconds\` 300, and \`message\` "Waiting on <name> (<id>), attempt 1 of 3: <what I asked>". The attempt number lives only in this message text.
+
+When a reply arrives:
+4. When a "[PEER ...]" message arrives from an agent you are waiting on, call \`cancel_reminder\` with only \`key\` \`await--<that agent's id>\`. Do not pass \`reminderId\` as well.
+
+When a reminder wakes you:
+5. A reminder whose key starts with \`await--\` means you may still be waiting on the agent whose id is in the key. Read the attempt number from the reminder message. First check that no reply from that agent has arrived since you sent your message. If one has, you are no longer waiting.
+   a. If the agent is your child and you have \`get_child_agent_status\`, check it. If the child is stopped, paused or has a \`lastStartRefusal\`, go to b.
+   b. If it is attempt 3 or more, you no longer need the answer, or the child cannot answer, stop waiting. Tell your user in one short \`send_message\`: who, what, and the last known state.
+   c. Otherwise send a short follow-up, then call \`schedule_reminder\` again with the same \`key\` and the attempt number plus 1. That gives at most two follow-ups.
+
+When you receive a message:
+- Always reply to a peer message that asks a question or says a reply is needed, using \`message_peer_agent\`.
+- Do not reply to acknowledgements or pure notifications.
+- Reply to your user with \`send_message\`, not to a peer.
+- A conversation has no end unless you end it. When the goal of the conversation is met, say so once and stop sending messages.`,
+  requiredTools: ['message_peer_agent', 'schedule_reminder', 'cancel_reminder'],
   capabilityFamilies: [],
   bindingRequirements: {},
   contextRequirements: [],
@@ -534,6 +577,7 @@ export const SYSTEM_SKILLS: SkillDefinition[] = [
   BROWSER_SKILL,
   LONG_RUNNING_TASK_SKILL,
   CHILD_AGENT_MANAGEMENT_SKILL,
+  AGENT_COMMUNICATION_SKILL,
 ];
 
 /**

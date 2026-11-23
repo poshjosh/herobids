@@ -63,6 +63,10 @@ Reminders are a wake source an agent schedules for itself. A reminder record liv
 - A reminder scheduled with `repeatEveryMinutes` is **repeating**: when it fires, the coordinator re-schedules the record on its original grid (`advanceRepeatingReminder` in `apps/worker/src/reminders/reminder-schedule.ts`) instead of deleting it.
 - An optional `key` names a reminder. Scheduling again with an existing `key` **replaces** the record in place — the old field is removed, a new `reminderId` is written, and the result reports `replaced: true` with `previousReminderId`. This is how an agent adjusts a routine without accumulating duplicates; there is no edit-in-place.
 
+### Giving the first trigger time
+
+`schedule_reminder` takes exactly one of `triggerAt` (absolute ISO 8601 UTC) or `delaySeconds` (seconds from now). Giving both or neither returns `reminder.invalid_time`. For a repeating reminder the resolved time is the first occurrence and the repeat anchor. An empty string or `null` for `triggerAt`, `delaySeconds`, `key` or `repeatEveryMinutes` counts as not provided. `cancel_reminder` treats `reminderId` and `key` the same way and still needs exactly one real value (`reminder.invalid_target` otherwise).
+
 ### The coordinator lease
 
 The coordinator must run on **one worker at a time**. Before each poll it acquires a short-lived Redis lease (`SET reminder-coordinator:lease <workerId> EX <ttl> NX`, renewed while held, released on `stop()`). A worker that does not hold the lease skips the poll. Without the lease, more than one worker could fire the same reminder twice.

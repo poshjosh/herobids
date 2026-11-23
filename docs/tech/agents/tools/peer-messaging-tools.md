@@ -10,7 +10,13 @@ The tool is brokered, like `update_my_prompt`. It publishes `agent.peer.send` to
 |---|---|---|
 | `message_peer_agent` | `agent` (id or exact name of another agent of the same user, max 200 chars), `message` (text) | Sends the message. The recipient wakes and reads it, tagged as written by another agent. Input is strict: unknown keys are refused. |
 
-The tool is in the base skill, so every agent sees it. The base skill text tells the agent to reply to a peer with `message_peer_agent` and to its user with `send_message`.
+The tool is in the base skill, so every agent sees it. The base skill text tells the agent to reply to a peer with `message_peer_agent` and to its user with `send_message`, and to always reply to a peer message that asks a question or says a reply is needed, but not to acknowledgements.
+
+## Keeping a conversation alive
+
+The platform does not track whether a peer replied. An agent that needs an answer follows the `agent-communication` skill (`system/agent-communication`, defined in [skills.ts](../../../../packages/domain/src/skills.ts)). It adds no tools: it uses `message_peer_agent`, `schedule_reminder` and `cancel_reminder` from the base skill. The agent sends, then schedules a reminder keyed `await--<recipient-agent-id>` (`delaySeconds` 300). A reply from that agent cancels it. If the reminder wakes the agent first, it sends a short follow-up and re-schedules the same key with attempt + 1, up to three attempts (two follow-ups), then tells its user with `send_message`. It also stops early when a child it waits on is stopped, paused or has a `lastStartRefusal`. The attempt number is kept only in the reminder message text. The key must match the reminder key pattern (lowercase, at most 64 characters), which holds for lowercase UUID agent ids.
+
+The wait is minutes, not seconds, because an agent run takes 30 to 100 seconds and a message that arrives mid-run is read on the next run. The skill is not user-only, so a parent that holds it can grant it to a child through `skillIds` on `create_child_agent`. Nothing grants it automatically.
 
 ## Send path
 

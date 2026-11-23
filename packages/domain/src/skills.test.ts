@@ -128,6 +128,7 @@ describe('SYSTEM_SKILLS', () => {
 
   it('contains exactly the non-trading system skills', () => {
     expect(SYSTEM_SKILLS.map((s) => s.id).sort()).toEqual([
+      'agent-communication',
       'browser',
       'child-agent-management',
       'email',
