@@ -162,10 +162,14 @@ export function applyToolExclusions(
   exclusions: {
     permanent?: Set<string>;
     degraded?: Set<string>;
+    allowance?: Set<string>;
     circuit?: Set<string>;
   },
 ): string[] {
-  return tools.filter((tool) => !exclusions.permanent?.has(tool) && !exclusions.degraded?.has(tool) && !exclusions.circuit?.has(tool));
+  return tools.filter((tool) => !exclusions.permanent?.has(tool)
+    && !exclusions.degraded?.has(tool)
+    && !exclusions.allowance?.has(tool)
+    && !exclusions.circuit?.has(tool));
 }
 
 // ── SessionCircuitBreaker ──────────────────────────────────────────────

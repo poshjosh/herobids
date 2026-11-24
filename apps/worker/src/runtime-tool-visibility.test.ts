@@ -271,6 +271,23 @@ describe('createRuntimeToolVisibilityController', () => {
     expect(controller.allowedTools()).toContain('list_child_agents');
   });
 
+  it('hides allowance-gated tools without reporting them as degraded', () => {
+    const descriptor = makeDescriptor([
+      { id: 'child-agent-management', tools: ['create_child_agent', 'list_child_agents'] },
+    ]);
+    const controller = createRuntimeToolVisibilityController(() => descriptor, new Set());
+
+    controller.setAllowanceAvailability('create_child_agent', false);
+
+    expect(controller.allowedTools()).not.toContain('create_child_agent');
+    expect(controller.getAllowanceExcludedTools()).toContain('create_child_agent');
+    expect(controller.getDegradedExcludedTools()).not.toContain('create_child_agent');
+
+    controller.setAllowanceAvailability('create_child_agent', true);
+
+    expect(controller.allowedTools()).toContain('create_child_agent');
+  });
+
   it('hides watch_token and check_watches but keeps list_watches and remove_watch when market-data is unavailable', () => {
     const watchTools = ['watch_token', 'list_watches', 'remove_watch', 'check_watches', 'send_message'];
     const descriptor = makeDescriptor([{ id: 'monitoring', tools: watchTools }]);
@@ -302,8 +319,8 @@ describe('tool-visibility budget for base + web-access + email + programming (WP
 
   it("the unique tool set fits within careful's maxVisibleToolSchemas", () => {
     const uniqueTools = new Set(resolvedSkills.flatMap((skill) => skill.requiredTools));
-    // base(27: 23 + message_peer_agent + read_agent_document + get_thread + get_message; the child tools moved to child-agent-management) + web-access(+4 unique) + email(+1) + programming(+2) = 34.
-    expect(uniqueTools.size).toBe(34);
+    // base(28: 23 + message_peer_agent + read_agent_document + list_agent_documents + get_thread + get_message; the child tools moved to child-agent-management) + web-access(+4 unique) + email(+1) + programming(+2) = 35.
+    expect(uniqueTools.size).toBe(35);
     expect(uniqueTools.size).toBeLessThanOrEqual(careful.maxVisibleToolSchemas);
   });
 

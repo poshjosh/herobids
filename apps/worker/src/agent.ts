@@ -755,11 +755,11 @@ setAgentPlatformToolAvailability(null);
 /** Sets create_child_agent and the creator tools from the agent's allowance. A null allowance hides them all. */
 function setAgentPlatformToolAvailability(allowance: AgentAllowance | null): void {
   const circuitBlockedTools = toolCircuitBreaker.getBlockedTools(tickCount);
-  toolVisibility.setToolAvailability(CREATE_CHILD_AGENT_TOOL_NAME, isCreateChildAgentExposed(allowance), circuitBlockedTools);
-  toolVisibility.setToolAvailability(LIST_OWNER_CONNECTIONS_TOOL_NAME, isListOwnerConnectionsExposed(allowance), circuitBlockedTools);
+  toolVisibility.setAllowanceAvailability(CREATE_CHILD_AGENT_TOOL_NAME, isCreateChildAgentExposed(allowance), circuitBlockedTools);
+  toolVisibility.setAllowanceAvailability(LIST_OWNER_CONNECTIONS_TOOL_NAME, isListOwnerConnectionsExposed(allowance), circuitBlockedTools);
   const creatorToolsVisible = isCreatorToolExposed(allowance);
   for (const toolName of CREATOR_TOOL_NAMES) {
-    toolVisibility.setToolAvailability(toolName, creatorToolsVisible, circuitBlockedTools);
+    toolVisibility.setAllowanceAvailability(toolName, creatorToolsVisible, circuitBlockedTools);
   }
 }
 
@@ -2022,6 +2022,13 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       logger.warn({ tool: call.tool, agentId: AGENT_ID }, 'Tool circuit open — ignoring');
       return rejectToolCall(
         `tool circuit open: ${call.tool} is temporarily suspended due to repeated errors. Do not retry this turn. Use other tools or conclude the tick.`,
+        { fault: false },
+      );
+    }
+    if (toolVisibility.getAllowanceExcludedTools().has(call.tool)) {
+      logger.info({ tool: call.tool, agentId: AGENT_ID }, 'Tool hidden by child allowance — ignoring');
+      return rejectToolCall(
+        `tool not available right now: ${call.tool} depends on your child-agent allowance. It is re-checked at the start of each tick.`,
         { fault: false },
       );
     }
@@ -4505,7 +4512,7 @@ async function runActiveTick(): Promise<void> {
           judgeFinishTurnText = finalText?.when === 'if_terminal' ? finalText.text : undefined;
         }
       },
-      onToolResult: ({ toolCall, toolResult }) => {
+      onToolResult: async ({ toolCall, toolResult }) => {
         judgeToolCallsUsed += 1;
         judgeToolFailures.record(toolCall.name, toolCall.args, toolResult);
         if (toolResult) {
@@ -4517,6 +4524,10 @@ async function runActiveTick(): Promise<void> {
             recordToolFailure(toolCall.name);
           } else {
             recordToolSuccess(toolCall.name);
+            if (toolCall.name === CREATE_CHILD_AGENT_TOOL_NAME) {
+              // A new child changes the allowance; re-expose the creator tools for the next turn of this tick.
+              await refreshAgentPlatformToolExposure();
+            }
           }
           // ── Activity timeline: capture memory writes ────────────────────
           if (

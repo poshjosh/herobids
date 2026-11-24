@@ -56,8 +56,10 @@ export interface RuntimeToolVisibilityController {
   applyToolVisibility(circuitBlockedTools?: Set<string>): void;
   setDependencyAvailability(dependency: RuntimeDependency, available: boolean, circuitBlockedTools?: Set<string>): void;
   setToolAvailability(tool: string, available: boolean, circuitBlockedTools?: Set<string>): void;
+  setAllowanceAvailability(tool: string, available: boolean, circuitBlockedTools?: Set<string>): void;
   getDependencyDegradations(): Set<RuntimeDependency>;
   getDegradedExcludedTools(): Set<string>;
+  getAllowanceExcludedTools(): Set<string>;
   allowedTools(): Set<string>;
 }
 
@@ -69,6 +71,8 @@ export function createRuntimeToolVisibilityController(
 ): RuntimeToolVisibilityController {
   const baseRequiredToolsBySkill = new Map<string, string[]>();
   const degradedExcludedTools = new Set<string>();
+  // Kept apart from degradation: a tool hidden by the child allowance is not a runtime fault.
+  const allowanceExcludedTools = new Set<string>();
   const dependencyDegradations = new Set<RuntimeDependency>();
   let lastSnapshotDescriptor: RuntimeDescriptor | null = null;
   let lastSnapshotSkills: RuntimeDescriptor['resolvedSkills'] | null = null;
@@ -110,6 +114,7 @@ export function createRuntimeToolVisibilityController(
       skill.requiredTools = applyToolExclusions(baseline, {
         permanent: permanentlyExcludedTools,
         degraded: degradedExcludedTools,
+        allowance: allowanceExcludedTools,
         circuit: circuitBlockedTools,
       });
     }
@@ -144,6 +149,15 @@ export function createRuntimeToolVisibilityController(
     applyToolVisibility(circuitBlockedTools);
   }
 
+  function setAllowanceAvailability(tool: string, available: boolean, circuitBlockedTools = new Set<string>()): void {
+    if (available) {
+      allowanceExcludedTools.delete(tool);
+    } else {
+      allowanceExcludedTools.add(tool);
+    }
+    applyToolVisibility(circuitBlockedTools);
+  }
+
   snapshotToolBaselines();
   applyToolVisibility();
 
@@ -152,8 +166,10 @@ export function createRuntimeToolVisibilityController(
     applyToolVisibility,
     setDependencyAvailability,
     setToolAvailability,
+    setAllowanceAvailability,
     getDependencyDegradations: () => new Set(dependencyDegradations),
     getDegradedExcludedTools: () => new Set(degradedExcludedTools),
+    getAllowanceExcludedTools: () => new Set(allowanceExcludedTools),
     allowedTools: () => new Set(getVisibleToolNames(getDescriptor())),
   };
 }
