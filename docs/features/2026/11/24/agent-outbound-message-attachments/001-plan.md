@@ -329,7 +329,7 @@ This keeps `AgentMessageBroker` from becoming a monolith.
 Status is tracked per item: `PENDING`, `DONE`, or `BLOCKED`.
 
 1. [DONE] Add the `agent_outbound_message_attachments` table and the `agent_documents.sourceDocumentId` column
-2. [PENDING] Add `documentIds` to the four payload and parameter schemas
+2. [DONE] Add `documentIds` to the four payload and parameter schemas
 3. [PENDING] Add `OutboundAttachmentResolver` (resolve and copy)
 4. [PENDING] Add `list_agent_documents`
 5. [PENDING] Extend `TelegramClient` with `sendDocument`
@@ -352,6 +352,18 @@ _Recorded by the coordinator after each item's review. Grouped by rollout item._
 - LOW: index name `idx_agent_outbound_message_attachments_message_id` abbreviates the column name.
 - LOW: the plan's Data Model block has no referent comment for `outboundMessageId`.
 - Verification gap: migration 0093 has not been applied to a Postgres database. The Postgres integration suite was skipped because no local Postgres was running.
+
+### Item 2: `documentIds` on send schemas
+
+- MEDIUM: `PeerMessagePayloadSchema` (recipient side) reuses the name `documentIds`, but per D2 the delivered message carries the recipient's copy ids. Rename it (e.g. `copiedDocumentIds`) or document the meaning before item 7.
+- MEDIUM: the same `z.array(z.string().min(1)).max(3).optional()` is repeated at 7 sites. Export one shared schema from `agent-protocol.ts` before item 7 to prevent drift.
+- MEDIUM: ids have no length cap. Sibling fields use `max(200)`. The plan's literal spec has no cap, so confirm before adding one.
+- MEDIUM: no test shows that execution is unchanged when `documentIds` is present. Item 7 should add per-tool assertions on the publish and call arguments.
+- LOW: the field is accepted but silently dropped until item 7. `send_message` still returns `ok: true`. Item 8 must update the descriptions, and a "pending rollout item 7" note may help in the meantime.
+- LOW: the field has no `.describe()` in `messaging.ts` and `email.ts`, but sibling fields in the other two files have one. Fix in item 8.
+- LOW: no test covers an empty array `[]`, which the plan requires to behave as omitted.
+- LOW: the four 4-case test blocks are duplicated across worker test files, and the domain `it.each` overlaps with them.
+- LOW: `packages/domain/dist` is stale until rebuilt. Rebuild before item 7.
 
 ## Testing Plan
 

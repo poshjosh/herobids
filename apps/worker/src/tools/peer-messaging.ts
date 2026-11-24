@@ -24,6 +24,7 @@ const MessagePeerAgentParamsSchema = z.object({
   agent: z.string().trim().min(1).max(200).describe('The id or exact name of another agent of the same user'),
   // Safety cap only; the operator's messageMaxChars is the limit that applies and the platform enforces it.
   message: z.string().min(1).max(PEER_MESSAGE_SAFETY_MAX_CHARS).describe('The message to send to the other agent'),
+  documentIds: z.array(z.string().min(1)).max(3).optional(),
 }).strict();
 
 export const messagePeerAgentTool: AgentTool = {

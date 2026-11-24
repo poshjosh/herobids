@@ -14,6 +14,7 @@ const pauseChildTool = agentCreationTools.find((t) => t.name === 'pause_child_ag
 const listChildAgentsTool = agentCreationTools.find((t) => t.name === 'list_child_agents')!;
 const deleteChildAgentTool = agentCreationTools.find((t) => t.name === 'delete_child_agent')!;
 const listOwnerConnectionsTool = agentCreationTools.find((t) => t.name === 'list_owner_connections')!;
+const messageChildTool = agentCreationTools.find((t) => t.name === 'message_child_agent')!;
 
 function allowance(childAgentLimit: number, childCount: number, grants: { skill?: boolean; connection?: boolean } = {}) {
   return {
@@ -111,6 +112,28 @@ describe('creator tool exposure', () => {
 
   it('creator tools are hidden when the allowance is unknown', () => {
     expect(isCreatorToolExposed(null)).toBe(false);
+  });
+});
+
+describe('message_child_agent documentIds', () => {
+  const schema = messageChildTool.parametersSchema;
+  const base = { agentId: 'child-1', message: 'See attached' };
+
+  it('accepts up to 3 non-empty document ids', () => {
+    expect(schema.safeParse({ ...base, documentIds: ['doc-1'] }).success).toBe(true);
+    expect(schema.safeParse({ ...base, documentIds: ['doc-1', 'doc-2', 'doc-3'] }).success).toBe(true);
+  });
+
+  it('rejects more than 3 document ids', () => {
+    expect(schema.safeParse({ ...base, documentIds: ['a', 'b', 'c', 'd'] }).success).toBe(false);
+  });
+
+  it('rejects an empty document id', () => {
+    expect(schema.safeParse({ ...base, documentIds: [''] }).success).toBe(false);
+  });
+
+  it('parses when documentIds is omitted', () => {
+    expect(schema.safeParse(base).success).toBe(true);
   });
 });
 

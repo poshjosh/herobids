@@ -48,6 +48,28 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   };
 }
 
+describe('send_email documentIds', () => {
+  const schema = sendEmailTool.parametersSchema;
+  const base = { to: 'test@example.com', subject: 'Report', body: 'See attached' };
+
+  it('accepts up to 3 non-empty document ids', () => {
+    expect(schema.safeParse({ ...base, documentIds: ['doc-1'] }).success).toBe(true);
+    expect(schema.safeParse({ ...base, documentIds: ['doc-1', 'doc-2', 'doc-3'] }).success).toBe(true);
+  });
+
+  it('rejects more than 3 document ids', () => {
+    expect(schema.safeParse({ ...base, documentIds: ['a', 'b', 'c', 'd'] }).success).toBe(false);
+  });
+
+  it('rejects an empty document id', () => {
+    expect(schema.safeParse({ ...base, documentIds: [''] }).success).toBe(false);
+  });
+
+  it('parses when documentIds is omitted', () => {
+    expect(schema.safeParse(base).success).toBe(true);
+  });
+});
+
 describe('send_email', () => {
   beforeEach(() => {
     vi.resetAllMocks();

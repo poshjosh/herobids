@@ -558,8 +558,9 @@ describe('SendMessagePayloadSchema', () => {
     expect(keys).toContain('messageClass');
     expect(keys).toContain('contextRef');
     expect(keys).toContain('messageId');
+    expect(keys).toContain('documentIds');
     expect(keys).not.toContain('emailDelivery');
-    expect(keys).toHaveLength(5);
+    expect(keys).toHaveLength(6);
   });
 
   it('silently strips unknown keys like emailDelivery (Zod default behavior)', () => {
@@ -1064,6 +1065,32 @@ describe('tick turn events', () => {
   });
 });
 
+
+describe('outbound documentIds payload schemas', () => {
+  const peer = { fromAgentId: 'a1', fromAgentName: 'Momo' };
+  const cases = [
+    ['SendMessagePayloadSchema', SendMessagePayloadSchema, { body: 'See attached' }],
+    ['PeerSendPayloadSchema', PeerSendPayloadSchema, { agent: 'Kofi', message: 'See attached', requestMessageId: 'r1' }],
+    ['PeerMessagePayloadSchema', PeerMessagePayloadSchema, { message: 'See attached', peer }],
+  ] as const;
+
+  it.each(cases)('%s accepts up to 3 non-empty document ids', (_name, schema, base) => {
+    expect(schema.safeParse({ ...base, documentIds: ['doc-1'] }).success).toBe(true);
+    expect(schema.safeParse({ ...base, documentIds: ['doc-1', 'doc-2', 'doc-3'] }).success).toBe(true);
+  });
+
+  it.each(cases)('%s rejects more than 3 document ids', (_name, schema, base) => {
+    expect(schema.safeParse({ ...base, documentIds: ['a', 'b', 'c', 'd'] }).success).toBe(false);
+  });
+
+  it.each(cases)('%s rejects an empty document id', (_name, schema, base) => {
+    expect(schema.safeParse({ ...base, documentIds: [''] }).success).toBe(false);
+  });
+
+  it.each(cases)('%s parses when documentIds is omitted', (_name, schema, base) => {
+    expect(schema.safeParse(base).success).toBe(true);
+  });
+});
 
 describe('peer message size cap', () => {
   const peer = { fromAgentId: 'a1', fromAgentName: 'Momo' };

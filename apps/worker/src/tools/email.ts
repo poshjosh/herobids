@@ -45,6 +45,7 @@ const SendEmailParamsSchema = z.object({
   bcc: z.union([z.string().email(), z.array(z.string().email()).max(10)]).optional(),
   /** Optional connection ID to select which connected email account to send from. */
   fromConnectionId: z.string().min(1).optional(),
+  documentIds: z.array(z.string().min(1)).max(3).optional(),
 });
 
 export const sendEmailTool: AgentTool = {

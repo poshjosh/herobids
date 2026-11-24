@@ -171,6 +171,8 @@ export const SendMessagePayloadSchema = z.object({
    * - reminder: time-based or scheduled reminder intended to prompt action
    */
   messageClass: z.enum(['routine', 'alert', 'reminder']).optional(),
+  /** Optional ids of up to 3 agent documents the sender holds, to attach. */
+  documentIds: z.array(z.string().min(1)).max(3).optional(),
   /** Platform-internal: the id the worker gave this message. Not in the model-facing params, so the model cannot set it. */
   messageId: z.string().uuid().optional(),
 });
@@ -245,6 +247,7 @@ export const PeerSendPayloadSchema = z.object({
   agent: z.string().trim().min(1).max(200),
   message: z.string().min(1).max(PEER_MESSAGE_SAFETY_MAX_CHARS),
   requestMessageId: z.string().min(1),
+  documentIds: z.array(z.string().min(1)).max(3).optional(),
 });
 export type PeerSendPayload = z.infer<typeof PeerSendPayloadSchema>;
 
@@ -277,6 +280,7 @@ export const PeerMessagePayloadSchema = z.object({
     fromAgentId: z.string().min(1),
     fromAgentName: z.string(),
   }),
+  documentIds: z.array(z.string().min(1)).max(3).optional(),
 });
 export type PeerMessagePayload = z.infer<typeof PeerMessagePayloadSchema>;
 

@@ -26,7 +26,7 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
 describe('send_message', () => {
   // ── Schema shape ───────────────────────────────────────────────────────
 
-  it('has the correct parameters schema keys (subject, body, messageClass, contextRef)', () => {
+  it('has the correct parameters schema keys (subject, body, messageClass, contextRef, documentIds)', () => {
     const schema = sendMessageTool.parametersSchema;
     // Access shape from ZodObject
     const shape = (schema as unknown as { shape: Record<string, unknown> }).shape;
@@ -35,7 +35,8 @@ describe('send_message', () => {
     expect(keys).toContain('subject');
     expect(keys).toContain('messageClass');
     expect(keys).toContain('contextRef');
-    expect(keys).toHaveLength(4);
+    expect(keys).toContain('documentIds');
+    expect(keys).toHaveLength(5);
   });
 
   it('does NOT include emailDelivery in the schema definition', () => {
@@ -127,6 +128,28 @@ describe('send_message', () => {
     expect(sendMessageTool.description).toContain('send_email');
     expect(sendMessageTool.description).toContain('external recipients');
     expect(sendMessageTool.description).not.toContain('emailDelivery');
+  });
+});
+
+describe('send_message documentIds', () => {
+  const schema = sendMessageTool.parametersSchema;
+  const base = { body: 'See attached' };
+
+  it('accepts up to 3 non-empty document ids', () => {
+    expect(schema.safeParse({ ...base, documentIds: ['doc-1'] }).success).toBe(true);
+    expect(schema.safeParse({ ...base, documentIds: ['doc-1', 'doc-2', 'doc-3'] }).success).toBe(true);
+  });
+
+  it('rejects more than 3 document ids', () => {
+    expect(schema.safeParse({ ...base, documentIds: ['a', 'b', 'c', 'd'] }).success).toBe(false);
+  });
+
+  it('rejects an empty document id', () => {
+    expect(schema.safeParse({ ...base, documentIds: [''] }).success).toBe(false);
+  });
+
+  it('parses when documentIds is omitted', () => {
+    expect(schema.safeParse(base).success).toBe(true);
   });
 });
 

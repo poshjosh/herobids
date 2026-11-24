@@ -18,6 +18,28 @@ function makeCtx(blpopReply: [string, string] | null) {
 
 const reply = (value: unknown): [string, string] => ['key', JSON.stringify(value)];
 
+describe('message_peer_agent documentIds', () => {
+  const schema = messagePeerAgentTool.parametersSchema;
+  const base = { agent: 'Kofi', message: 'See attached' };
+
+  it('accepts up to 3 non-empty document ids', () => {
+    expect(schema.safeParse({ ...base, documentIds: ['doc-1'] }).success).toBe(true);
+    expect(schema.safeParse({ ...base, documentIds: ['doc-1', 'doc-2', 'doc-3'] }).success).toBe(true);
+  });
+
+  it('rejects more than 3 document ids', () => {
+    expect(schema.safeParse({ ...base, documentIds: ['a', 'b', 'c', 'd'] }).success).toBe(false);
+  });
+
+  it('rejects an empty document id', () => {
+    expect(schema.safeParse({ ...base, documentIds: [''] }).success).toBe(false);
+  });
+
+  it('parses when documentIds is omitted', () => {
+    expect(schema.safeParse(base).success).toBe(true);
+  });
+});
+
 describe('message_peer_agent tool', () => {
   it('sends agent.peer.send with the recipient and text, then waits on the matching reply key', async () => {
     const { ctx, publishToInbound, blpop } = makeCtx(reply({ status: 'ok', messageId: 'm1', recipientAgentId: 'agent-2', recipientName: 'Kofi' }));

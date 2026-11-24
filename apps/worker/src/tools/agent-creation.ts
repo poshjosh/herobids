@@ -71,6 +71,7 @@ const PauseChildParamsSchema = ChildAgentIdSchema.extend({
 
 const MessageChildParamsSchema = ChildAgentIdSchema.extend({
   message: z.string().min(1).max(4000).describe('Message to send to the child agent'),
+  documentIds: z.array(z.string().min(1)).max(3).optional(),
 }).strict();
 
 const DeleteChildParamsSchema = ChildAgentIdSchema.extend({

@@ -11,6 +11,7 @@ export const SendMessageParamsSchema = z.object({
   subject: z.string().max(200).optional(),
   messageClass: z.enum(['routine', 'alert', 'reminder']).optional(),
   contextRef: z.string().max(200).optional(),
+  documentIds: z.array(z.string().min(1)).max(3).optional(),
 });
 
 const sendMessageTool: AgentTool = {
