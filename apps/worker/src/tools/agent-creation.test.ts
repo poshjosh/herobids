@@ -137,6 +137,26 @@ describe('message_child_agent documentIds', () => {
   });
 });
 
+describe('message_child_agent execute', () => {
+  it('sends no documents to the platform when documentIds is absent', async () => {
+    const platform = fakePlatform();
+
+    const result = await messageChildTool.execute(parsedInput(messageChildTool, { agentId: 'child-1', message: 'See attached' }), makeCtx(platform));
+
+    expect(platform.messageChildAgent).toHaveBeenCalledOnce();
+    expect(vi.mocked(platform.messageChildAgent).mock.calls[0]?.[2]).toBeUndefined();
+    expect(result).toEqual({ success: true, data: { ok: true, agentId: 'child-1', delivered: true } });
+  });
+
+  it('passes documentIds to the platform when they are sent', async () => {
+    const platform = fakePlatform();
+
+    await messageChildTool.execute(parsedInput(messageChildTool, { agentId: 'child-1', message: 'See attached', documentIds: ['doc-1'] }), makeCtx(platform));
+
+    expect(vi.mocked(platform.messageChildAgent).mock.calls[0]?.[2]).toEqual(['doc-1']);
+  });
+});
+
 describe('create_child_agent input schema', () => {
   it('create_child_agent input rejects creatorId, parentAgentId and depth', () => {
     for (const field of ['creatorId', 'parentAgentId', 'depth']) {

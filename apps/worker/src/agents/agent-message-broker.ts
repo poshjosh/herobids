@@ -599,6 +599,7 @@ export class AgentMessageBroker {
         documentIds: attachments.documentIds,
       });
       if (!prepared.ok) {
+        logger.warn({ agentId: agent.id, code: prepared.error.code }, 'Outbound attachments not prepared; send not made');
         throw new Error(`outbound_attachments_failed:${prepared.error.code}`);
       }
       files = prepared.data;
@@ -684,7 +685,12 @@ export class AgentMessageBroker {
     status: OutboundDeliveryStatus,
     detail?: { deliveryRef?: string; deliveryError?: string },
   ): Promise<void> {
-    if (!outbound) return;
+    if (!outbound || auditIds.length === 0) return;
+    if (status === 'sent') {
+      logger.info({ status, count: auditIds.length }, 'Outbound attachment outcome');
+    } else {
+      logger.warn({ status, count: auditIds.length, deliveryError: detail?.deliveryError }, 'Outbound attachment outcome');
+    }
     for (const auditId of auditIds) {
       const marked = await outbound.markDelivery(auditId, status, detail);
       if (!marked.ok) logger.warn({ auditId, status, code: marked.error.code }, 'Outbound attachment outcome not recorded');
@@ -736,6 +742,7 @@ export class AgentMessageBroker {
         documentIds: attachments.documentIds,
       });
       if (!result.ok) {
+        logger.warn({ agentId: child.id, parentAgentId: parent.id, code: result.error.code }, 'Outbound attachments not copied to parent; send not made');
         throw new Error(`outbound_attachments_failed:${result.error.code}`);
       }
       staged = result.data;

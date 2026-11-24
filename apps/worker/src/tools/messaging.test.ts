@@ -171,6 +171,29 @@ describe('publish_artifact', () => {
   });
 });
 
+describe('send_message publish payload', () => {
+  it('publishes no documentIds key when none are sent, so the broker takes the unchanged path', async () => {
+    const publishToInbound = vi.fn(async (_type: string, _payload: Record<string, unknown>) => undefined);
+    await sendMessageTool.execute({ body: 'hello' }, makeCtx({ publishToInbound }));
+
+    expect(publishToInbound.mock.calls[0]![1]).not.toHaveProperty('documentIds');
+  });
+
+  it('publishes no documentIds key for an empty list', async () => {
+    const publishToInbound = vi.fn(async (_type: string, _payload: Record<string, unknown>) => undefined);
+    await sendMessageTool.execute({ body: 'hello', documentIds: [] }, makeCtx({ publishToInbound }));
+
+    expect(publishToInbound.mock.calls[0]![1]).not.toHaveProperty('documentIds');
+  });
+
+  it('forwards documentIds to the broker when they are sent', async () => {
+    const publishToInbound = vi.fn(async (_type: string, _payload: Record<string, unknown>) => undefined);
+    await sendMessageTool.execute({ body: 'hello', documentIds: ['doc-1'] }, makeCtx({ publishToInbound }));
+
+    expect(publishToInbound.mock.calls[0]![1]).toMatchObject({ documentIds: ['doc-1'] });
+  });
+});
+
 describe('send_message message id', () => {
   it('publishes a worker-generated message id in the payload and returns its short form', async () => {
     const publishToInbound = vi.fn(async (_type: string, _payload: Record<string, unknown>) => undefined);

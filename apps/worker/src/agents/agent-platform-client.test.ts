@@ -257,6 +257,14 @@ describe('agent platform client', () => {
     expect(result.error.retryable).toBe(true);
   });
 
+  it('sends only the message in the child message body when no documents are attached', async () => {
+    const fetchImpl = fetchReturning(jsonResponse(201, { delivered: true }));
+    await makeClient(fetchImpl).messageChildAgent('child-1', 'hello');
+
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect(JSON.parse(String(init?.body))).toEqual({ message: 'hello' });
+  });
+
   it('a success with an unexpected body shape maps to an invalid-response error', async () => {
     const fetchImpl = fetchReturning(jsonResponse(201, { unexpected: true }));
     const result = await makeClient(fetchImpl).createChildAgent({ name: 'Research child', prompt: 'Summarise.', start: true });

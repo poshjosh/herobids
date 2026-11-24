@@ -78,6 +78,26 @@ describe('message_peer_agent tool', () => {
     expect(tooLong.publishToInbound).not.toHaveBeenCalled();
   });
 
+  it('publishes exactly the unchanged peer payload when no documentIds are sent', async () => {
+    const { ctx, publishToInbound } = makeCtx(reply({ status: 'ok', messageId: 'm1', recipientAgentId: 'agent-2', recipientName: 'Kofi' }));
+
+    await messagePeerAgentTool.execute({ agent: 'Kofi', message: 'hello' }, ctx);
+
+    expect((publishToInbound.mock.calls[0] as unknown as [string, unknown])[1]).toEqual({
+      agent: 'Kofi',
+      message: 'hello',
+      requestMessageId: expect.any(String),
+    });
+  });
+
+  it('forwards documentIds in the peer payload when they are sent', async () => {
+    const { ctx, publishToInbound } = makeCtx(reply({ status: 'ok', messageId: 'm1', recipientAgentId: 'agent-2', recipientName: 'Kofi' }));
+
+    await messagePeerAgentTool.execute({ agent: 'Kofi', message: 'hello', documentIds: ['doc-1'] }, ctx);
+
+    expect((publishToInbound.mock.calls[0] as unknown as [string, Record<string, unknown>])[1]).toMatchObject({ documentIds: ['doc-1'] });
+  });
+
   it('tells the agent not to resend a message that is still being delivered', async () => {
     const { ctx } = makeCtx(reply({ status: 'ok', messageId: 'm1', recipientAgentId: 'agent-2', recipientName: 'Kofi', deliveryStatus: 'queued' }));
 

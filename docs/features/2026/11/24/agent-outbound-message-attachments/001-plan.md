@@ -336,7 +336,7 @@ Status is tracked per item: `PENDING`, `DONE`, or `BLOCKED`.
 6. [DONE] Add attachments to the Gmail adapter's raw MIME builder for `send_email`, and fix the pre-existing header injection in it
 7. [DONE] Update the broker, and the peer and child paths, to resolve and deliver or copy
 8. [DONE] Update the tool descriptions
-9. [PENDING] Add tests, then observability and limits
+9. [DONE] Add tests, then observability and limits
 
 ## Outstanding Issues
 
@@ -458,6 +458,21 @@ _Recorded by the coordinator after each item's review. Grouped by rollout item._
 - LOW: the resolver logs with `console.warn` rather than the module logger. The test named "reclaims" should now say `removeCopyRecord`.
 - LOW: the "User sent document" notice wording is reused for agent copies, so it reads slightly wrong for agents.
 - LOW: `send_message` replies to the sender do not say whether a document copy failed (see the first MEDIUM).
+
+### Item 9: tests, observability, and limits
+
+- OPEN (item 6 MEDIUM, still a decision): the Gmail upload maximum is unverified. Confirm it with a sandbox account before the final limit is set. The 5 MiB cap counts attachment bytes only.
+- OPEN (item 7 MEDIUM): `removeCopyRecord` results are ignored in `copyAllToAgent` and `discardCopies`. Needs a reconciliation design.
+- OPEN (item 7 MEDIUM): `deliverHumanDocuments` has no per-document try/catch. Needs a try/catch and a test.
+- MEDIUM: no test sends `documentIds` through the client body to a child (present path). Add one to `agent-platform-client.test.ts`.
+- MEDIUM: the new broker logs (`settleOutboundAudit`, the two pre-send warns) have no assertions. Follow `agent-message-broker-denial-log.test.ts`.
+- MEDIUM (follow-up): `gmail-adapter.ts` duplicates the 5 MiB literal, and `agent-protocol.ts` hardcodes `.max(3)` rather than sharing `MAX_OUTBOUND_DOCUMENTS`. Share them, or record why they stay separate.
+- MEDIUM (follow-up): the worker tsconfig excludes test files, so the test code is not type-checked by `pnpm lint`. Add a test typecheck, and fix the existing errors in `agent-platform-client.test.ts`, `agent-creation.test.ts`, and `messaging.test.ts` separately.
+- LOW: `peer-messaging.test.ts` uses `toEqual` where `not.toHaveProperty` is needed for the absent-case check, and has double casts.
+- LOW: the `agent-creation.test.ts` title "sends no documents to the platform when documentIds is absent" overstates what is asserted.
+- LOW: the `auditIds.length === 0` early return in `agent-message-broker.ts` is behaviour-neutral but suppresses the info log for empty lists. Call it out in the PR.
+- LOW: `skipped` logs at warn, the same as `failed`. Decide whether `skipped` should be info.
+- LOW: the broker "Never throws" docstring assumes the logger does not throw.
 
 ## Testing Plan
 
