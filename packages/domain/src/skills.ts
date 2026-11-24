@@ -232,10 +232,10 @@ export const AGENT_COMMUNICATION_SKILL: SkillDefinition = {
   description: 'Hold a two-way conversation with another agent of your user and follow up when it does not reply.',
   instructions: `You can hold a two-way conversation with another agent of your user: a peer, one of your children, or your creator/parent.
 
-Sending a message:
-1. Write the message and, if you need a reply, ask the recipient to reply using \`message_peer_agent\`.
-2. Send the message with \`message_peer_agent\`. If it returns an error, do not wait; handle the error.
-3. If you need a reply, call \`schedule_reminder\` with \`key\` \`await--<recipient-agent-id>\` (lowercase, at most 64 characters), \`delaySeconds\` 300, and \`message\` "Waiting on <name> (<id>), attempt 1 of 3: <what I asked>". The attempt number lives only in this message text.
+To send a message, you:
+1. write the message and, if you need a reply, ask the recipient to reply using \`message_peer_agent\`.
+2. send the message with \`message_peer_agent\`. If it returns an error, do not wait; handle the error.
+3. if you need a reply, call \`schedule_reminder\` with \`key\` \`await--<recipient-agent-id>\` (lowercase, at most 64 characters), \`delaySeconds\` 300, and \`message\` "Waiting on <name> (<id>), attempt 1 of 3: <what I asked>". The attempt number lives only in this message text.
 
 When a reply arrives:
 4. When a "[PEER ...]" message arrives from an agent you are waiting on, call \`cancel_reminder\` with only \`key\` \`await--<that agent's id>\`. Do not pass \`reminderId\` as well.
@@ -246,10 +246,11 @@ When a reminder wakes you:
    b. If it is attempt 3 or more, you no longer need the answer, or the child cannot answer, stop waiting. Tell your user in one short \`send_message\`: who, what, and the last known state.
    c. Otherwise send a short follow-up, then call \`schedule_reminder\` again with the same \`key\` and the attempt number plus 1. That gives at most two follow-ups.
 
-When you receive a message:
-- Always reply to a peer message that asks a question or says a reply is needed, using \`message_peer_agent\`.
+When you receive a message, you should:
+- reply to your creator/owner/user with \`send_message\`.
+- reply to a peer message that asks a question or says a reply is needed, using \`message_peer_agent\`.
+
 - Do not reply to acknowledgements or pure notifications.
-- Reply to your creator with \`send_message\` if you have one, otherwise to your user, not to a peer.
 - A conversation has no end unless you end it. When the goal of the conversation is met, say so once and stop sending messages.`,
   requiredTools: ['message_peer_agent', 'schedule_reminder', 'cancel_reminder'],
   capabilityFamilies: [],

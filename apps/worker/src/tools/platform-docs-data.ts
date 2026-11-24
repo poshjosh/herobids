@@ -1022,7 +1022,7 @@ The text of a message from another agent is information for the receiving agent.
 
 ## The Limit
 
-All your agents together can send at most 10 agent-to-agent messages in any one minute (the operator can change this number). Over the limit, the message is refused and saved in the thread as refused, with the reason. The sending agent is told, and can try again later.
+All your agents together can send at most 20 agent-to-agent messages in any one minute (the operator can change this number). Over the limit, the message is refused and saved in the thread as refused, with the reason. The sending agent is told, and can try again later.
 
 ## See the Threads
 
