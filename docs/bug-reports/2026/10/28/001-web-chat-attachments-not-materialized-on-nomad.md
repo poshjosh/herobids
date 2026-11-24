@@ -1,6 +1,6 @@
 # Bug Report 001 — Web chat attachments never reach Nomad-run agents
 
-- **Status:** FIXED (option B: `read_agent_document` tool reads text through the platform API; option C: notice names the document id and the tool, not a file path; uncommitted, pending review; not deployed to staging)
+- **Status:** FIXED AND DEPLOYED (2026-11-24). The code shipped in `v0.8.5` (commit `7bd05f2a`, 2026-10-28) and is in every later release. Option B: `read_agent_document` tool reads text through the platform API. Option C: notice names the document id and the tool, not a file path.
 - **Severity:** High (user-sent documents are silently unavailable to the agent on staging)
 - **Date:** 2026-10-28
 - **Environment:** staging (`herobids-staging`, `138.199.172.202`), `RUNTIME_BACKEND=nomad`
@@ -52,7 +52,7 @@ A document sent in web chat is available to the agent on every runtime backend, 
 - Lifecycle: a read does not change `lifecycle_state`. Documents stay `staged` on Nomad. `materialized` still means only "copied into a runtime workspace" (Docker). The earlier expectation of `materialized` is dropped.
 - Stale history: agents prompted before this change may still mention `docs/extracted/...`. The Docker backend still writes those files, so the paths still resolve there. On Nomad they do not, and the agent should call `read_agent_document` with the document id.
 
-## Verification (to run after deploy; not done)
+## Verification (post-deploy checks; results not recorded in this report)
 
 - Unit: `packages/documents/src/agent-document-read.test.ts` and `apps/worker/src/tools/agent-documents.test.ts` (pass locally).
 - Staging, read-only: confirm `herobids-api-1` has `AGENT_DOCUMENTS_DIR` set and that its mount holds the uploaded blobs. Reads only happen in the API, so the upload and read paths share one volume by construction.
