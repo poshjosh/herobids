@@ -11,8 +11,9 @@ const PROVIDER = process.env['CYCLE_PROVIDER'] ?? 'openrouter';
 const LIGHT_MODEL = process.env['CYCLE_LIGHT_MODEL'] ?? 'anthropic/claude-haiku-5.5';
 const HEAVY_MODEL = process.env['CYCLE_HEAVY_MODEL'] ?? 'anthropic/claude-haiku-5.5';
 const CONNECTION_PROVIDER = process.env['CYCLE_CONNECTION_PROVIDER'] ?? 'hyperliquid';
+// The venue is named so the first tick connects it; otherwise the agent may ask which exchange to use and make no tool call.
 const MESSAGE =
-  'Help me trade crypto. I am a novice, so set it up for me. Only provide a wallet for me to fund later when we decide to go live';
+  `Help me trade crypto on ${CONNECTION_PROVIDER}. I am a novice, so set it up for me. Only provide a wallet for me to fund later when we decide to go live`;
 const FOLLOW_UP =
   'Your connection is done. Now call get_account_summary and get_funding_info, then tell me the mode, the capital and the funding address. If a tool fails, tell me the exact error.';
 const POLL_MS = 5_000;
