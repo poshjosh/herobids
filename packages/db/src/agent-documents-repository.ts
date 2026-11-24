@@ -78,6 +78,7 @@ export class AgentDocumentsRepository {
   async listByAgent(agentId: string, opts?: {
     lifecycleState?: DocumentLifecycleState | DocumentLifecycleState[];
     includeDeleted?: boolean;
+    limit?: number;
   }) {
     const conditions = [eq(agentDocuments.agentId, agentId)];
     if (!opts?.includeDeleted) {
@@ -87,9 +88,11 @@ export class AgentDocumentsRepository {
       const states = Array.isArray(opts.lifecycleState) ? opts.lifecycleState : [opts.lifecycleState];
       conditions.push(inArray(agentDocuments.lifecycleState, states));
     }
-    return this.db.select().from(agentDocuments)
+    const query = this.db.select().from(agentDocuments)
       .where(and(...conditions))
-      .orderBy(desc(agentDocuments.createdAt));
+      .orderBy(desc(agentDocuments.createdAt))
+      .$dynamic();
+    return opts?.limit !== undefined ? query.limit(opts.limit) : query;
   }
 
   async update(id: string, update: UpdateAgentDocument): Promise<void> {

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { ok, err } from '@herobids/domain';
 import type {
   AgentAllowance,
+  AgentDocumentSummary,
   AgentDocumentTextPage,
   AgentPlatformError,
   AgentPlatformPort,
@@ -100,6 +101,18 @@ const DocumentTextResponseSchema = z.object({
   offset: z.number().int().min(0),
   nextOffset: z.number().int().min(0).nullable(),
   totalChars: z.number().int().min(0),
+});
+const DocumentListResponseSchema = z.object({
+  documents: z.array(z.object({
+    documentId: z.string().min(1),
+    filename: z.string(),
+    mimeType: z.string(),
+    sizeBytes: z.number().int().min(0),
+    lifecycleState: z.string(),
+    sourceDocumentId: z.string().nullable(),
+    source: z.string(),
+    extractionStatus: z.string(),
+  })),
 });
 
 /**
@@ -250,6 +263,12 @@ export function createAgentPlatformClient(options: AgentPlatformClientOptions): 
 
     async readAgentDocument(documentId: string, offset: number): Promise<Result<AgentDocumentTextPage, AgentPlatformError>> {
       return request('GET', `${agentPath}/documents/${encodeURIComponent(documentId)}/text?offset=${offset}`, DocumentTextResponseSchema);
+    },
+
+    async listAgentDocuments(): Promise<Result<AgentDocumentSummary[], AgentPlatformError>> {
+      const listed = await request('GET', `${agentPath}/documents/available`, DocumentListResponseSchema);
+      if (!listed.ok) return listed;
+      return ok(listed.data.documents);
     },
 
     async getPeerMessagingState(): Promise<Result<PeerMessagingState, AgentPlatformError>> {

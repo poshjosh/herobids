@@ -178,6 +178,7 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 | `get_risk_limits` | `external:trading` | Effective trading risk limits. |
 | `get_thread` | `core` | Base-skill read of earlier conversation messages. |
 | `get_schema` | `core` | Shared schema introspection. |
+| `list_agent_documents` | `core` | Lists documents the agent holds, for documentIds on send tools. |
 | `list_app_docs` | `core` | Platform documentation access. |
 | `list_bots` | `external:trading` | Trading bot lifecycle. |
 | `list_files` | `core` | Agent workspace operation. |

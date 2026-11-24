@@ -194,11 +194,9 @@ Each tool description adds one sentence: `documentIds` takes up to 3 documents y
 
 ### New tool: `list_agent_documents`
 
-File: `apps/worker/src/tools/agent-documents.ts`, next to `read_agent_document`.
+File: `apps/worker/src/tools/agent-documents.ts`, next to `read_agent_document`. No parameters. The worker has no database handle, so the tool calls a new platform endpoint, `GET /agents/:id/documents/available` (in `apps/api/src/routes/agent-documents.ts`). The endpoint is self-only: an agent key may read only its own agent, and the owner session may read the agent's documents. It does not open the existing `GET /agents/:id/documents` to agent keys.
 
-No parameters. Returns the agent's non-deleted documents: `documentId`, `filename`, `mimeType`, `sizeBytes`, `lifecycleState`, `sourceDocumentId` (set for copies).
-
-Requires no new recipient rules. It lists only the caller's own documents.
+Returns up to 100 documents, no paging, with only these fields: `documentId`, `filename`, `mimeType`, `sizeBytes`, `lifecycleState`, `sourceDocumentId` (set for copies), `source`, `extractionStatus`. No storage keys. Staged and deleted documents are excluded, so only materialized documents are listed.
 
 ## Delivery Adapters
 
@@ -331,7 +329,7 @@ Status is tracked per item: `PENDING`, `DONE`, or `BLOCKED`.
 1. [DONE] Add the `agent_outbound_message_attachments` table and the `agent_documents.sourceDocumentId` column
 2. [DONE] Add `documentIds` to the four payload and parameter schemas
 3. [DONE] Add `OutboundAttachmentResolver` (resolve and copy)
-4. [PENDING] Add `list_agent_documents`
+4. [DONE] Add `list_agent_documents`
 5. [PENDING] Extend `TelegramClient` with `sendDocument`
 6. [PENDING] Extend the SES adapter with raw MIME for `send_email` attachments
 7. [PENDING] Update the broker, and the peer and child paths, to resolve and deliver or copy
@@ -387,6 +385,21 @@ _Recorded by the coordinator after each item's review. Grouped by rollout item._
 - LOW: plan alignment: the resolver lives in `packages/documents` while the plan recommends a worker service. `ResolvedAttachment` has extra fields. Update the plan text.
 - LOW: `Promise.all` over `store.delete` could reject instead of returning a Result. Use `allSettled`.
 - LOW: when `hardDelete` fails because the DB is down and `create` never committed, `orphanedDocumentId` names a row that does not exist, and blobs leak.
+
+### Item 4: `list_agent_documents`
+
+- Decided by the user: a new self-only endpoint (`GET /agents/:id/documents/available`), projected fields, staged and deleted rows excluded, cap 100 with no paging.
+- MEDIUM: a copy delivered to a running agent is staged until the next launch, so `list_agent_documents` will not show it during that session. The delivered message still lists the copy ids, so `read_agent_document` works. Item 7 must rely on the message, not the list, for the current session.
+- MEDIUM: `list_agent_documents` is not in `DURABLE_TOOL_NAMES` and has no entry in `HINTS_BY_TOOL` (`apps/worker/src/stale-result-hints.ts`). Once stale, the 100-document list is cut to 500 to 2,000 characters and the model is not told to re-list. Add a hint.
+- MEDIUM (open): confirm the judge cannot call `list_agent_documents`. If it can, its result is cut to 16,000 characters in carried history and IDs past that point are lost. Exclude the tool from the judge surface, or accept the loss in writing.
+- LOW: `agent-platform-client.ts` validates `documentId` as `z.string().min(1)`. Use `z.string().uuid()` to match `read_agent_document`.
+- LOW: `agent-creation.test.ts` fake platform lacks `listAgentDocuments`. Add a stub.
+- LOW: `KNOWN_AGENT_TOOL_NAMES` and `TOOL_CATALOG` entries in `packages/domain/src/tools.ts` are out of alphabetical order.
+- LOW: the literal `100` repeats in the route, the repository default, the tool description and tests. Extract one named constant.
+- LOW: `lifecycleState`, `source` and `extractionStatus` are typed `string` in `AgentDocumentSummary`. Use the existing union types.
+- LOW: integration test gaps: no `failed` lifecycle exclusion case; the 403 test's `not.toContain('secret-original/')` is nearly vacuous; an unused `Redis` connection.
+- LOW: the plan's "New tool" section removed "Requires no new recipient rules". Confirm the removal was intended.
+- Note: the manifest row for `list_agent_documents` was added to `docs/features/pending/000-capability-foundations/009-initial-capability-registry-and-tool-ownership-manifest.md`, which is outside the plan. Required by `providers.test.ts`.
 
 ## Testing Plan
 

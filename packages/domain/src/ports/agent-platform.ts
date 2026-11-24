@@ -93,10 +93,23 @@ export interface AgentDocumentTextPage {
   totalChars: number;
 }
 
+/** A document the agent holds, as listed for model use. No storage keys. */
+export interface AgentDocumentSummary {
+  documentId: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  lifecycleState: string;
+  sourceDocumentId: string | null;
+  source: string;
+  extractionStatus: string;
+}
+
 /** Platform API operations an agent container may perform as itself (see 001-plan §6-§8). */
 export interface AgentPlatformPort {
   getOwnAllowance(): Promise<Result<AgentAllowance, AgentPlatformError>>;
   readAgentDocument(documentId: string, offset: number): Promise<Result<AgentDocumentTextPage, AgentPlatformError>>;
+  listAgentDocuments(): Promise<Result<AgentDocumentSummary[], AgentPlatformError>>;
   listOwnerConnections(): Promise<Result<OwnerConnectionSummary[], AgentPlatformError>>;
   createChildAgent(input: CreateChildAgentInput): Promise<Result<ChildAgentCreated, AgentPlatformError>>;
   listChildAgents(): Promise<Result<ChildAgentSummary[], AgentPlatformError>>;

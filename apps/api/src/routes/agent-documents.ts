@@ -229,6 +229,41 @@ export async function agentDocumentRoutes(
     },
   );
 
+  // ── GET /agents/:id/documents/available ─────────────────────────────────
+  // Agent-facing list (own key only) of the documents it can read now: materialized rows only, so
+  // staged and deleted rows are excluded. Projected to model-safe fields (no storage keys). Capped
+  // at 100 rows with no paging.
+
+  app.get<{ Params: { id: string } }>(
+    '/agents/:id/documents/available',
+    { config: { agentAccess: 'self' }, preHandler: requireSelfAgentOrUser },
+    async (request, reply) => {
+      const { id: agentId } = request.params;
+
+      const [agent] = await db.select({ id: agents.id })
+        .from(agents)
+        .where(and(eq(agents.id, agentId), eq(agents.userId, request.userId)))
+        .limit(1);
+      if (!agent) {
+        return reply.status(404).send(errorPayload('agent_not_found', 'Agent not found.'));
+      }
+
+      const docs = await repo.listByAgent(agentId, { lifecycleState: 'materialized', limit: 100 });
+      return reply.send({
+        documents: docs.map((doc) => ({
+          documentId: doc.id,
+          filename: doc.originalFilename,
+          mimeType: doc.mimeType,
+          sizeBytes: doc.sizeBytes,
+          lifecycleState: doc.lifecycleState,
+          sourceDocumentId: doc.sourceDocumentId,
+          source: doc.source,
+          extractionStatus: doc.extractionStatus,
+        })),
+      });
+    },
+  );
+
   // ── DELETE /agents/:id/documents/:documentId ────────────────────────────
 
   app.delete<{ Params: { id: string; documentId: string } }>(

@@ -2,6 +2,30 @@ import { z } from 'zod';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 
+// --- list_agent_documents ---
+
+// Lists only documents the platform reports as readable now (materialized). Capped at 100, no paging.
+const ListAgentDocumentsParamsSchema = z.object({});
+
+const listAgentDocumentsTool: AgentTool = {
+  name: 'list_agent_documents',
+  description: 'List the documents you hold, up to 100 (no paging). Returns documentId values for use in documentIds on send tools and in read_agent_document.',
+  parametersSchema: ListAgentDocumentsParamsSchema,
+  parameters: convertZodToJsonSchema(ListAgentDocumentsParamsSchema),
+  category: 'read-database',
+  async execute(_params: unknown, ctx: ToolContext): Promise<ToolResult> {
+    if (!ctx.agentPlatform) {
+      return { success: false, error: 'document listing unavailable: platform not configured', errorCode: 'precondition.not_ready', fault: false };
+    }
+
+    const result = await ctx.agentPlatform.listAgentDocuments();
+    if (!result.ok) {
+      return { success: false, error: result.error.message, errorCode: result.error.code, fault: result.error.retryable };
+    }
+    return { success: true, data: { ok: true, documents: result.data } };
+  },
+};
+
 // --- read_agent_document ---
 
 // The text is fetched from the platform API. The agent container has no access to the document store.
@@ -30,4 +54,4 @@ const readAgentDocumentTool: AgentTool = {
   },
 };
 
-export const agentDocumentTools: AgentTool[] = [readAgentDocumentTool];
+export const agentDocumentTools: AgentTool[] = [listAgentDocumentsTool, readAgentDocumentTool];
