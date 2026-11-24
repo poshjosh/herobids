@@ -1,8 +1,8 @@
 # Plan: Agent Outbound Message Attachments
 
-> **Status (2026-10-15):** Deferred. Not part of [two-way agent chat](../../2026/10/15/002-two-way-agent-chat/001-plan.md). Attachments would attach to conversation message rows once that store exists.
+> **Status (2026-11-24):** In progress. Not part of [two-way agent chat](../../../10/15/002-two-way-agent-chat/001-plan.md). Attachments attach to outbound message rows, not conversation message rows.
 
-**Status:** draft  
+**Status:** in progress  
 **Created:** 2026-07-13  
 
 ## Problem
@@ -75,7 +75,7 @@ Documents go out in their stored form: `.pdf` stays `.pdf` and `.docx` stays `.d
 ### D5: Limits
 
 - max 3 documents per message (existing store limit: 10 MiB per upload)
-- max 20 MiB total per message before encoding. This total must be checked against the SES raw message limit before implementation (see Open Questions).
+- max 5 MiB total per message before encoding, for every tool. SES `SendRawEmail` caps the whole message, including attachments, at 10 MB (AWS docs, checked 2026-11-24). Base64 adds about 33%, so 5 MiB of attachments fits with headroom.
 
 ## Current Implementation Constraints
 
@@ -283,7 +283,7 @@ New flow:
 3. if `documentIds` is present:
    - resolve each id via `AgentDocumentsRepository`
    - reject the request if a document is missing, belongs to another agent, or is deleted
-   - enforce count (3), per-file size (10 MiB), and total size (20 MiB)
+   - enforce count (3) and total size (5 MiB)
    - read the blobs from `DocumentStore`
    - persist one pending attachment row per document, with its `recipientKind`
 4. deliver by recipient:
@@ -326,15 +326,21 @@ This keeps `AgentMessageBroker` from becoming a monolith.
 
 ## Rollout Order
 
-1. Add the `agent_outbound_message_attachments` table and the `agent_documents.sourceDocumentId` column
-2. Add `documentIds` to the four payload and parameter schemas
-3. Add `OutboundAttachmentResolver` (resolve and copy)
-4. Add `list_agent_documents`
-5. Extend `TelegramClient` with `sendDocument`
-6. Extend the SES adapter with raw MIME for `send_email` attachments
-7. Update the broker, and the peer and child paths, to resolve and deliver or copy
-8. Update the tool descriptions
-9. Add tests, then observability and limits
+Status is tracked per item: `PENDING`, `DONE`, or `BLOCKED`.
+
+1. [PENDING] Add the `agent_outbound_message_attachments` table and the `agent_documents.sourceDocumentId` column
+2. [PENDING] Add `documentIds` to the four payload and parameter schemas
+3. [PENDING] Add `OutboundAttachmentResolver` (resolve and copy)
+4. [PENDING] Add `list_agent_documents`
+5. [PENDING] Extend `TelegramClient` with `sendDocument`
+6. [PENDING] Extend the SES adapter with raw MIME for `send_email` attachments
+7. [PENDING] Update the broker, and the peer and child paths, to resolve and deliver or copy
+8. [PENDING] Update the tool descriptions
+9. [PENDING] Add tests, then observability and limits
+
+## Outstanding Issues
+
+_Recorded by the coordinator after each item's review. Grouped by rollout item._
 
 ## Testing Plan
 
@@ -343,7 +349,7 @@ This keeps `AgentMessageBroker` from becoming a monolith.
 - sending without `documentIds` preserves current behavior for all four tools
 - a document id the sender does not hold is rejected with a clear error
 - a deleted document is rejected
-- more than 3 documents, or more than 20 MiB total, is rejected before any send
+- more than 3 documents, or more than 5 MiB total, is rejected before any send
 - a copy has its own store keys; deleting the sender's document leaves the copy readable
 
 ### Recipients
@@ -370,10 +376,12 @@ This keeps `AgentMessageBroker` from becoming a monolith.
 
 ## Open Questions
 
-1. Telegram: should the text body be the caption of the first document, or a separate message?
-2. Web chat: attachment support in the user-facing chat channel has not been checked in code. Scope it in or out once checked.
-3. SES: does the raw message limit cover a 20 MiB total after base64 encoding? If not, lower the total cap.
-4. Do copies count against any per-agent storage quota? Not checked.
+Resolved for implementation (2026-11-24):
+
+1. Telegram: the text body is the caption of the first document. If the text exceeds the caption limit, send the text as a separate message first, then the documents.
+2. Web chat: out of scope for this plan. The web UI attaches files only in the message composer (inbound). It does not display attachments on agent replies.
+3. SES: resolved. The raw limit is 10 MB including attachments, so the total cap is 5 MiB before encoding (D5).
+4. Copies and storage quota: out of scope. Grep found no quota on `agent_documents`. The workspace quota (`workspace-quota.ts`) covers workspace files only. Copies are limited by the existing peer and child rate limits (Risk 3). Recorded as an outstanding issue.
 
 ## Recommendation
 
