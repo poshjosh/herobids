@@ -15,6 +15,8 @@ export const agentDocuments = pgTable('agent_documents', {
   source: text('source').notNull(),
   /** Reference to the source entity (e.g. Telegram message ID). Null for control-plane uploads. */
   sourceRef: text('source_ref'),
+  /** Set on a copy to the sender's original agent_documents.id. Null for uploads. */
+  sourceDocumentId: text('source_document_id'),
   /** Original filename as provided by the user or source */
   originalFilename: text('original_filename').notNull(),
   /** MIME type of the original file */

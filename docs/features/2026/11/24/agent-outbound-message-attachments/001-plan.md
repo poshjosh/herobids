@@ -134,7 +134,7 @@ flowchart TD
     B -->|human recipient| F[TelegramClient.sendDocument / SES raw MIME]
     B -->|agent recipient| G[copy blob into recipient store and insert agent_documents row]
 
-    B --> H[(agent_outbound_messages)]
+    B --> H[(agent_messages: send envelope)]
     B --> I[(agent_outbound_message_attachments)]
 ```
 
@@ -163,7 +163,7 @@ agent_outbound_message_attachments {
 ```
 
 Why a companion table:
-- avoids overloading `agent_outbound_messages`
+- avoids overloading the `agent_messages` envelope row
 - records each attachment's outcome separately
 - records copies, so an agent can later trace where a document went
 
@@ -279,7 +279,7 @@ Files: `apps/worker/src/agents/agent-message-broker.ts`, plus the peer and child
 
 New flow:
 1. load the sending agent and its active session, as today
-2. persist the outbound message row, as today
+2. persist the send's envelope row in `agent_messages` (keyed by `message_id`), as today; attachment rows reference it by `outboundMessageId`
 3. if `documentIds` is present:
    - resolve each id via `AgentDocumentsRepository`
    - reject the request if a document is missing, belongs to another agent, or is deleted
@@ -328,7 +328,7 @@ This keeps `AgentMessageBroker` from becoming a monolith.
 
 Status is tracked per item: `PENDING`, `DONE`, or `BLOCKED`.
 
-1. [PENDING] Add the `agent_outbound_message_attachments` table and the `agent_documents.sourceDocumentId` column
+1. [DONE] Add the `agent_outbound_message_attachments` table and the `agent_documents.sourceDocumentId` column
 2. [PENDING] Add `documentIds` to the four payload and parameter schemas
 3. [PENDING] Add `OutboundAttachmentResolver` (resolve and copy)
 4. [PENDING] Add `list_agent_documents`
@@ -341,6 +341,17 @@ Status is tracked per item: `PENDING`, `DONE`, or `BLOCKED`.
 ## Outstanding Issues
 
 _Recorded by the coordinator after each item's review. Grouped by rollout item._
+
+### Item 1: schema and migration
+
+- MEDIUM: `agent_outbound_message_attachments` has no sender or user column, so rows cannot be found or purged by agent or user. Retention and purge rules are not decided in this plan.
+- MEDIUM: `outboundMessageId` points at the envelope row, which is `direction = 'inbound'` (agent to platform). The column name and plan wording ("outbound message rows") suggest otherwise. Rename to `sendEnvelopeMessageId`, or note the direction in the comment.
+- MEDIUM: the user-visible send text and delivery status live in `conversation_messages`, not the envelope row. State in the plan that attachments link to the envelope by design.
+- MEDIUM: no index on `copied_document_id` or `source_document_id` (both tables), which the "trace where a document went" use needs. `agent_documents.source_document_id` is unindexed.
+- LOW: the `{ enum }` column style is not the repo's dominant convention (`$type<T>()` and plain text are more common). Behaviour is unaffected.
+- LOW: index name `idx_agent_outbound_message_attachments_message_id` abbreviates the column name.
+- LOW: the plan's Data Model block has no referent comment for `outboundMessageId`.
+- Verification gap: migration 0093 has not been applied to a Postgres database. The Postgres integration suite was skipped because no local Postgres was running.
 
 ## Testing Plan
 
