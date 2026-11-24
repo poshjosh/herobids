@@ -1,4 +1,4 @@
-import { err, CHAT_TYPING_STOP_TTL_SECONDS, chatTypingStopKey, type ChatChannelRegistry, type ChatOutboundBody, type ChatSendResult, type Result, type DomainError, type ChatAddress } from '@herobids/domain';
+import { err, ok, CHAT_TYPING_STOP_TTL_SECONDS, chatTypingStopKey, type ChatChannel, type ChatChannelRegistry, type ChatOutboundBody, type ChatOutboundDocument, type ChatSendResult, type Result, type DomainError, type ChatAddress } from '@herobids/domain';
 import type { AgentRepository } from '@herobids/db';
 import type { Redis } from 'ioredis';
 import { createLogger } from '../logger.js';
@@ -21,6 +21,29 @@ export class ChatDelivery {
   ) {}
 
   async send(agentId: string, body: ChatOutboundBody): Promise<Result<ChatDeliveryResult, DomainError>> {
+    const target = await this.resolveTelegram(agentId);
+    if (!target.ok) return target;
+    const { address, channel } = target.data;
+
+    const result = await channel.sendText(address, body);
+    if (!result.ok) return result;
+    this.markTypingStopped(address);
+    return { ok: true, data: { ...result.data, address } };
+  }
+
+  /** Sends one file to the agent's Telegram address. Callers send the text first, once; the file carries no caption. */
+  async sendDocument(agentId: string, document: ChatOutboundDocument): Promise<Result<ChatDeliveryResult, DomainError>> {
+    const target = await this.resolveTelegram(agentId);
+    if (!target.ok) return target;
+    const { address, channel } = target.data;
+    if (!channel.sendDocument) return err({ code: 'chat.document_unsupported', message: 'document_unsupported' });
+
+    const result = await channel.sendDocument(address, document);
+    if (!result.ok) return result;
+    return { ok: true, data: { ...result.data, address } };
+  }
+
+  private async resolveTelegram(agentId: string): Promise<Result<{ address: ChatAddress; channel: ChatChannel }, DomainError>> {
     let address: ChatAddress | null;
     try {
       address = await this.agentRepo.getEffectiveChatAddress(agentId, 'telegram');
@@ -38,11 +61,7 @@ export class ChatDelivery {
       return lookupFailed(error);
     }
     if (suppressed) return err({ code: 'chat.address_suppressed', message: 'address_suppressed' });
-
-    const result = await channel.sendText(address, body);
-    if (!result.ok) return result;
-    this.markTypingStopped(address);
-    return { ok: true, data: { ...result.data, address } };
+    return ok({ address, channel });
   }
 
   // Fire-and-forget: the stop signal is best-effort and must not delay or fail the reply.

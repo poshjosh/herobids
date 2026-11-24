@@ -6,6 +6,7 @@ export * from './blueprint-execution-capability.js';
 export * from './external-skill-provider.js';
 export * from './external-skill-installer.js';
 export * from './chat-channel.js';
+export * from './outbound-attachments.js';
 export * from './agent-wake-publisher.js';
 export * from './agent-platform.js';
 

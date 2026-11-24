@@ -866,6 +866,7 @@ function makeSendBroker(options: {
   runningAgentIds?: string[];
   redis?: { xadd: ReturnType<typeof vi.fn> };
   peerMessaging?: { send: ReturnType<typeof vi.fn>; recordDropped: ReturnType<typeof vi.fn> };
+  outboundAttachments?: ReturnType<typeof makeOutboundPort>;
 }) {
   const conversations = options.conversations === null ? undefined : options.conversations ?? makeConversations();
   const redis = options.redis ?? { xadd: vi.fn(async () => '1-0') };
@@ -883,6 +884,9 @@ function makeSendBroker(options: {
     ? { ok: true, data: { providerMessageId: 'tg-1', address: { provider: 'telegram', address: '123' } } }
     : { ok: false, error: { code: options.chatErrorCode ?? 'chat.no_address', message: 'no_chat_address' } };
   const chatSend = vi.spyOn(delivery, 'send').mockImplementation(vi.fn().mockResolvedValue(chatResult));
+  const documentSend = vi.spyOn(delivery, 'sendDocument').mockResolvedValue(
+    { ok: true, data: { providerMessageId: 'tg-doc-1', address: { provider: 'telegram', address: '123' } } } as never,
+  );
   const broker = new AgentMessageBroker(
     redis as unknown as Redis,
     agentRepo,
@@ -895,9 +899,106 @@ function makeSendBroker(options: {
     options.notifications,
     conversations as never,
     options.peerMessaging as never,
+    options.outboundAttachments as never,
   );
-  return { broker, agentRepo, chatSend, conversations, redis };
+  return { broker, agentRepo, chatSend, documentSend, conversations, redis };
 }
+
+const DOC_ID = '33333333-3333-4333-8333-333333333333';
+const MSG_ID = '22222222-2222-4222-8222-222222222222';
+
+function makeOutboundPort(files: Array<{ auditId: string; filename: string }> = [
+  { auditId: 'audit-1', filename: 'a.pdf' },
+  { auditId: 'audit-2', filename: 'b.pdf' },
+]) {
+  return {
+    prepareForHuman: vi.fn(async () => ({
+      ok: true,
+      data: files.map((file) => ({ ...file, documentId: DOC_ID, mimeType: 'application/pdf', sizeBytes: 1, body: Buffer.from('x') })),
+    })),
+    stageForAgent: vi.fn(async () => ({ ok: false, error: { code: 'outbound_attachment.not_found', message: 'not_found' } })),
+    markDelivery: vi.fn(async () => ({ ok: true, data: undefined })),
+  };
+}
+
+describe('AgentMessageBroker — send_message document delivery to a human', () => {
+  const sendWithDocuments = (documentIds: string[] = [DOC_ID]) =>
+    makeSendMessageEnvelope({ payload: { body: 'Hello', documentIds, messageId: MSG_ID } });
+
+  it('sends the text once, then each document once with no caption, and records each outcome', async () => {
+    const port = makeOutboundPort();
+    const { broker, chatSend, documentSend } = makeSendBroker({ chatOk: true, outboundAttachments: port });
+
+    const result = await broker.processInbound(sendWithDocuments());
+
+    expect(result.accepted).toBe(true);
+    expect(port.prepareForHuman).toHaveBeenCalledWith(expect.objectContaining({
+      outboundMessageId: MSG_ID,
+      senderAgentId: 'agent-1',
+      recipientKind: 'telegram',
+      documentIds: [DOC_ID],
+    }));
+    expect(chatSend).toHaveBeenCalledTimes(1);
+    expect(documentSend).toHaveBeenCalledTimes(2);
+    expect(documentSend.mock.calls.map((call) => call[1].filename)).toEqual(['a.pdf', 'b.pdf']);
+    expect(chatSend.mock.invocationCallOrder[0]).toBeLessThan(documentSend.mock.invocationCallOrder[0]);
+    expect(port.markDelivery).toHaveBeenCalledWith('audit-1', 'sent', { deliveryRef: 'tg-doc-1' });
+    expect(port.markDelivery).toHaveBeenCalledWith('audit-2', 'sent', { deliveryRef: 'tg-doc-1' });
+  });
+
+  it('sends no document and marks each row skipped when the text was not delivered', async () => {
+    const port = makeOutboundPort();
+    const { broker, chatSend, documentSend } = makeSendBroker({ chatOk: false, outboundAttachments: port });
+
+    const result = await broker.processInbound(sendWithDocuments());
+
+    expect(result.accepted).toBe(true);
+    expect(chatSend).toHaveBeenCalledTimes(1);
+    expect(documentSend).not.toHaveBeenCalled();
+    expect(port.markDelivery).toHaveBeenCalledWith('audit-1', 'skipped', { deliveryError: 'text_not_delivered' });
+    expect(port.markDelivery).toHaveBeenCalledWith('audit-2', 'skipped', { deliveryError: 'text_not_delivered' });
+  });
+
+  it('marks only the failed document as failed and still sends the rest', async () => {
+    const port = makeOutboundPort();
+    const { broker, documentSend } = makeSendBroker({ chatOk: true, outboundAttachments: port });
+    documentSend
+      .mockResolvedValueOnce({ ok: false, error: { code: 'chat.send_failed', message: 'send_failed' } } as never)
+      .mockResolvedValueOnce({ ok: true, data: { providerMessageId: 'tg-doc-2', address: { provider: 'telegram', address: '123' } } } as never);
+
+    await broker.processInbound(sendWithDocuments());
+
+    expect(documentSend).toHaveBeenCalledTimes(2);
+    expect(port.markDelivery).toHaveBeenCalledWith('audit-1', 'failed', { deliveryError: 'chat.send_failed' });
+    expect(port.markDelivery).toHaveBeenCalledWith('audit-2', 'sent', { deliveryRef: 'tg-doc-2' });
+  });
+
+  it('fails the send without recording or sending when a document cannot be read', async () => {
+    const port = makeOutboundPort();
+    port.prepareForHuman.mockResolvedValueOnce({ ok: false, error: { code: 'outbound_attachment.not_found', message: 'not_found' } } as never);
+    const { broker, conversations, chatSend, documentSend } = makeSendBroker({ chatOk: true, outboundAttachments: port });
+
+    const result = await broker.processInbound(sendWithDocuments());
+
+    expect(result.accepted).toBe(false);
+    expect(conversations.recordAgentMessage).not.toHaveBeenCalled();
+    expect(chatSend).not.toHaveBeenCalled();
+    expect(documentSend).not.toHaveBeenCalled();
+  });
+
+  it('makes no attachment or document calls when documentIds is absent', async () => {
+    const port = makeOutboundPort();
+    const { broker, chatSend, documentSend } = makeSendBroker({ chatOk: true, outboundAttachments: port });
+
+    const result = await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(result.accepted).toBe(true);
+    expect(chatSend).toHaveBeenCalledTimes(1);
+    expect(port.prepareForHuman).not.toHaveBeenCalled();
+    expect(port.markDelivery).not.toHaveBeenCalled();
+    expect(documentSend).not.toHaveBeenCalled();
+  });
+});
 
 describe('AgentMessageBroker — child reports', () => {
   const CHILD = { id: 'agent-1', name: 'Research Bot', userId: 'user-1', toolPolicy: null, parentAgentId: 'parent-1', status: 'active', lastStartRefusal: null };
@@ -1122,6 +1223,81 @@ describe('AgentMessageBroker — child reports', () => {
 
     expect(result.accepted).toBe(true);
     expect(redis.xadd).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('AgentMessageBroker — send_message document copies to a parent agent', () => {
+  const CHILD = { id: 'agent-1', name: 'Research Bot', userId: 'user-1', toolPolicy: null, parentAgentId: 'parent-1', status: 'active', lastStartRefusal: null };
+  const PARENT = { id: 'parent-1', name: 'Parent Bot', userId: 'user-1', toolPolicy: null, parentAgentId: null, status: 'active', lastStartRefusal: null };
+  const sendWithDocuments = () => makeSendMessageEnvelope({ payload: { body: 'Hello', documentIds: [DOC_ID], messageId: MSG_ID } });
+  const childOptions = { chatOk: true, agents: { 'agent-1': CHILD, 'parent-1': PARENT }, runningAgentIds: ['agent-1', 'parent-1'] };
+
+  function portWithStage(stageForAgent: unknown) {
+    return { ...makeOutboundPort(), stageForAgent: vi.fn(async () => stageForAgent) } as never;
+  }
+
+  it('copies the documents to the parent, appends their notice to the report, and records each copy as sent', async () => {
+    const rollback = vi.fn(async () => {});
+    const port = { ...makeOutboundPort(), stageForAgent: vi.fn(async () => ({
+      ok: true,
+      data: {
+        copies: [{ auditId: 'copy-audit-1', sourceDocumentId: DOC_ID, copiedDocumentId: 'copy-doc-1', filename: 'a.pdf' }],
+        notice: 'NOTICE',
+        rollback,
+      },
+    })) };
+    const { broker, conversations, chatSend, redis } = makeSendBroker({
+      ...childOptions,
+      redis: { xadd: vi.fn(async () => '1-0') },
+      outboundAttachments: port as never,
+    });
+
+    const result = await broker.processInbound(sendWithDocuments());
+
+    expect(result.accepted).toBe(true);
+    expect(port.stageForAgent).toHaveBeenCalledWith(expect.objectContaining({
+      outboundMessageId: MSG_ID,
+      senderAgentId: 'agent-1',
+      recipientAgentId: 'parent-1',
+      documentIds: [DOC_ID],
+    }));
+    expect(conversations.recordAgentMessage).toHaveBeenCalledWith(expect.objectContaining({ id: MSG_ID, agentId: 'parent-1', body: 'Hello\n\nNOTICE' }));
+    expect(chatSend).not.toHaveBeenCalled();
+    expect(rollback).not.toHaveBeenCalled();
+    const call = redis.xadd.mock.calls[0];
+    expect(JSON.parse(call.at(-1) as string).payload.message).toBe('Hello\n\nNOTICE');
+    expect(port.markDelivery).toHaveBeenCalledWith('copy-audit-1', 'sent', { deliveryRef: 'out-1' });
+  });
+
+  it('fails the send with nothing recorded or published when a copy fails', async () => {
+    const { broker, conversations, redis } = makeSendBroker({
+      ...childOptions,
+      redis: { xadd: vi.fn(async () => '1-0') },
+      outboundAttachments: portWithStage({ ok: false, error: { code: 'outbound_attachment.copy_failed', message: 'copy_failed' } }),
+    });
+
+    const result = await broker.processInbound(sendWithDocuments());
+
+    expect(result.accepted).toBe(false);
+    expect(conversations.recordAgentMessage).not.toHaveBeenCalled();
+    expect(redis.xadd).not.toHaveBeenCalled();
+  });
+
+  it('rolls back the staged copies when the report cannot be recorded', async () => {
+    const rollback = vi.fn(async () => {});
+    const conversations = makeConversations({ ok: false, error: { code: 'db_down', message: 'db_down' } });
+    const { broker, redis } = makeSendBroker({
+      ...childOptions,
+      conversations,
+      redis: { xadd: vi.fn(async () => '1-0') },
+      outboundAttachments: portWithStage({ ok: true, data: { copies: [], notice: 'NOTICE', rollback } }),
+    });
+
+    const result = await broker.processInbound(sendWithDocuments());
+
+    expect(result.accepted).toBe(false);
+    expect(rollback).toHaveBeenCalledTimes(1);
+    expect(redis.xadd).not.toHaveBeenCalled();
   });
 });
 

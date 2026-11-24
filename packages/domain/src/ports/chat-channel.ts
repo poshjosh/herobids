@@ -34,6 +34,13 @@ export interface ChatSendResult {
   providerMessageId: string;
 }
 
+/** A document to send to a chat. The body is held only for the send. */
+export interface ChatOutboundDocument {
+  filename: string;
+  mimeType: string;
+  body: Buffer;
+}
+
 export interface ChatChannel {
   readonly provider: ChatProvider;
   readonly capabilities: {
@@ -42,6 +49,8 @@ export interface ChatChannel {
     nativeReplyThreading: boolean;
   };
   sendText(to: ChatAddress, body: ChatOutboundBody): Promise<Result<ChatSendResult, DomainError>>;
+  /** Optional. Sends a file; providers that cannot carry files omit the method. */
+  sendDocument?(to: ChatAddress, document: ChatOutboundDocument): Promise<Result<ChatSendResult, DomainError>>;
   /** Optional. Shows the provider's "typing" indicator; providers without it omit the method. */
   sendTyping?(to: ChatAddress): Promise<Result<void, DomainError>>;
 }

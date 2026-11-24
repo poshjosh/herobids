@@ -29,6 +29,14 @@ import { createGmailAdapter } from '../gmail-adapter.js';
 const mockResolveGmailTokens = resolveGmailTokens as ReturnType<typeof vi.fn>;
 const mockCreateGmailAdapter = createGmailAdapter as ReturnType<typeof vi.fn>;
 
+// Shared port: initEmailTools only takes effect on its first call, so every describe passes this same object.
+const outboundPort = {
+  prepareForHuman: vi.fn(),
+  stageForAgent: vi.fn(),
+  markDelivery: vi.fn(),
+};
+type InitOutboundPort = NonNullable<Parameters<typeof initEmailTools>[2]>;
+
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
     agentId: 'agent-1',
@@ -83,6 +91,7 @@ describe('send_email', () => {
         redirectUri: 'http://localhost/callback',
         dailySendLimit: 50,
       },
+      outboundPort as unknown as InitOutboundPort,
     );
   });
 
@@ -290,5 +299,105 @@ describe('send_email', () => {
       expect(result.data.connectionId).toBe('conn-specific');
       expect(result.data.from).toBe('specific-sender@gmail.com');
     }
+  });
+});
+
+describe('send_email documentIds delivery', () => {
+  const base = { to: 'recipient@example.com', subject: 'Report', body: 'See attached' };
+  const pdf = {
+    auditId: 'audit-1',
+    documentId: 'doc-1',
+    filename: 'report.pdf',
+    mimeType: 'application/pdf',
+    sizeBytes: 3,
+    body: Buffer.from('abc'),
+  };
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    initEmailTools(
+      {} as unknown as Parameters<typeof initEmailTools>[0],
+      { clientId: 'test-client-id', clientSecret: 'test-client-secret', redirectUri: 'http://localhost/callback' },
+      outboundPort as unknown as InitOutboundPort,
+    );
+    mockResolveGmailTokens.mockResolvedValue({
+      ok: true,
+      data: { accessToken: 'test-token', email: 'sender@gmail.com', credentialId: 'cred-1', connectionId: 'conn-1' },
+    });
+  });
+
+  it('sends resolved documents as attachments and settles their audit rows as sent', async () => {
+    outboundPort.prepareForHuman.mockResolvedValue({ ok: true, data: [pdf] });
+    outboundPort.markDelivery.mockResolvedValue({ ok: true, data: undefined });
+    const mockAdapter = { sendEmail: vi.fn().mockResolvedValue({ messageId: 'msg-1', threadId: 'thread-1' }) };
+    mockCreateGmailAdapter.mockReturnValue(mockAdapter);
+
+    const result = await sendEmailTool.execute({ ...base, documentIds: ['doc-1'] }, makeCtx());
+
+    expect(result.success).toBe(true);
+    expect(outboundPort.prepareForHuman).toHaveBeenCalledWith(
+      expect.objectContaining({ senderAgentId: 'agent-1', recipientKind: 'email', documentIds: ['doc-1'] }),
+    );
+    expect(mockAdapter.sendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachments: [{ filename: 'report.pdf', contentType: 'application/pdf', body: pdf.body }],
+      }),
+    );
+    expect(outboundPort.markDelivery).toHaveBeenCalledWith('audit-1', 'sent', { deliveryRef: 'msg-1' });
+  });
+
+  it('settles audit rows as failed when Gmail rejects the send', async () => {
+    outboundPort.prepareForHuman.mockResolvedValue({ ok: true, data: [pdf] });
+    outboundPort.markDelivery.mockResolvedValue({ ok: true, data: undefined });
+    mockCreateGmailAdapter.mockReturnValue({
+      sendEmail: vi.fn().mockRejectedValue(Object.assign(new Error('upstream down'), { code: 'gmail.send_failed', status: 500 })),
+    });
+
+    const result = await sendEmailTool.execute({ ...base, documentIds: ['doc-1'] }, makeCtx());
+
+    expect(result.success).toBe(false);
+    expect(result.fault).toBe(true);
+    expect(outboundPort.markDelivery).toHaveBeenCalledWith('audit-1', 'failed', { deliveryError: 'gmail.send_failed' });
+  });
+
+  it('keeps email validation errors out of platform faults', async () => {
+    outboundPort.prepareForHuman.mockResolvedValue({ ok: true, data: [pdf] });
+    outboundPort.markDelivery.mockResolvedValue({ ok: true, data: undefined });
+    mockCreateGmailAdapter.mockReturnValue({
+      sendEmail: vi.fn().mockRejectedValue(Object.assign(new Error('Attachment rejected'), { code: 'email.invalid_attachment' })),
+    });
+
+    const result = await sendEmailTool.execute({ ...base, documentIds: ['doc-1'] }, makeCtx());
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('email.invalid_attachment');
+    expect(result.fault).toBe(false);
+    expect(outboundPort.markDelivery).toHaveBeenCalledWith('audit-1', 'failed', { deliveryError: 'email.invalid_attachment' });
+  });
+
+  it('returns the document error without contacting Gmail when a document cannot be resolved', async () => {
+    outboundPort.prepareForHuman.mockResolvedValue({
+      ok: false,
+      error: { code: 'outbound_attachment.not_found', message: 'Document not found.' },
+    });
+
+    const result = await sendEmailTool.execute({ ...base, documentIds: ['doc-missing'] }, makeCtx());
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('outbound_attachment.not_found');
+    expect(result.fault).toBe(false);
+    expect(mockCreateGmailAdapter).not.toHaveBeenCalled();
+  });
+
+  it('leaves the send unchanged when documentIds is absent', async () => {
+    const mockAdapter = { sendEmail: vi.fn().mockResolvedValue({ messageId: 'msg-2', threadId: 'thread-2' }) };
+    mockCreateGmailAdapter.mockReturnValue(mockAdapter);
+
+    const result = await sendEmailTool.execute({ ...base }, makeCtx());
+
+    expect(result.success).toBe(true);
+    expect(outboundPort.prepareForHuman).not.toHaveBeenCalled();
+    expect(outboundPort.markDelivery).not.toHaveBeenCalled();
+    expect(mockAdapter.sendEmail.mock.calls[0]?.[0]).not.toHaveProperty('attachments');
   });
 });

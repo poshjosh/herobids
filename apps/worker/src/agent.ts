@@ -14,7 +14,8 @@ import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { scannerGatedKey } from './redis-keys.js';
 import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp, DEFAULT_PERMISSION_LEVEL, DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS } from '@herobids/domain';
-import { createDatabase, AgentRepository, ConversationRepository, skills, skillRevisions, agentSkills, agentConnections, connections } from '@herobids/db';
+import { createDatabase, AgentRepository, ConversationRepository, skills, skillRevisions, agentSkills, agentConnections, connections, AgentDocumentsRepository, OutboundAttachmentAuditRepository } from '@herobids/db';
+import { LocalDocumentStore, OutboundAttachmentResolver, OutboundAttachmentService } from '@herobids/documents';
 import { ConversationService, MessagingConversationsSchema, isFullMessageId } from '@herobids/domain';
 import { and, eq, ne, ilike, or, sql } from 'drizzle-orm';
 import { createUsageBillingService } from './usage-billing-service.js';
@@ -1089,12 +1090,20 @@ if (db && process.env['GMAIL_CLIENT_ID'] && process.env['CREDENTIAL_ENCRYPTION_K
   const dailySendLimit = process.env['GMAIL_DAILY_SEND_LIMIT']
     ? parseInt(process.env['GMAIL_DAILY_SEND_LIMIT'], 10)
     : undefined;
+  // The sender's own documents live on this agent's mount. Without the mount, documentIds fail closed.
+  const agentDocumentsDir = process.env['AGENT_DOCUMENTS_DIR'];
+  const outboundAttachments = agentDocumentsDir
+    ? new OutboundAttachmentService(
+      new OutboundAttachmentResolver(new LocalDocumentStore(agentDocumentsDir), new AgentDocumentsRepository(db)),
+      new OutboundAttachmentAuditRepository(db),
+    )
+    : undefined;
   initEmailTools(db, {
     clientId: process.env['GMAIL_CLIENT_ID'] ?? '',
     clientSecret: process.env['GMAIL_CLIENT_SECRET'] ?? '',
     redirectUri: process.env['GMAIL_REDIRECT_URI'] ?? '',
     dailySendLimit: dailySendLimit && !isNaN(dailySendLimit) ? dailySendLimit : undefined,
-  });
+  }, outboundAttachments);
 }
 
 function estimateLlmCostUsd(model: string, tokensUsed: number): number {

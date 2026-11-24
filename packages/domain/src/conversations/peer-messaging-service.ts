@@ -2,6 +2,7 @@ import { err, ok, type DomainError, type Result } from '../result.js';
 import type { ConversationService } from './conversation-service.js';
 import { PEER_DROP_DETAILS, type ConversationMessage, type PeerDropDetail } from './conversation.js';
 import { canPeerSend, type AgentOwnerLookup } from './peer-send.js';
+import type { OutboundAttachmentPort, StagedOutboundCopies } from '../ports/outbound-attachments.js';
 
 /** Peer messaging error codes (A2A MVP). Dot-strings, returned to the sending agent and stored as the reason of a refused row. */
 export const PEER_ERROR_CODES = {
@@ -14,6 +15,8 @@ export const PEER_ERROR_CODES = {
   rateLimited: 'peer.rate_limited',
   unavailable: 'peer.unavailable',
   deliveryFailed: 'peer.delivery_failed',
+  attachmentRetry: 'peer.attachment_retry',
+  attachmentsUnavailable: 'peer.attachments_unavailable',
 } as const;
 
 /** Agent statuses that cannot receive a message: the same states `POST /agents/:id/message` refuses. */
@@ -83,6 +86,8 @@ export interface PeerMessagingDeps {
   wake: PeerWakePublisher;
   config: PeerMessagingConfig;
   log: PeerMessagingLog;
+  /** Copies the attached documents into the recipient's store. Required only for a send that carries documentIds. */
+  outboundAttachments?: OutboundAttachmentPort;
   /** Clock for the refusal window. Defaults to the system clock. */
   now?: () => Date;
 }
@@ -97,6 +102,8 @@ export interface PeerSendInput {
    * failed, or has been queued too long, is published again.
    */
   messageId: string;
+  /** Documents of the sender to attach. Each is copied into the recipient's store; the copies are the recipient's own. */
+  documentIds?: string[];
 }
 
 export interface PeerSent {
@@ -201,6 +208,16 @@ export class PeerMessagingService {
       if (settled) return settled;
     }
 
+    const outboundAttachments = this.deps.outboundAttachments;
+    const attachmentIds = input.documentIds?.length ? input.documentIds : null;
+    if (attachmentIds && !outboundAttachments) {
+      return failure(PEER_ERROR_CODES.attachmentsUnavailable, 'Attachments cannot be sent right now.');
+    }
+    if (attachmentIds && found.data) {
+      // The copies were made by the first attempt; copying again would duplicate them.
+      return failure(PEER_ERROR_CODES.attachmentRetry, 'A message with attachments cannot be sent again. Send it under a new message id.');
+    }
+
     // A new message and a republish both go through the stop switch, the recipient check and the rate limit.
     try {
       if (await settings.isPeerMessagingPaused(userId)) {
@@ -225,6 +242,20 @@ export class PeerMessagingService {
       return refuse(PEER_ERROR_CODES.unavailable, 'Peer messaging is temporarily unavailable.');
     }
 
+    // Copies are made only once the send is certain to go: after the rate limit, and rolled back if it is not recorded.
+    let staged: StagedOutboundCopies | null = null;
+    if (attachmentIds && outboundAttachments) {
+      const copied = await outboundAttachments.stageForAgent({
+        outboundMessageId: input.messageId,
+        senderAgentId: input.fromAgentId,
+        recipientAgentId: recipientId,
+        documentIds: attachmentIds,
+      });
+      if (!copied.ok) return failure(copied.error.code, copied.error.message);
+      staged = copied.data;
+    }
+    const deliveredBody = staged ? `${input.body}\n\n${staged.notice}` : input.body;
+
     let stored = found.data;
     if (!stored) {
       const recorded = await conversations.recordPeerMessage({
@@ -232,9 +263,10 @@ export class PeerMessagingService {
         ownerUserId: userId,
         fromAgentId: input.fromAgentId,
         toAgentId: recipientId,
-        body: input.body,
+        body: deliveredBody,
       });
       if (!recorded.ok) {
+        await staged?.rollback();
         this.deps.log.warn({ code: recorded.error.code }, 'Peer message could not be recorded; not publishing');
         return failure(PEER_ERROR_CODES.unavailable, 'Peer messaging is temporarily unavailable.');
       }
@@ -242,7 +274,9 @@ export class PeerMessagingService {
         // A concurrent send of the same id recorded it after the lookup above.
         stored = recorded.data.message;
         const settled = this.settledRepeat(stored, sent);
+        if (staged) await staged.rollback();
         if (settled) return settled;
+        if (staged) return failure(PEER_ERROR_CODES.unavailable, 'Peer messaging is temporarily unavailable.');
       }
     }
     if (stored) {
@@ -266,14 +300,17 @@ export class PeerMessagingService {
         fromAgentId: input.fromAgentId,
         fromAgentName: sender.name,
         toAgentId: recipientId,
-        body: input.body,
+        body: deliveredBody,
       });
     } catch (error) {
       this.deps.log.warn({ cause: causeName(error) }, 'Peer message could not be published to the recipient');
       await this.mark(input.messageId, 'failed', 'publish_failed');
+      // The copies stay: the envelope may have reached the recipient, so the audit rows must not point at deleted blobs.
+      await this.settleAttachments(staged, 'failed', 'publish_failed');
       return failure(PEER_ERROR_CODES.deliveryFailed, 'The message could not be delivered. Try again shortly.');
     }
     await this.mark(input.messageId, 'sent');
+    await this.settleAttachments(staged, 'sent');
     return ok(sent);
   }
 
@@ -352,6 +389,15 @@ export class PeerMessagingService {
     const now = (this.deps.now ?? (() => new Date()))();
     const window = Math.floor(now.getTime() / this.deps.config.refusalWindowMs);
     return `peer-refusal:${fromAgentId}:${toAgentId}:${code}:${window}`;
+  }
+
+  private async settleAttachments(staged: StagedOutboundCopies | null, status: 'sent' | 'failed', deliveryError?: string): Promise<void> {
+    const port = this.deps.outboundAttachments;
+    if (!staged || !port) return;
+    for (const copy of staged.copies) {
+      const marked = await port.markDelivery(copy.auditId, status, deliveryError ? { deliveryError } : undefined);
+      if (!marked.ok) this.deps.log.warn({ code: marked.error.code, status }, 'Attachment delivery status could not be recorded');
+    }
   }
 
   private async mark(messageId: string, status: 'sent' | 'failed', detail?: string): Promise<void> {

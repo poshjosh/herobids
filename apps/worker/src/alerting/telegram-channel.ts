@@ -1,4 +1,4 @@
-import type { ChatAddress, ChatChannel, ChatOutboundBody } from '@herobids/domain';
+import type { ChatAddress, ChatChannel, ChatOutboundBody, ChatOutboundDocument } from '@herobids/domain';
 import { forceReply, type TelegramClient } from './telegram-client.js';
 
 export class TelegramChannel implements ChatChannel {
@@ -12,6 +12,17 @@ export class TelegramChannel implements ChatChannel {
       ? `💬 <b>[${escapeHtml(body.agentName)}]</b>\n${body.subject ? `<b>${escapeHtml(body.subject)}</b>\n` : ''}${escapeHtml(body.body)}`
       : body.body;
     const result = await this.client.sendText(to.address, text, body.replyRequested ? forceReply() : undefined);
+    if (!result.ok) return result;
+    return { ok: true as const, data: { providerMessageId: String(result.data.messageId) } };
+  }
+
+  async sendDocument(to: ChatAddress, document: ChatOutboundDocument) {
+    const result = await this.client.sendDocument({
+      chatId: to.address,
+      filename: document.filename,
+      mimeType: document.mimeType,
+      body: document.body,
+    });
     if (!result.ok) return result;
     return { ok: true as const, data: { providerMessageId: String(result.data.messageId) } };
   }

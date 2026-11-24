@@ -209,7 +209,7 @@ export class OutboundAttachmentResolver {
         return err({
           code: 'outbound_attachment.copy_failed',
           message,
-          context: { sourceDocumentId: resolved.documentId, recipientAgentId, orphanedDocumentId: documentId },
+          context: { sourceDocumentId: resolved.documentId, recipientAgentId, orphanedDocumentId: documentId, orphanedStoreKeys: writtenKeys },
         });
       }
       return fail(message);
@@ -224,9 +224,53 @@ export class OutboundAttachmentResolver {
     });
   }
 
+  /**
+   * Creates copies for every resolved document, or none. A failed copy rolls back the earlier ones, and an orphaned
+   * row from the failed copy is reclaimed here, so no row is left pointing at deleted blobs.
+   */
+  async copyAllToAgent(resolved: ResolvedAttachment[], recipientAgentId: string): Promise<Result<CopiedDocument[], AttachmentResolveError>> {
+    const copies: CopiedDocument[] = [];
+    for (const document of resolved) {
+      const copy = await this.copyToAgent(document, recipientAgentId);
+      if (copy.ok) {
+        copies.push(copy.data);
+        continue;
+      }
+      await this.discardCopies(copies);
+      const orphanedDocumentId = copy.error.context?.['orphanedDocumentId'];
+      const orphanedStoreKeys = copy.error.context?.['orphanedStoreKeys'];
+      if (typeof orphanedDocumentId === 'string' && Array.isArray(orphanedStoreKeys)) {
+        await this.removeCopyRecord(orphanedDocumentId, orphanedStoreKeys as string[]);
+      }
+      return copy;
+    }
+    return ok(copies);
+  }
+
+  /** Removes copies from the recipient's store. A copy's blobs go only after its row is gone, so no row points at deleted bytes. */
+  async discardCopies(copies: CopiedDocument[]): Promise<void> {
+    await Promise.allSettled(copies.map((copy) =>
+      this.removeCopyRecord(copy.documentId, [copy.originalStoreKey, ...(copy.extractedTextStoreKey ? [copy.extractedTextStoreKey] : [])]),
+    ));
+  }
+
+  /** Retries the row delete once. Blobs are removed only after the row is gone; otherwise both stay, which is consistent. */
+  private async removeCopyRecord(documentId: string, storeKeys: string[]): Promise<boolean> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await this.repo.hardDelete(documentId);
+        await this.discard(storeKeys);
+        return true;
+      } catch (error) {
+        console.warn(`[removeCopyRecord] Attempt ${attempt + 1} to remove document row ${documentId} failed: ${(error as Error).message}`);
+      }
+    }
+    return false;
+  }
+
   private async discard(storeKeys: string[]): Promise<void> {
     // Best-effort: a leftover blob is harmless, and the caller already has a failure to report.
-    await Promise.all(storeKeys.map((key) => this.store.delete(key)));
+    await Promise.allSettled(storeKeys.map((key) => this.store.delete(key)));
   }
 }
 

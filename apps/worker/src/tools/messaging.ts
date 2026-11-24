@@ -25,7 +25,7 @@ const sendMessageTool: AgentTool = {
     if (!parsed.success) {
       return { success: false, error: `Invalid send_message parameters: ${parsed.error.message}`, fault: false };
     }
-    const { body, subject, messageClass, contextRef } = parsed.data;
+    const { body, subject, messageClass, contextRef, documentIds } = parsed.data;
     const messageId = randomUUID();
     await ctx.publishToInbound(AGENT_MESSAGE_TYPES.SEND_MESSAGE, {
       body,
@@ -33,6 +33,7 @@ const sendMessageTool: AgentTool = {
       messageId,
       ...(messageClass ? { messageClass } : {}),
       ...(contextRef ? { contextRef } : {}),
+      ...(documentIds?.length ? { documentIds } : {}),
     });
 
     return { success: true, data: { ok: true, messageId: shortMessageId(messageId), note: 'message queued for delivery' } };

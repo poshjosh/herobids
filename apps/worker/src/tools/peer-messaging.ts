@@ -45,9 +45,15 @@ export const messagePeerAgentTool: AgentTool = {
     }
 
     const requestMessageId = randomUUID();
+    const { documentIds } = parsed.data;
     await ctx.publishToInbound(
       AGENT_MESSAGE_TYPES.PEER_SEND,
-      { agent: parsed.data.agent, message: parsed.data.message, requestMessageId } as Record<string, unknown>,
+      {
+        agent: parsed.data.agent,
+        message: parsed.data.message,
+        requestMessageId,
+        ...(documentIds?.length ? { documentIds } : {}),
+      } as Record<string, unknown>,
     );
 
     const reply = await ctx.redis.blpop(`agent:peer-send:reply:${requestMessageId}`, PEER_SEND_REPLY_TIMEOUT_S);

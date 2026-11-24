@@ -267,6 +267,70 @@ describe('OutboundAttachmentResolver.copyToAgent', () => {
   });
 });
 
+describe('OutboundAttachmentResolver.copyAllToAgent', () => {
+  it('removes earlier copies and reports copy_failed when a later copy cannot be recorded', async () => {
+    const { store, repo, resolver } = setup();
+    const first = await seedDocument(store, repo, { extractedText: 'first text' });
+    const second = await seedDocument(store, repo, { extractedText: 'second text' });
+    const blobsBefore = store.blobs.size;
+    const create = repo.create.bind(repo);
+    let creates = 0;
+    repo.create = async (input) => {
+      creates += 1;
+      if (creates === 2) throw new Error('connection reset');
+      return create(input);
+    };
+    const resolved = await resolveMany(resolver, [first, second]);
+
+    const copies = await resolver.copyAllToAgent(resolved, RECIPIENT);
+
+    expect(copies).toMatchObject({ ok: false, error: { code: 'outbound_attachment.copy_failed' } });
+    expect(repo.inserts).toHaveLength(1);
+    expect([...repo.rows.keys()].sort()).toEqual([first, second].sort());
+    expect(store.blobs.size).toBe(blobsBefore);
+  });
+
+  it('reclaims the row and blobs of a failed copy that committed before it threw', async () => {
+    const { store, repo, resolver } = setup();
+    const first = await seedDocument(store, repo, { extractedText: 'first text' });
+    const second = await seedDocument(store, repo, { extractedText: 'second text' });
+    const blobsBefore = store.blobs.size;
+    const create = repo.create.bind(repo);
+    const hardDelete = repo.hardDelete.bind(repo);
+    let creates = 0;
+    let deletes = 0;
+    repo.create = async (input) => {
+      creates += 1;
+      const id = await create(input);
+      if (creates === 2) throw new Error('commit acknowledgement lost');
+      return id;
+    };
+    repo.hardDelete = async (id) => {
+      deletes += 1;
+      // The first delete is the failed copy's own cleanup in copyToAgent, so the orphan is left for copyAllToAgent.
+      if (deletes === 1) throw new Error('connection reset');
+      return hardDelete(id);
+    };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const resolved = await resolveMany(resolver, [first, second]);
+
+    const copies = await resolver.copyAllToAgent(resolved, RECIPIENT);
+
+    const orphanId = repo.inserts[1]?.id;
+    expect(orphanId).toBeDefined();
+    expect(copies).toMatchObject({ ok: false, error: { code: 'outbound_attachment.copy_failed', context: { orphanedDocumentId: orphanId } } });
+    expect([...repo.rows.keys()].sort()).toEqual([first, second].sort());
+    expect(store.blobs.size).toBe(blobsBefore);
+    warn.mockRestore();
+  });
+});
+
+async function resolveMany(resolver: OutboundAttachmentResolver, documentIds: string[]): Promise<ResolvedAttachment[]> {
+  const result = await resolver.resolveForAgent(SENDER, documentIds);
+  if (!result.ok) throw new Error('resolve failed');
+  return result.data;
+}
+
 async function resolveOne(resolver: OutboundAttachmentResolver, documentId: string): Promise<ResolvedAttachment> {
   const result = await resolver.resolveForAgent(SENDER, [documentId]);
   if (!result.ok || result.data[0] === undefined) throw new Error('resolve failed');

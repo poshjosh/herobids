@@ -7,13 +7,13 @@ import { consumeTokenBucketToken } from '../services/token-bucket.js';
 import { userMessageReceiptState } from '../services/user-message-receipt.js';
 import { eq, and, asc, isNull } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { AgentRepository, AgentDocumentsRepository, agents, agentConnections, chatAddresses, agentSkills, recordAgentAuditEvent, resolveSkillAssignmentsForUser, setChatAddress, syncAgentSkillAssignmentsInTx, isChatAddressClaimedByOtherUser, clearChatSuppression, users } from '@herobids/db';
+import { AgentRepository, AgentDocumentsRepository, OutboundAttachmentAuditRepository, agents, agentConnections, chatAddresses, agentSkills, recordAgentAuditEvent, resolveSkillAssignmentsForUser, setChatAddress, syncAgentSkillAssignmentsInTx, isChatAddressClaimedByOtherUser, clearChatSuppression, users } from '@herobids/db';
 import { childAllowanceForNewAssignment } from '../agents/child-allowance-assignment.js';
 import { consumeTelegramLinkToken } from '../agents/telegram-link-token.js';
 import type { ExternalBackendClient } from '@herobids/domain/external-backend';
-import type { InboundChatMessage } from '@herobids/domain';
+import type { InboundChatMessage, StagedOutboundCopies } from '@herobids/domain';
 import { DecisionApprovalRepository } from '@herobids/db';
-import { AgentDocumentService, buildDocumentNoticeText, checkUploadable } from '@herobids/documents';
+import { AgentDocumentService, OutboundAttachmentResolver, OutboundAttachmentService, buildDocumentNoticeText, checkUploadable } from '@herobids/documents';
 import { LocalDocumentStore } from '@herobids/documents/local-document-store';
 import { createDocumentTextExtractor } from '@herobids/documents/document-text-extractors';
 import { resolve } from 'node:path';
@@ -117,6 +117,10 @@ function documentErrorStatus(code: string): number {
     case 'agent_document.unsupported_type': return 400;
     case 'agent_document.too_large': return 413;
     case 'agent_document.not_found': return 404;
+    case 'outbound_attachment.not_found': return 404;
+    case 'outbound_attachment.too_large': return 413;
+    case 'outbound_attachment.too_many':
+    case 'outbound_attachment.duplicate': return 400;
     default: return 500;
   }
 }
@@ -137,11 +141,20 @@ export async function agentInteractivityRoutes(
   nonTradingDefaultTickIntervalMs: number = NON_TRADING_DEFAULT_TICK_INTERVAL_MS,
 ): Promise<void> {
   const SendMessageSchema = buildSendMessageSchema(conversations.limits.userMessageMaxChars);
+  // Only a creator agent's message may name existing documents; the field is ignored for other callers.
+  const AgentSendMessageSchema = SendMessageSchema.extend({
+    documentIds: z.array(z.string().min(1)).max(3).optional(),
+  });
   const webChatDocumentRepo = new AgentDocumentsRepository(db);
+  const documentStore = new LocalDocumentStore(process.env['AGENT_DOCUMENTS_DIR'] ?? resolve(process.cwd(), 'data/agent-documents'));
   const webChatDocumentService = new AgentDocumentService(
-    new LocalDocumentStore(process.env['AGENT_DOCUMENTS_DIR'] ?? resolve(process.cwd(), 'data/agent-documents')),
+    documentStore,
     createDocumentTextExtractor(),
     webChatDocumentRepo,
+  );
+  const outboundAttachments = new OutboundAttachmentService(
+    new OutboundAttachmentResolver(documentStore, webChatDocumentRepo),
+    new OutboundAttachmentAuditRepository(db),
   );
 
   /**
@@ -463,7 +476,7 @@ export async function agentInteractivityRoutes(
       }
       rawBody = fields;
     }
-    const parsed = SendMessageSchema.safeParse(rawBody);
+    const parsed = AgentSendMessageSchema.safeParse(rawBody);
     if (!parsed.success) {
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
@@ -580,6 +593,34 @@ export async function agentInteractivityRoutes(
       return reply.status(202).send({ delivered: true, message: respondWith(stored) });
     }
 
+    // A retry that names documents would stage a second copy of each one, so it is refused.
+    const documentIds = actingAgentId !== null ? parsed.data.documentIds : undefined;
+    if (documentIds?.length && !recorded.data.created) {
+      const marked = await conversations.service.markDelivery({ messageId: stored.id, status: 'failed', detail: 'attachment_retry_unsupported' });
+      if (!marked.ok) request.log.warn({ code: marked.error.code }, 'could not mark message as failed');
+      return reply.status(409).send({
+        error: 'outbound_attachment.retry_unsupported',
+        message: 'A retry cannot attach documents. Send the message again with a new id.',
+        messageId: stored.id,
+      });
+    }
+
+    let stagedCopies: StagedOutboundCopies | null = null;
+    if (documentIds?.length && actingAgentId !== null) {
+      const copied = await outboundAttachments.stageForAgent({
+        outboundMessageId: stored.id,
+        senderAgentId: actingAgentId,
+        recipientAgentId: id,
+        documentIds,
+      });
+      if (!copied.ok) {
+        const marked = await conversations.service.markDelivery({ messageId: stored.id, status: 'failed', detail: 'attachment_failed' });
+        if (!marked.ok) request.log.warn({ code: marked.error.code }, 'could not mark message as failed');
+        return reply.status(documentErrorStatus(copied.error.code)).send({ error: copied.error.code, message: copied.error.message, messageId: stored.id });
+      }
+      stagedCopies = copied.data;
+    }
+
     let payloadMessage = body;
     if (attachment) {
       const staged = await stageWebChatAttachment({ agentId: id, userId: request.userId, messageId: stored.id, caption: body, file: attachment });
@@ -594,6 +635,7 @@ export async function agentInteractivityRoutes(
         caption: body,
       })}`;
     }
+    if (stagedCopies) payloadMessage = `${payloadMessage}\n\n${stagedCopies.notice}`;
 
     // Publish to agent:outbound:{agentId} — the platform→agent channel
     const envelope = {
@@ -612,7 +654,8 @@ export async function agentInteractivityRoutes(
       await redisClient.xadd(`agent:outbound:${id}`, 'MAXLEN', '~', AGENT_STREAM_MAXLEN, '*', 'envelope', JSON.stringify(envelope));
     } catch (error) {
       request.log.error({ err: error instanceof Error ? error.name : 'NonError' }, 'message publish failed');
-      // The row stays as failed so the user can retry the same id.
+      // The row stays as failed so the user can retry the same id. The staged copies are removed with it.
+      await stagedCopies?.rollback();
       const marked = await conversations.service.markDelivery({ messageId: stored.id, status: 'failed', detail: 'publish_failed' });
       if (!marked.ok) request.log.warn({ code: marked.error.code }, 'could not mark message as failed');
       return reply.status(503).send({
@@ -623,6 +666,10 @@ export async function agentInteractivityRoutes(
     }
     const sent = await conversations.service.markDelivery({ messageId: stored.id, status: 'sent' });
     if (!sent.ok) request.log.warn({ code: sent.error.code }, 'could not mark message as sent');
+    for (const copy of stagedCopies?.copies ?? []) {
+      const marked = await outboundAttachments.markDelivery(copy.auditId, 'sent', { deliveryRef: stored.id });
+      if (!marked.ok) request.log.warn({ code: marked.error.code }, 'could not mark outbound attachment as sent');
+    }
 
     if (actingAgentId !== null) {
       await recordAgentAuditEvent(db, {

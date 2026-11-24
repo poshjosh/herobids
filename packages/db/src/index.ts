@@ -66,6 +66,8 @@ export { DecisionApprovalRepository } from './decision-approval-repository.js';
 export type { InsertDecisionApproval, ResolutionInfo, DecisionApprovalRow } from './decision-approval-repository.js';
 export { AgentDocumentsRepository } from './agent-documents-repository.js';
 export type { InsertAgentDocument, UpdateAgentDocument, DocumentSource, ExtractionStatus, DocumentLifecycleState } from './agent-documents-repository.js';
+export { OutboundAttachmentAuditRepository } from './outbound-attachment-audit-repository.js';
+export type { NewOutboundAttachmentAudit, OutboundRecipientKind, OutboundAuditDeliveryStatus } from './outbound-attachment-audit-repository.js';
 export { loadAgentRuntimeSessions } from './agent-evidence-loaders.js';
 export type { LoaderTimeFilter } from './agent-evidence-loaders.js';
 export {

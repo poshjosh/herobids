@@ -289,9 +289,9 @@ const messageChildAgentTool: AgentTool = {
   category: 'write-messaging',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     if (!ctx.agentPlatform) return notConfigured();
-    const { agentId, message } = params as z.infer<typeof MessageChildParamsSchema>;
+    const { agentId, message, documentIds } = params as z.infer<typeof MessageChildParamsSchema>;
 
-    const sent = await ctx.agentPlatform.messageChildAgent(agentId, message);
+    const sent = await ctx.agentPlatform.messageChildAgent(agentId, message, documentIds);
     if (!sent.ok) return platformFailure(sent.error);
     return { success: true, data: { ok: true, agentId, delivered: sent.data.delivered } };
   },

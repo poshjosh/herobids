@@ -8,3 +8,5 @@ export { readAgentDocumentPage, selectTextStoreKey, DOCUMENT_TEXT_PAGE_CHARS, DO
 export type { AgentDocumentRow, AgentDocumentLookup, AgentDocumentTextPage, AgentDocumentReadError } from './agent-document-read.js';
 export { OutboundAttachmentResolver } from './outbound-attachment-resolver.js';
 export type { AttachmentResolveError, CopiedDocument, OutboundDocumentRepository, OutboundDocumentRow, ResolvedAttachment } from './outbound-attachment-resolver.js';
+export { OutboundAttachmentService } from './outbound-attachment-service.js';
+export type { OutboundAttachmentAuditStore } from './outbound-attachment-service.js';

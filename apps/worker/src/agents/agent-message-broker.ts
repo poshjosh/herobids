@@ -35,6 +35,7 @@ import {
   AGENT_STREAM_MAXLEN,
 } from '@herobids/domain';
 import type { ConversationService, NotificationClass, PeerMessagingService, PeerSendResult } from '@herobids/domain';
+import type { OutboundAttachmentPort, OutboundDeliveryStatus, OutboundFile, StagedOutboundCopies } from '@herobids/domain';
 import type { AgentRepository, ConnectionOwnershipRepository, Database } from '@herobids/db';
 import type { NotificationDispatchEvent, NotificationDispatchOutcome } from '../notifications/notification-dispatcher.js';
 import type { UpdatePromptPayload, UpdatePromptResult, Result, DomainError } from '@herobids/domain';
@@ -61,6 +62,13 @@ const logger = createLogger('agent-message-broker');
 const SEND_MESSAGE_MAX_PER_MINUTE = 20;
 /** Max body length enforced server-side (matches domain schema). */
 const SEND_MESSAGE_MAX_BODY_LENGTH = 2000;
+
+/** A send's documents, with the message id that keys their audit rows. */
+interface MessageAttachments {
+  port: OutboundAttachmentPort;
+  documentIds: string[];
+  messageId: string;
+}
 
 /**
  * Optional callback for enforcing plan-level live execution eligibility.
@@ -130,6 +138,7 @@ export class AgentMessageBroker {
     private readonly notifications?: AgentMessageNotifier,
     private readonly conversations?: Pick<ConversationService, 'recordAgentMessage' | 'markDelivery'>,
     private readonly peerMessaging?: Pick<PeerMessagingService, 'send' | 'recordDropped'>,
+    private readonly outboundAttachments?: OutboundAttachmentPort,
   ) {}
 
   /** Resolved public base URL for link construction (operator config default when unset). */
@@ -557,21 +566,47 @@ export class AgentMessageBroker {
       throw new Error('conversation_store_not_configured');
     }
 
+    // Documents need the message id before the record, so the audit rows and the stored message share it. Without
+    // documents the id stays as the worker sent it, so the record is unchanged.
+    const documentIds = payload.documentIds?.length ? payload.documentIds : null;
+    if (documentIds && !this.outboundAttachments) {
+      throw new Error('outbound_attachments_not_configured');
+    }
+    const messageId = payload.messageId ?? (documentIds ? randomUUID() : undefined);
+    const attachments: MessageAttachments | null = documentIds && this.outboundAttachments && messageId
+      ? { port: this.outboundAttachments, documentIds, messageId }
+      : null;
+
     // A child's message goes to its running parent as a child report. The owner's peer stop switch and peer limiter do
     // not apply here (they belong to the peer path, which this does not call).
     const parent = agent.parentAgentId ? await this.reachableParent(agent.userId, agent.parentAgentId) : null;
     if (parent) {
       // A reachable parent takes the report or the send fails. The owner gets no copy: the parent may already hold it.
-      await this.deliverChildReport(this.conversations, agent, parent, payload, body, messageClass);
+      await this.deliverChildReport(this.conversations, agent, parent, payload, body, messageClass, attachments);
       return;
     }
     // A child whose parent is unreachable goes to the owner, labelled so the owner copy says the parent was unavailable.
     const parentUnavailable = Boolean(agent.parentAgentId);
     const ownerBody = parentUnavailable ? await this.parentUnavailableBody(agent, body) : body;
 
+    // Documents are read before the record and fail closed: nothing is recorded or sent when one cannot be read.
+    let files: OutboundFile[] = [];
+    if (attachments) {
+      const prepared = await attachments.port.prepareForHuman({
+        outboundMessageId: attachments.messageId,
+        senderAgentId: agent.id,
+        recipientKind: 'telegram',
+        documentIds: attachments.documentIds,
+      });
+      if (!prepared.ok) {
+        throw new Error(`outbound_attachments_failed:${prepared.error.code}`);
+      }
+      files = prepared.data;
+    }
+
     const recorded = await this.conversations.recordAgentMessage({
       // The worker's id, so the stored row matches the Conversation window; a broker redelivery reuses the row.
-      ...(payload.messageId ? { id: payload.messageId } : {}),
+      ...(messageId ? { id: messageId } : {}),
       ownerUserId: agent.userId,
       agentId: agent.id,
       channel: 'web',
@@ -580,6 +615,7 @@ export class AgentMessageBroker {
       messageClass,
     });
     if (!recorded.ok) {
+      await this.settleOutboundAudit(attachments?.port, files.map((file) => file.auditId), 'failed', { deliveryError: 'not_recorded' });
       throw new Error(`conversation_record_failed:${recorded.error.code}`);
     }
     const msgId = recorded.data.message.id;
@@ -596,6 +632,7 @@ export class AgentMessageBroker {
       })
       : { ok: false as const, error: { code: 'chat.not_configured', message: 'telegram_not_configured' } };
     await markThreadDelivery(this.conversations, msgId, result);
+    await this.deliverHumanDocuments(agent.id, files, result, attachments?.port);
     if (!result.ok) {
       // A failed lookup leaves the chat outcome unknown, so the message fails (the row is marked failed, I4). The
       // stream consumer acknowledges every message, so there is no redelivery to wait for.
@@ -611,6 +648,47 @@ export class AgentMessageBroker {
 
     // Email fanout from send_message has been removed (Item 5).
     // Agents should use the dedicated send_email tool for email delivery.
+  }
+
+  /**
+   * Sends each resolved document to the agent's chat after the text, one file each with no caption, so the text is not
+   * repeated. When the text did not send, no document is sent and their audit rows are skipped. Never throws.
+   */
+  private async deliverHumanDocuments(
+    agentId: string,
+    files: OutboundFile[],
+    text: { ok: boolean },
+    outbound: OutboundAttachmentPort | undefined,
+  ): Promise<void> {
+    if (files.length === 0) return;
+    const chat = this.chatDelivery;
+    if (!text.ok || !chat) {
+      await this.settleOutboundAudit(outbound, files.map((file) => file.auditId), 'skipped', { deliveryError: 'text_not_delivered' });
+      return;
+    }
+    for (const file of files) {
+      const sent = await chat.sendDocument(agentId, { filename: file.filename, mimeType: file.mimeType, body: file.body });
+      await this.settleOutboundAudit(
+        outbound,
+        [file.auditId],
+        sent.ok ? 'sent' : 'failed',
+        sent.ok ? { deliveryRef: sent.data.providerMessageId } : { deliveryError: sent.error.code },
+      );
+    }
+  }
+
+  /** Writes audit outcomes for a send's document rows. Never throws: the send's outcome is already decided when this runs. */
+  private async settleOutboundAudit(
+    outbound: OutboundAttachmentPort | undefined,
+    auditIds: string[],
+    status: OutboundDeliveryStatus,
+    detail?: { deliveryRef?: string; deliveryError?: string },
+  ): Promise<void> {
+    if (!outbound) return;
+    for (const auditId of auditIds) {
+      const marked = await outbound.markDelivery(auditId, status, detail);
+      if (!marked.ok) logger.warn({ auditId, status, code: marked.error.code }, 'Outbound attachment outcome not recorded');
+    }
   }
 
   /** The parent agent when it is running, owned by the same user, and can take a child report; null when it is not. */
@@ -645,21 +723,41 @@ export class AgentMessageBroker {
     payload: SendMessagePayload,
     body: string,
     messageClass: string,
+    attachments: MessageAttachments | null,
   ): Promise<void> {
+    // Copies are staged before the record, so a failed copy fails the send with nothing recorded or published.
+    let reportBody = body;
+    let staged: StagedOutboundCopies | null = null;
+    if (attachments) {
+      const result = await attachments.port.stageForAgent({
+        outboundMessageId: attachments.messageId,
+        senderAgentId: child.id,
+        recipientAgentId: parent.id,
+        documentIds: attachments.documentIds,
+      });
+      if (!result.ok) {
+        throw new Error(`outbound_attachments_failed:${result.error.code}`);
+      }
+      staged = result.data;
+      reportBody = `${body}\n\n${staged.notice}`;
+    }
+    const recordId = attachments?.messageId ?? payload.messageId;
     const recorded = await conversations.recordAgentMessage({
-      ...(payload.messageId ? { id: payload.messageId } : {}),
+      ...(recordId ? { id: recordId } : {}),
       ownerUserId: parent.userId,
       agentId: parent.id,
       senderAgentId: child.id,
       channel: 'web',
       subject: payload.subject,
-      body,
+      body: reportBody,
       messageClass,
     });
     if (!recorded.ok) {
+      await staged?.rollback();
       throw new Error(`conversation_record_failed:${recorded.error.code}`);
     }
     const msgId = recorded.data.message.id;
+    const copyAuditIds = staged?.copies.map((copy) => copy.auditId) ?? [];
 
     try {
       await this.redis.xadd(
@@ -678,7 +776,7 @@ export class AgentMessageBroker {
           createdAt: new Date().toISOString(),
           queuedAt: recorded.data.message.createdAt.toISOString(),
           payload: {
-            message: body,
+            message: reportBody,
             subject: payload.subject,
             messageClass,
             childReport: { childAgentId: child.id, childName: child.name },
@@ -687,13 +785,14 @@ export class AgentMessageBroker {
       );
     } catch (error) {
       // A throwing XADD may still have been accepted, so the status can read failed even if the parent got the report.
-      // No owner copy is written, to avoid a duplicate.
+      // No owner copy is written, to avoid a duplicate. The copies stay: the parent may already be reading them.
       logger.warn({ err: error, agentId: child.id, parentAgentId: parent.id, msgId }, 'Child report publish failed');
       try {
         await conversations.markDelivery({ messageId: msgId, status: 'failed', detail: 'publish_failed' });
       } catch (markError) {
         logger.warn({ err: markError, msgId }, 'Child report publish failure not recorded');
       }
+      await this.settleOutboundAudit(attachments?.port, copyAuditIds, 'failed', { deliveryError: 'publish_failed' });
       throw new Error('child_report_publish_failed');
     }
     try {
@@ -701,6 +800,7 @@ export class AgentMessageBroker {
     } catch (error) {
       logger.warn({ err: error, msgId }, 'Child report sent but delivery status not recorded');
     }
+    await this.settleOutboundAudit(attachments?.port, copyAuditIds, 'sent', { deliveryRef: msgId });
     logger.info({ agentId: child.id, parentAgentId: parent.id, msgId }, 'Agent send_message routed to parent as child report');
   }
 
@@ -1313,6 +1413,7 @@ export class AgentMessageBroker {
         recipient: payload.agent,
         body: payload.message,
         messageId: envelope.messageId,
+        ...(payload.documentIds?.length ? { documentIds: payload.documentIds } : {}),
       });
       await publishReply(sent.ok
         ? { status: 'ok', messageId: sent.data.messageId, recipientAgentId: sent.data.recipientAgentId, recipientName: sent.data.recipientName, deliveryStatus: sent.data.deliveryStatus }

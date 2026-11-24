@@ -2,7 +2,7 @@ import Redis from 'ioredis';
 import { createLogger } from './logger.js';
 import { EvaluationRuntime } from './agent-evaluation/index.js';
 import { fetchOpenRouterPricing } from '@herobids/llm';
-import { createDatabase, AlertDeliveryRepository, AgentRepository, ConversationRepository, ConnectionOwnershipRepository, UsageBillingRepository, AgentDocumentsRepository, DecisionApprovalRepository, PushSubscriptionRepository, NotificationDeliveryRepository, users, agents } from '@herobids/db';
+import { createDatabase, AlertDeliveryRepository, AgentRepository, ConversationRepository, ConnectionOwnershipRepository, UsageBillingRepository, AgentDocumentsRepository, DecisionApprovalRepository, PushSubscriptionRepository, NotificationDeliveryRepository, OutboundAttachmentAuditRepository, users, agents } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { ConversationService, DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS, PeerMessagingService, findExternalBackend, type ProvidersYaml } from '@herobids/domain';
 import { announceSessionStarted } from './session-started-message.js';
@@ -51,7 +51,7 @@ import { ApprovalService } from './services/approval-service.js';
 import { DockerAgentManager } from './agents/docker-agent-manager.js';
 import { DockerRuntimeDocumentMaterializer } from './agents/docker-document-materializer.js';
 import { StubRuntimeDocumentMaterializer } from './agents/stub-document-materializer.js';
-import { LocalDocumentStore } from '@herobids/documents';
+import { LocalDocumentStore, OutboundAttachmentResolver, OutboundAttachmentService } from '@herobids/documents';
 import { UserEventPublisher } from './user-event-publisher.js';
 import { createMarketDataCoordinator, createMarketMonitor } from './market-intelligence/index.js';
 import type { TriggeredWatch } from './market-intelligence/index.js';
@@ -132,6 +132,10 @@ const decisionApprovalRepo = new DecisionApprovalRepository(db);
 const agentDocumentsRootDir = process.env['AGENT_DOCUMENTS_DIR'] ?? resolve(process.cwd(), 'data/agent-documents');
 const documentsRepo = new AgentDocumentsRepository(db);
 const documentStore = new LocalDocumentStore(agentDocumentsRootDir);
+const outboundAttachments = new OutboundAttachmentService(
+  new OutboundAttachmentResolver(documentStore, documentsRepo),
+  new OutboundAttachmentAuditRepository(db),
+);
 
 // L3d-5: the swap token-safety adapter (swapTokenSafety) was only consumed by the
 // deleted in-process trading actors + engine-backed intake. Removed with the actor
@@ -741,6 +745,7 @@ const peerMessaging = new PeerMessagingService({
   wake: new RedisPeerWakePublisher(redisClient),
   config: { messageMaxChars: appConfig.agentRuntime.peer.messageMaxChars, refusalWindowMs: PEER_RATE_WINDOW_MS },
   log: createLogger('peer-messaging'),
+  outboundAttachments,
 });
 const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram ? chatDelivery : undefined, telegramChat.botToken || undefined, workerEmail, appConfig.alerts.email.brandImageUrl, conversations);
 
@@ -877,6 +882,7 @@ const agentBroker = new AgentMessageBroker(
   agentNotificationDispatcher,
   conversations,
   peerMessaging,
+  outboundAttachments,
 );
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 agentStreamSubscribeFn = (agentId: string) => agentStreamConsumer.subscribe(agentId);

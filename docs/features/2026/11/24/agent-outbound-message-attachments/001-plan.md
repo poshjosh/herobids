@@ -334,7 +334,7 @@ Status is tracked per item: `PENDING`, `DONE`, or `BLOCKED`.
 4. [DONE] Add `list_agent_documents`
 5. [DONE] Extend `TelegramClient` with `sendDocument`
 6. [DONE] Add attachments to the Gmail adapter's raw MIME builder for `send_email`, and fix the pre-existing header injection in it
-7. [PENDING] Update the broker, and the peer and child paths, to resolve and deliver or copy
+7. [DONE] Update the broker, and the peer and child paths, to resolve and deliver or copy
 8. [PENDING] Update the tool descriptions
 9. [PENDING] Add tests, then observability and limits
 
@@ -433,6 +433,21 @@ _Recorded by the coordinator after each item's review. Grouped by rollout item._
 - LOW: sparse arrays are dropped silently by `.map`. Use `Array.from` or `for...of`.
 - LOW: the `42` attachment test passes without the `typeof` check, because the filename check throws the same code. Add a test that isolates the non-object check.
 - LOW: the plain-text part is `8bit` with no line-length limit on the body. Consider quoted-printable.
+
+### Item 7: broker, peer, child, and `send_email` wiring
+
+- MEDIUM (open question): async `send_message` attachment outcomes are only logged (`agent-message-broker.ts`, `handleSendMessage`). The audit row is the recorded outcome (D3 is met). Decide whether the sender also needs a user-visible result, since the tool returns "queued" first.
+- MEDIUM: the publish-failure policy differs by path. The API route (`agent-interactivity.ts`) discards staged copies when the stream publish fails. The peer and child paths keep them, because the XADD may already have been accepted. Choose one policy, then add an integration test with a stubbed XADD that throws after the write.
+- MEDIUM: `copyAllToAgent` and `discardCopies` (`outbound-attachment-resolver.ts`) ignore the result of `removeCopyRecord`. If the second hard-delete fails, the orphan row stays `staged` and visible to the recipient. Return the leftover ids and surface them for reconciliation.
+- MEDIUM: `deliverHumanDocuments` (`agent-message-broker.ts`) has no per-document try/catch. `chat.sendDocument` is documented as never throwing, but a throw would leave later rows `pending`. Settle each row as `failed` and continue.
+- MEDIUM: two concurrent requests with the same `messageId` and `documentIds` can both pass the 409 guard and both stage copies. Claim the message row atomically before staging. `recordPending` also creates new audit rows on every call.
+- MEDIUM: the plan's caption-on-first-document idea was dropped. Telegram now sends text first, then each document with no caption, which avoids repeating the text. Confirm this matches the intended design.
+- LOW: the ownership precondition is not stated on `copyAllToAgent` or `resolveForAgent`. All three callers enforce it (`canPeerSend`, `reachableParent`, and the route's `userId` check). Document it.
+- LOW: `markThreadDelivery` sits before the human document path. Confirm it does not throw, so documents do not stay `pending`.
+- LOW: `email.ts` sets `delivered = true` before the rate-limit `hset`. This is pre-existing. An `hset` failure after a successful send reports a failure for a delivered email.
+- LOW: the resolver logs with `console.warn` rather than the module logger. The test named "reclaims" should now say `removeCopyRecord`.
+- LOW: the "User sent document" notice wording is reused for agent copies, so it reads slightly wrong for agents.
+- LOW: `send_message` replies to the sender do not say whether a document copy failed (see the first MEDIUM).
 
 ## Testing Plan
 

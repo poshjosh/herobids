@@ -303,8 +303,11 @@ export function createAgentPlatformClient(options: AgentPlatformClientOptions): 
       return request('POST', `/agents/${encodeURIComponent(childId)}/stop`, StatusResponseSchema);
     },
 
-    async messageChildAgent(childId: string, message: string): Promise<Result<{ delivered: boolean }, AgentPlatformError>> {
-      return request('POST', `/agents/${encodeURIComponent(childId)}/message`, DeliveredResponseSchema, { message });
+    async messageChildAgent(childId: string, message: string, documentIds?: string[]): Promise<Result<{ delivered: boolean }, AgentPlatformError>> {
+      return request('POST', `/agents/${encodeURIComponent(childId)}/message`, DeliveredResponseSchema, {
+        message,
+        ...(documentIds?.length ? { documentIds } : {}),
+      });
     },
 
     async deleteChildAgent(childId: string, stopFirst: boolean): Promise<Result<{ deleted: true; stopped: boolean }, AgentPlatformError>> {

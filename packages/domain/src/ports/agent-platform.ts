@@ -116,7 +116,7 @@ export interface AgentPlatformPort {
   getChildStatus(agentId: string): Promise<Result<ChildAgentStatus, AgentPlatformError>>;
   pauseChildAgent(agentId: string, reason?: string): Promise<Result<{ status: string }, AgentPlatformError>>;
   stopChildAgent(agentId: string): Promise<Result<{ status: string }, AgentPlatformError>>;
-  messageChildAgent(agentId: string, message: string): Promise<Result<{ delivered: boolean }, AgentPlatformError>>;
+  messageChildAgent(agentId: string, message: string, documentIds?: string[]): Promise<Result<{ delivered: boolean }, AgentPlatformError>>;
   deleteChildAgent(agentId: string, stopFirst: boolean): Promise<Result<{ deleted: true; stopped: boolean }, AgentPlatformError>>;
 }
 

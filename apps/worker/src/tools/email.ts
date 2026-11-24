@@ -1,11 +1,20 @@
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
+import type { AgentTool, OutboundAttachmentPort, ToolResult, ToolContext } from '@herobids/domain';
 import type { Database } from '@herobids/db';
 import { convertZodToJsonSchema } from './registry.js';
 import { resolveGmailTokens } from '../gmail-credential-resolver.js';
-import { createGmailAdapter, type GmailApiError } from '../gmail-adapter.js';
+import { createGmailAdapter, type EmailAttachment, type GmailApiError } from '../gmail-adapter.js';
 
 const PLATFORM_GMAIL_ERROR_CODES = new Set(['gmail.decrypt_failed', 'gmail.no_encryption_key', 'gmail.not_configured']);
+
+/** Document errors the sender can fix by changing the documentIds or the file. Other document errors are platform faults. */
+const USER_ATTACHMENT_ERROR_CODES = new Set([
+  'outbound_attachment.not_found',
+  'outbound_attachment.too_many',
+  'outbound_attachment.too_large',
+  'outbound_attachment.duplicate',
+]);
 
 /** Platform setup faults are for the operator; a missing or stale connection is for the user. */
 function gmailTokenErrorOwner(code: string): 'platform' | 'user' | undefined {
@@ -14,22 +23,34 @@ function gmailTokenErrorOwner(code: string): 'platform' | 'user' | undefined {
   return undefined;
 }
 
+async function settleAttachmentAudit(
+  port: OutboundAttachmentPort,
+  auditIds: string[],
+  status: 'sent' | 'failed',
+  detail: { deliveryRef?: string; deliveryError?: string },
+): Promise<void> {
+  await Promise.allSettled(auditIds.map((auditId) => port.markDelivery(auditId, status, detail)));
+}
+
 // ---------------------------------------------------------------------------
 // Dependency injection (set before first tool execution)
 // ---------------------------------------------------------------------------
 
 let _db: Database | null = null;
 let _gmailConfig: { clientId: string; clientSecret: string; redirectUri: string; dailySendLimit?: number } | null = null;
+let _outboundAttachments: OutboundAttachmentPort | null = null;
 let _initialized = false;
 
 /** Must be called after DB and config are available, before any tool execution. */
 export function initEmailTools(
   db: Database,
   gmailConfig: { clientId: string; clientSecret: string; redirectUri: string; dailySendLimit?: number },
+  outboundAttachments?: OutboundAttachmentPort,
 ): void {
   if (_initialized) return;
   _db = db;
   _gmailConfig = gmailConfig;
+  _outboundAttachments = outboundAttachments ?? null;
   _initialized = true;
 }
 
@@ -65,7 +86,7 @@ export const sendEmailTool: AgentTool = {
       return { success: false, error: `Invalid send_email parameters: ${parsed.error.message}`, fault: false };
     }
 
-    const { to, subject, body, cc, bcc, fromConnectionId } = parsed.data;
+    const { to, subject, body, cc, bcc, fromConnectionId, documentIds } = parsed.data;
 
     // Per-agent daily send rate limit
     const dailyLimit = _gmailConfig.dailySendLimit ?? 50;
@@ -113,10 +134,42 @@ export const sendEmailTool: AgentTool = {
       };
     }
 
+    // Documents are resolved after the connection check, so a send that cannot go out writes no audit rows.
+    let attachments: EmailAttachment[] | undefined;
+    let attachmentPort: OutboundAttachmentPort | null = null;
+    let attachmentAuditIds: string[] = [];
+    if (documentIds?.length) {
+      const port = _outboundAttachments;
+      if (!port) {
+        return { success: false, error: 'Outbound attachments are not configured.', errorCode: 'outbound_attachment.not_configured', fault: true };
+      }
+      const prepared = await port.prepareForHuman({
+        outboundMessageId: randomUUID(),
+        senderAgentId: ctx.agentId,
+        recipientKind: 'email',
+        documentIds,
+      });
+      if (!prepared.ok) {
+        return {
+          success: false,
+          error: prepared.error.message,
+          errorCode: prepared.error.code,
+          retryable: false,
+          fault: !USER_ATTACHMENT_ERROR_CODES.has(prepared.error.code),
+        };
+      }
+      attachmentPort = port;
+      attachmentAuditIds = prepared.data.map((file) => file.auditId);
+      attachments = prepared.data.map((file) => ({ filename: file.filename, contentType: file.mimeType, body: file.body }));
+    }
+
     // Send via Gmail adapter
     const adapter = createGmailAdapter({ accessToken: tokenResult.data.accessToken });
+    let delivered = false;
     try {
-      const result = await adapter.sendEmail({ to, subject, body, cc, bcc });
+      const result = await adapter.sendEmail({ to, subject, body, cc, bcc, ...(attachments ? { attachments } : {}) });
+      delivered = true;
+      if (attachmentPort) await settleAttachmentAudit(attachmentPort, attachmentAuditIds, 'sent', { deliveryRef: result.messageId });
       // Increment daily counter after successful send
       await ctx.redis.hset(rateLimitHashKey, rateLimitField, String(count + 1));
       await ctx.redis.expire(rateLimitHashKey, 86400 * 2);
@@ -133,12 +186,18 @@ export const sendEmailTool: AgentTool = {
       };
     } catch (err) {
       const gmailErr = err as GmailApiError;
+      const errorCode = gmailErr.code ?? 'gmail.send_failed';
+      if (attachmentPort && !delivered) {
+        await settleAttachmentAudit(attachmentPort, attachmentAuditIds, 'failed', { deliveryError: errorCode });
+      }
+      // Adapter validation errors (email.*) carry no HTTP status and reflect the caller's input, not a platform fault.
+      const isValidationError = errorCode.startsWith('email.') && !gmailErr.status;
       return {
         success: false,
         error: gmailErr.message ?? 'Failed to send email.',
-        errorCode: gmailErr.code ?? 'gmail.send_failed',
+        errorCode,
         retryable: gmailErr.status != null && (gmailErr.status >= 500 || gmailErr.status === 429),
-        fault: !gmailErr.status || gmailErr.status >= 500,
+        fault: isValidationError ? false : !gmailErr.status || gmailErr.status >= 500,
       };
     }
   },
