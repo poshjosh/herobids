@@ -327,7 +327,7 @@ describe('send_email documentIds delivery', () => {
   });
 
   it('sends resolved documents as attachments and settles their audit rows as sent', async () => {
-    outboundPort.prepareForHuman.mockResolvedValue({ ok: true, data: [pdf] });
+    outboundPort.prepareForHuman.mockResolvedValue({ ok: true, data: { files: [pdf], failures: [] } });
     outboundPort.markDelivery.mockResolvedValue({ ok: true, data: undefined });
     const mockAdapter = { sendEmail: vi.fn().mockResolvedValue({ messageId: 'msg-1', threadId: 'thread-1' }) };
     mockCreateGmailAdapter.mockReturnValue(mockAdapter);
@@ -347,7 +347,7 @@ describe('send_email documentIds delivery', () => {
   });
 
   it('settles audit rows as failed when Gmail rejects the send', async () => {
-    outboundPort.prepareForHuman.mockResolvedValue({ ok: true, data: [pdf] });
+    outboundPort.prepareForHuman.mockResolvedValue({ ok: true, data: { files: [pdf], failures: [] } });
     outboundPort.markDelivery.mockResolvedValue({ ok: true, data: undefined });
     mockCreateGmailAdapter.mockReturnValue({
       sendEmail: vi.fn().mockRejectedValue(Object.assign(new Error('upstream down'), { code: 'gmail.send_failed', status: 500 })),
@@ -360,8 +360,44 @@ describe('send_email documentIds delivery', () => {
     expect(outboundPort.markDelivery).toHaveBeenCalledWith('audit-1', 'failed', { deliveryError: 'gmail.send_failed' });
   });
 
+  it('sends the readable documents and reports the ones that could not be read', async () => {
+    const failure = { documentId: 'doc-bad', code: 'outbound_attachment.read_failed' };
+    outboundPort.prepareForHuman.mockResolvedValue({ ok: true, data: { files: [pdf], failures: [failure] } });
+    outboundPort.markDelivery.mockResolvedValue({ ok: true, data: undefined });
+    const mockAdapter = { sendEmail: vi.fn().mockResolvedValue({ messageId: 'msg-3', threadId: 'thread-3' }) };
+    mockCreateGmailAdapter.mockReturnValue(mockAdapter);
+
+    const result = await sendEmailTool.execute({ ...base, documentIds: ['doc-1', 'doc-bad'] }, makeCtx());
+
+    expect(result.success).toBe(true);
+    expect(mockAdapter.sendEmail).toHaveBeenCalledTimes(1);
+    expect(mockAdapter.sendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachments: [{ filename: 'report.pdf', contentType: 'application/pdf', body: pdf.body }],
+      }),
+    );
+    expect(result.data).toEqual(expect.objectContaining({ attachmentsFailed: [failure] }));
+    expect(outboundPort.markDelivery).toHaveBeenCalledTimes(1);
+    expect(outboundPort.markDelivery).toHaveBeenCalledWith('audit-1', 'sent', { deliveryRef: 'msg-3' });
+  });
+
+  it('sends the text alone when no document can be read', async () => {
+    outboundPort.prepareForHuman.mockResolvedValue({
+      ok: true,
+      data: { files: [], failures: [{ documentId: 'doc-bad', code: 'outbound_attachment.read_failed' }] },
+    });
+    const mockAdapter = { sendEmail: vi.fn().mockResolvedValue({ messageId: 'msg-4', threadId: 'thread-4' }) };
+    mockCreateGmailAdapter.mockReturnValue(mockAdapter);
+
+    const result = await sendEmailTool.execute({ ...base, documentIds: ['doc-bad'] }, makeCtx());
+
+    expect(result.success).toBe(true);
+    expect(mockAdapter.sendEmail.mock.calls[0]?.[0]).not.toHaveProperty('attachments');
+    expect(outboundPort.markDelivery).not.toHaveBeenCalled();
+  });
+
   it('keeps email validation errors out of platform faults', async () => {
-    outboundPort.prepareForHuman.mockResolvedValue({ ok: true, data: [pdf] });
+    outboundPort.prepareForHuman.mockResolvedValue({ ok: true, data: { files: [pdf], failures: [] } });
     outboundPort.markDelivery.mockResolvedValue({ ok: true, data: undefined });
     mockCreateGmailAdapter.mockReturnValue({
       sendEmail: vi.fn().mockRejectedValue(Object.assign(new Error('Attachment rejected'), { code: 'email.invalid_attachment' })),

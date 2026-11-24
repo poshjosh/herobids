@@ -7,7 +7,7 @@ import { pgTable, text, timestamp, integer, index } from 'drizzle-orm/pg-core';
  */
 export const agentOutboundMessageAttachments = pgTable('agent_outbound_message_attachments', {
   id: text('id').primaryKey(),
-  /** agent_messages.message_id (the envelope messageId) of the send. No FK: the audit row must outlive it. */
+  /** The conversation message id returned to the sender (or a generated id for email). No FK: the audit row must outlive it. */
   outboundMessageId: text('outbound_message_id').notNull(),
   /** Sender's agent_documents.id */
   sourceDocumentId: text('source_document_id').notNull(),

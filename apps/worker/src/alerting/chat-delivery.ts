@@ -31,7 +31,7 @@ export class ChatDelivery {
     return { ok: true, data: { ...result.data, address } };
   }
 
-  /** Sends one file to the agent's Telegram address. Callers send the text first, once; the file carries no caption. */
+  /** Sends one file to the agent's Telegram address. A caption, when set, is the message text. */
   async sendDocument(agentId: string, document: ChatOutboundDocument): Promise<Result<ChatDeliveryResult, DomainError>> {
     const target = await this.resolveTelegram(agentId);
     if (!target.ok) return target;
@@ -40,6 +40,7 @@ export class ChatDelivery {
 
     const result = await channel.sendDocument(address, document);
     if (!result.ok) return result;
+    if (document.caption) this.markTypingStopped(address);
     return { ok: true, data: { ...result.data, address } };
   }
 

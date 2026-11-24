@@ -35,14 +35,14 @@ import {
   AGENT_STREAM_MAXLEN,
 } from '@herobids/domain';
 import type { ConversationService, NotificationClass, PeerMessagingService, PeerSendResult } from '@herobids/domain';
-import type { OutboundAttachmentPort, OutboundDeliveryStatus, OutboundFile, StagedOutboundCopies } from '@herobids/domain';
+import type { OutboundAttachmentPort, OutboundDeliveryStatus, OutboundFile, ChatOutboundBody, StagedOutboundCopies } from '@herobids/domain';
 import type { AgentRepository, ConnectionOwnershipRepository, Database } from '@herobids/db';
 import type { NotificationDispatchEvent, NotificationDispatchOutcome } from '../notifications/notification-dispatcher.js';
 import type { UpdatePromptPayload, UpdatePromptResult, Result, DomainError } from '@herobids/domain';
 import { eq, inArray } from 'drizzle-orm';
 import { agentSkills, skills, users, resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from '@herobids/db';
 import { randomUUID, randomBytes } from 'node:crypto';
-import type { ChatDelivery } from '../alerting/chat-delivery.js';
+import type { ChatDelivery, ChatDeliveryResult } from '../alerting/chat-delivery.js';
 import type { EmailClient } from '../alerting/email-client.js';
 import type { OperatorNotifier } from '../alerting/operator-notifier.js';
 import type { AgentDecisionHandler } from './agent-decision-handler.js';
@@ -589,7 +589,8 @@ export class AgentMessageBroker {
     const parentUnavailable = Boolean(agent.parentAgentId);
     const ownerBody = parentUnavailable ? await this.parentUnavailableBody(agent, body) : body;
 
-    // Documents are read before the record and fail closed: nothing is recorded or sent when one cannot be read.
+    // Documents are read before the record. A set-level rule or an audit failure stops the send; a document that cannot
+    // be read is left out and recorded as failed, and the text still goes.
     let files: OutboundFile[] = [];
     if (attachments) {
       const prepared = await attachments.port.prepareForHuman({
@@ -602,7 +603,10 @@ export class AgentMessageBroker {
         logger.warn({ agentId: agent.id, code: prepared.error.code }, 'Outbound attachments not prepared; send not made');
         throw new Error(`outbound_attachments_failed:${prepared.error.code}`);
       }
-      files = prepared.data;
+      files = prepared.data.files;
+      if (prepared.data.failures.length > 0) {
+        logger.warn({ agentId: agent.id, failures: prepared.data.failures }, 'Outbound documents could not be read; text sent without them');
+      }
     }
 
     const recorded = await this.conversations.recordAgentMessage({
@@ -614,6 +618,9 @@ export class AgentMessageBroker {
       subject: payload.subject,
       body: ownerBody,
       messageClass,
+    }).catch(async (error: unknown) => {
+      await this.settleOutboundAudit(attachments?.port, files.map((file) => file.auditId), 'failed', { deliveryError: 'not_recorded' });
+      throw error;
     });
     if (!recorded.ok) {
       await this.settleOutboundAudit(attachments?.port, files.map((file) => file.auditId), 'failed', { deliveryError: 'not_recorded' });
@@ -623,17 +630,15 @@ export class AgentMessageBroker {
 
     // Chat is reply-only, so every send_message asks for a reply.
     const replyRequested = true;
-    const result = this.chatDelivery
-      ? await this.chatDelivery.send(agent.id, {
-        agentName: agent.name,
-        subject: payload.subject,
-        body: ownerBody,
-        messageClass,
-        replyRequested,
-      })
-      : { ok: false as const, error: { code: 'chat.not_configured', message: 'telegram_not_configured' } };
+    const chatBody: ChatOutboundBody = {
+      agentName: agent.name,
+      subject: payload.subject,
+      body: ownerBody,
+      messageClass,
+      replyRequested,
+    };
+    const result = await this.deliverToChat(agent.id, chatBody, files, attachments?.port);
     await markThreadDelivery(this.conversations, msgId, result);
-    await this.deliverHumanDocuments(agent.id, files, result, attachments?.port);
     if (!result.ok) {
       // A failed lookup leaves the chat outcome unknown, so the message fails (the row is marked failed, I4). The
       // stream consumer acknowledges every message, so there is no redelivery to wait for.
@@ -652,21 +657,59 @@ export class AgentMessageBroker {
   }
 
   /**
-   * Sends each resolved document to the agent's chat after the text, one file each with no caption, so the text is not
-   * repeated. When the text did not send, no document is sent and their audit rows are skipped. Never throws.
+   * Sends the message text and its documents to the agent's chat. When the text fits the caption limit it is the caption
+   * of the first document; otherwise the text is sent first as its own message and the documents follow uncaptioned.
+   * A failed text send skips the documents. A failed captioned send still sends the text, so the text is never lost
+   * to a document failure. Never throws.
    */
-  private async deliverHumanDocuments(
+  private async deliverToChat(
+    agentId: string,
+    text: ChatOutboundBody,
+    files: OutboundFile[],
+    outbound: OutboundAttachmentPort | undefined,
+  ): Promise<Result<ChatDeliveryResult, DomainError>> {
+    const chat = this.chatDelivery;
+    if (!chat) {
+      await this.settleOutboundAudit(outbound, files.map((file) => file.auditId), 'skipped', { deliveryError: 'text_not_delivered' });
+      return { ok: false, error: { code: 'chat.not_configured', message: 'telegram_not_configured' } };
+    }
+    const [first] = files;
+    if (!first) return chat.send(agentId, text);
+
+    const captioned = await chat.sendDocument(agentId, {
+      filename: first.filename,
+      mimeType: first.mimeType,
+      body: first.body,
+      caption: text,
+    });
+    if (captioned.ok) {
+      await this.settleOutboundAudit(outbound, [first.auditId], 'sent', { deliveryRef: captioned.data.providerMessageId });
+      await this.deliverDocuments(chat, agentId, files.slice(1), outbound);
+      return captioned;
+    }
+    // Only a caption that is too long means the first document never went out, so it is sent again uncaptioned. Any
+    // other failure is recorded on the first document and not retried, since its send may have landed.
+    const captionTooLong = captioned.error.code === 'chat.caption_too_long';
+    if (!captionTooLong) {
+      await this.settleOutboundAudit(outbound, [first.auditId], 'failed', { deliveryError: captioned.error.code });
+    }
+    const remaining = captionTooLong ? files : files.slice(1);
+
+    const sentText = await chat.send(agentId, text);
+    if (!sentText.ok) {
+      await this.settleOutboundAudit(outbound, remaining.map((file) => file.auditId), 'skipped', { deliveryError: 'text_not_delivered' });
+      return sentText;
+    }
+    await this.deliverDocuments(chat, agentId, remaining, outbound);
+    return sentText;
+  }
+
+  private async deliverDocuments(
+    chat: ChatDelivery,
     agentId: string,
     files: OutboundFile[],
-    text: { ok: boolean },
     outbound: OutboundAttachmentPort | undefined,
   ): Promise<void> {
-    if (files.length === 0) return;
-    const chat = this.chatDelivery;
-    if (!text.ok || !chat) {
-      await this.settleOutboundAudit(outbound, files.map((file) => file.auditId), 'skipped', { deliveryError: 'text_not_delivered' });
-      return;
-    }
     for (const file of files) {
       const sent = await chat.sendDocument(agentId, { filename: file.filename, mimeType: file.mimeType, body: file.body });
       await this.settleOutboundAudit(
@@ -749,6 +792,7 @@ export class AgentMessageBroker {
       reportBody = `${body}\n\n${staged.notice}`;
     }
     const recordId = attachments?.messageId ?? payload.messageId;
+    const copyAuditIds = staged?.copies.map((copy) => copy.auditId) ?? [];
     const recorded = await conversations.recordAgentMessage({
       ...(recordId ? { id: recordId } : {}),
       ownerUserId: parent.userId,
@@ -758,13 +802,16 @@ export class AgentMessageBroker {
       subject: payload.subject,
       body: reportBody,
       messageClass,
+    }).catch(async (error: unknown) => {
+      await staged?.rollback();
+      await this.settleOutboundAudit(attachments?.port, copyAuditIds, 'failed', { deliveryError: 'not_recorded' });
+      throw error;
     });
     if (!recorded.ok) {
       await staged?.rollback();
       throw new Error(`conversation_record_failed:${recorded.error.code}`);
     }
     const msgId = recorded.data.message.id;
-    const copyAuditIds = staged?.copies.map((copy) => copy.auditId) ?? [];
 
     try {
       await this.redis.xadd(

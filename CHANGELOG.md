@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+### Added
+- Agents can send documents (PDF, DOCX, text; up to 3 per message, 5 MiB total) with `send_message`, `send_email`, `message_peer_agent` and `message_child_agent` through an optional `documentIds` field. Human recipients receive the file; agent recipients receive their own copy. New `list_agent_documents` tool lists the documents an agent can send. Telegram sends the text as the first document's caption when it fits. Email uses Gmail attachments. See `docs/features/2026/11/24/agent-outbound-message-attachments/001-plan.md`.
 
 ## v0.11.3 - 2026-11-24
 ### Added

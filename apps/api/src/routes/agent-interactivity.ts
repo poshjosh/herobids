@@ -18,7 +18,7 @@ import { LocalDocumentStore } from '@herobids/documents/local-document-store';
 import { createDocumentTextExtractor } from '@herobids/documents/document-text-extractors';
 import { resolve } from 'node:path';
 import type { AgentApprovalsConfig, AgentCreationConfig, AuthConfig, ChatInboundAdapter, ChatWebhookRequest, ModelDefaults, PlanAgentsEntitlements, PlansConfig, ResolvedTelegramChatConfig, UnifiedAgentConfig } from '@herobids/domain';
-import { AgentCreationConfigSchema, AgentRuntimePolicyOverridesSchema, AGENT_STREAM_MAXLEN, AuthConfigSchema, NON_TRADING_DEFAULT_TICK_INTERVAL_MS } from '@herobids/domain';
+import { AgentCreationConfigSchema, AgentRuntimePolicyOverridesSchema, AGENT_STREAM_MAXLEN, AuthConfigSchema, DocumentIdsParam, NON_TRADING_DEFAULT_TICK_INTERVAL_MS } from '@herobids/domain';
 import type { ConversationMessage, MessageSender } from '@herobids/domain';
 import {
   ConversationQuerySchema,
@@ -143,7 +143,7 @@ export async function agentInteractivityRoutes(
   const SendMessageSchema = buildSendMessageSchema(conversations.limits.userMessageMaxChars);
   // Only a creator agent's message may name existing documents; the field is ignored for other callers.
   const AgentSendMessageSchema = SendMessageSchema.extend({
-    documentIds: z.array(z.string().min(1)).max(3).optional(),
+    documentIds: DocumentIdsParam,
   });
   const webChatDocumentRepo = new AgentDocumentsRepository(db);
   const documentStore = new LocalDocumentStore(process.env['AGENT_DOCUMENTS_DIR'] ?? resolve(process.cwd(), 'data/agent-documents'));

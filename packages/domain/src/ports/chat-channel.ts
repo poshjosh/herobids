@@ -34,11 +34,15 @@ export interface ChatSendResult {
   providerMessageId: string;
 }
 
-/** A document to send to a chat. The body is held only for the send. */
+/**
+ * A document to send to a chat. The body is held only for the send. A caption carries the message text
+ * when the text fits the provider's caption limit; a caption that is too long fails with chat.caption_too_long.
+ */
 export interface ChatOutboundDocument {
   filename: string;
   mimeType: string;
   body: Buffer;
+  caption?: ChatOutboundBody;
 }
 
 export interface ChatChannel {

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { DocumentIdsParam, type AgentTool, type OutboundAttachmentPort, type ToolResult, type ToolContext } from '@herobids/domain';
+import { DocumentIdsParam, type AgentTool, type OutboundAttachmentPort, type OutboundFileFailure, type ToolResult, type ToolContext } from '@herobids/domain';
 import type { Database } from '@herobids/db';
 import { convertZodToJsonSchema } from './registry.js';
 import { resolveGmailTokens } from '../gmail-credential-resolver.js';
@@ -138,6 +138,7 @@ export const sendEmailTool: AgentTool = {
     let attachments: EmailAttachment[] | undefined;
     let attachmentPort: OutboundAttachmentPort | null = null;
     let attachmentAuditIds: string[] = [];
+    let attachmentsFailed: OutboundFileFailure[] = [];
     if (documentIds?.length) {
       const port = _outboundAttachments;
       if (!port) {
@@ -159,8 +160,10 @@ export const sendEmailTool: AgentTool = {
         };
       }
       attachmentPort = port;
-      attachmentAuditIds = prepared.data.map((file) => file.auditId);
-      attachments = prepared.data.map((file) => ({ filename: file.filename, contentType: file.mimeType, body: file.body }));
+      attachmentAuditIds = prepared.data.files.map((file) => file.auditId);
+      attachments = prepared.data.files.map((file) => ({ filename: file.filename, contentType: file.mimeType, body: file.body }));
+      attachmentsFailed = prepared.data.failures;
+      if (attachments.length === 0) attachments = undefined;
     }
 
     // Send via Gmail adapter
@@ -182,6 +185,7 @@ export const sendEmailTool: AgentTool = {
           from: tokenResult.data.email,
           connectionId: tokenResult.data.connectionId,
           to: Array.isArray(to) ? to : [to],
+          ...(attachmentsFailed.length > 0 ? { attachmentsFailed } : {}),
         },
       };
     } catch (err) {

@@ -51,6 +51,17 @@ export interface ResolvedAttachment {
   extractionStatus: ExtractionStatus;
 }
 
+/** A requested document that could not be resolved for a human. The send goes ahead without it. */
+export interface UnreadableAttachment {
+  documentId: string;
+  code: AttachmentResolveError['code'];
+}
+
+export interface ResolvedForHuman {
+  readable: ResolvedAttachment[];
+  unreadable: UnreadableAttachment[];
+}
+
 export interface CopiedDocument {
   /** Id of the new record in the recipient agent's store. */
   documentId: string;
@@ -67,80 +78,94 @@ export class OutboundAttachmentResolver {
   ) {}
 
   /**
-   * Reads the requested documents for a human recipient or as the source of an agent copy.
-   * Writes nothing. Every id must belong to the sender; a missing or foreign id fails the whole call.
+   * Reads the requested documents as the source of an agent copy. Writes nothing. Every id must belong to the sender;
+   * a missing or foreign id fails the whole call.
    */
   async resolveForAgent(agentId: string, documentIds: string[]): Promise<Result<ResolvedAttachment[], AttachmentResolveError>> {
-    if (documentIds.length > MAX_OUTBOUND_DOCUMENTS) {
-      return err({
-        code: 'outbound_attachment.too_many',
-        message: `A message can attach at most ${MAX_OUTBOUND_DOCUMENTS} documents.`,
-        context: { count: documentIds.length, maxCount: MAX_OUTBOUND_DOCUMENTS },
-      });
-    }
-    if (new Set(documentIds).size !== documentIds.length) {
-      return err({
-        code: 'outbound_attachment.duplicate',
-        message: 'Each document can be attached to a message only once.',
-        context: { documentIds },
-      });
-    }
+    const shapeError = checkSetShape(documentIds);
+    if (shapeError) return err(shapeError);
 
     const rows: OutboundDocumentRow[] = [];
     for (const documentId of documentIds) {
-      let row: OutboundDocumentRow | null;
-      try {
-        row = await this.repo.getById(documentId);
-      } catch (error) {
-        return err({
-          code: 'outbound_attachment.lookup_failed',
-          message: `Failed to look up document ${documentId}: ${(error as Error).message}`,
-          context: { documentId },
-        });
-      }
-      // Foreign documents read as missing, the same rule the read path uses, so ids cannot be probed across agents.
-      if (!row || row.agentId !== agentId) {
-        return err({
-          code: 'outbound_attachment.not_found',
-          message: `Document ${documentId} not found.`,
-          context: { documentId },
-        });
-      }
-      rows.push(row);
+      const row = await this.findOwnedDocument(agentId, documentId);
+      if (!row.ok) return err(row.error);
+      rows.push(row.data);
     }
 
-    const totalBytes = rows.reduce((sum, row) => sum + row.sizeBytes, 0);
-    if (totalBytes > MAX_OUTBOUND_TOTAL_BYTES) {
-      return err({
-        code: 'outbound_attachment.too_large',
-        message: `Attached documents total ${totalBytes} bytes, above the ${MAX_OUTBOUND_TOTAL_BYTES} byte limit.`,
-        context: { totalBytes, maxBytes: MAX_OUTBOUND_TOTAL_BYTES },
-      });
-    }
+    const sizeError = checkTotalBytes(rows);
+    if (sizeError) return err(sizeError);
 
     const resolved: ResolvedAttachment[] = [];
     for (const row of rows) {
-      const read = await this.store.read(row.originalStoreKey);
-      if (!read.ok) {
-        return err({
-          code: 'outbound_attachment.read_failed',
-          message: `Document ${row.id} could not be read.`,
-          context: { documentId: row.id },
-        });
-      }
-      resolved.push({
-        documentId: row.id,
-        userId: row.userId,
-        filename: row.originalFilename,
-        mimeType: row.mimeType,
-        sizeBytes: row.sizeBytes,
-        body: read.data,
-        storeKey: row.originalStoreKey,
-        extractedTextStoreKey: row.extractedTextStoreKey,
-        extractionStatus: toExtractionStatus(row.extractionStatus),
-      });
+      const body = await this.readDocument(row);
+      if (!body.ok) return err(body.error);
+      resolved.push(toResolvedAttachment(row, body.data));
     }
     return ok(resolved);
+  }
+
+  /**
+   * Reads the requested documents for a human recipient. A document that cannot be found, looked up or read is
+   * reported in unreadable, and the others still resolve. The set-level rules still fail the whole call.
+   */
+  async resolveForHuman(agentId: string, documentIds: string[]): Promise<Result<ResolvedForHuman, AttachmentResolveError>> {
+    const shapeError = checkSetShape(documentIds);
+    if (shapeError) return err(shapeError);
+
+    const found: OutboundDocumentRow[] = [];
+    const unreadable: UnreadableAttachment[] = [];
+    for (const documentId of documentIds) {
+      const row = await this.findOwnedDocument(agentId, documentId);
+      if (row.ok) found.push(row.data);
+      else unreadable.push({ documentId, code: row.error.code });
+    }
+
+    const sizeError = checkTotalBytes(found);
+    if (sizeError) return err(sizeError);
+
+    const readable: ResolvedAttachment[] = [];
+    for (const row of found) {
+      const body = await this.readDocument(row);
+      if (body.ok) readable.push(toResolvedAttachment(row, body.data));
+      else unreadable.push({ documentId: row.id, code: body.error.code });
+    }
+    return ok({ readable, unreadable });
+  }
+
+  private async findOwnedDocument(agentId: string, documentId: string): Promise<Result<OutboundDocumentRow, AttachmentResolveError>> {
+    let row: OutboundDocumentRow | null;
+    try {
+      row = await this.repo.getById(documentId);
+    } catch (error) {
+      return err({
+        code: 'outbound_attachment.lookup_failed',
+        message: `Failed to look up document ${documentId}: ${(error as Error).message}`,
+        context: { documentId },
+      });
+    }
+    // Foreign documents read as missing, the same rule the read path uses, so ids cannot be probed across agents.
+    if (!row || row.agentId !== agentId) {
+      return err({
+        code: 'outbound_attachment.not_found',
+        message: `Document ${documentId} not found.`,
+        context: { documentId },
+      });
+    }
+    return ok(row);
+  }
+
+  private async readDocument(row: OutboundDocumentRow): Promise<Result<Buffer, AttachmentResolveError>> {
+    const readFailed = err<AttachmentResolveError>({
+      code: 'outbound_attachment.read_failed',
+      message: `Document ${row.id} could not be read.`,
+      context: { documentId: row.id },
+    });
+    try {
+      const read = await this.store.read(row.originalStoreKey);
+      return read.ok ? ok(read.data) : readFailed;
+    } catch {
+      return readFailed;
+    }
   }
 
   /**
@@ -277,4 +302,46 @@ export class OutboundAttachmentResolver {
 /** A failed extraction stays failed on the copy; anything else without extracted text is not needed. */
 function toExtractionStatus(status: string): ExtractionStatus {
   return status === 'ready' || status === 'failed' ? status : 'not_needed';
+}
+
+function checkSetShape(documentIds: string[]): AttachmentResolveError | null {
+  if (documentIds.length > MAX_OUTBOUND_DOCUMENTS) {
+    return {
+      code: 'outbound_attachment.too_many',
+      message: `A message can attach at most ${MAX_OUTBOUND_DOCUMENTS} documents.`,
+      context: { count: documentIds.length, maxCount: MAX_OUTBOUND_DOCUMENTS },
+    };
+  }
+  if (new Set(documentIds).size !== documentIds.length) {
+    return {
+      code: 'outbound_attachment.duplicate',
+      message: 'Each document can be attached to a message only once.',
+      context: { documentIds },
+    };
+  }
+  return null;
+}
+
+function checkTotalBytes(rows: OutboundDocumentRow[]): AttachmentResolveError | null {
+  const totalBytes = rows.reduce((sum, row) => sum + row.sizeBytes, 0);
+  if (totalBytes <= MAX_OUTBOUND_TOTAL_BYTES) return null;
+  return {
+    code: 'outbound_attachment.too_large',
+    message: `Attached documents total ${totalBytes} bytes, above the ${MAX_OUTBOUND_TOTAL_BYTES} byte limit.`,
+    context: { totalBytes, maxBytes: MAX_OUTBOUND_TOTAL_BYTES },
+  };
+}
+
+function toResolvedAttachment(row: OutboundDocumentRow, body: Buffer): ResolvedAttachment {
+  return {
+    documentId: row.id,
+    userId: row.userId,
+    filename: row.originalFilename,
+    mimeType: row.mimeType,
+    sizeBytes: row.sizeBytes,
+    body,
+    storeKey: row.originalStoreKey,
+    extractedTextStoreKey: row.extractedTextStoreKey,
+    extractionStatus: toExtractionStatus(row.extractionStatus),
+  };
 }

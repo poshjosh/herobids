@@ -10,7 +10,7 @@ export interface TelegramSendResult {
 export type TelegramReplyMarkup = Record<string, unknown>;
 
 /** Telegram rejects captions longer than this (counted in UTF-16 units, as JS `length` does). */
-const TELEGRAM_CAPTION_MAX_CHARS = 1024;
+export const TELEGRAM_CAPTION_MAX_CHARS = 1024;
 
 /** Telegram rejects sendMessage text longer than this. */
 const TELEGRAM_MESSAGE_MAX_CHARS = 4096;

@@ -147,7 +147,7 @@ flowchart TD
 ```ts
 agent_outbound_message_attachments {
   id: text pk,
-  outboundMessageId: text not null,
+  outboundMessageId: text not null,        // conversation message id returned to the sender (email: generated id)
   sourceDocumentId: text not null,         // sender's agent_documents.id
   recipientKind: 'telegram' | 'email' | 'agent' not null,
   recipientAgentId: text null,             // set when recipientKind = 'agent'
@@ -279,11 +279,10 @@ Files: `apps/worker/src/agents/agent-message-broker.ts`, plus the peer and child
 
 New flow:
 1. load the sending agent and its active session, as today
-2. persist the send's envelope row in `agent_messages` (keyed by `message_id`), as today; attachment rows reference it by `outboundMessageId`
+2. persist the send's envelope row in `agent_messages` (keyed by `message_id`), as today. The sent text is stored in the conversation store (`ConversationService.recordAgentMessage`) under the payload `messageId`, and the broker reuses that id as `outboundMessageId`. Attachment rows reference the conversation message id returned to the sender, not the `agent_messages` row.
 3. if `documentIds` is present:
-   - resolve each id via `AgentDocumentsRepository`
-   - reject the request if a document is missing, belongs to another agent, or is deleted
-   - enforce count (3) and total size (5 MiB)
+   - a document that is missing, belongs to another agent, is deleted, or cannot be read is reported as failed. It does not stop the text: the text and the readable documents are still sent (decision D3). Set-level rules are unchanged and still reject the request before anything is recorded or sent
+   - enforce count (3) and total size (5 MiB) across the set
    - read the blobs from `DocumentStore`
    - persist one pending attachment row per document, with its `recipientKind`
 4. deliver by recipient:
@@ -291,6 +290,8 @@ New flow:
    - human via `send_email`: MIME `multipart/mixed` with the attachments
    - agent: create copies (see Agent copy) and list the new ids in the delivered message
 5. update each attachment row to `sent` or `failed`. A failure on one attachment does not drop the text or the other attachments.
+
+`send_email` writes no `agent_messages` or conversation row. Its attachment audit id is generated (`randomUUID()`), and the Gmail message id is stored as `deliveryRef`. This is intended, not a gap.
 
 ### Ownership rule
 
@@ -345,7 +346,7 @@ _Recorded by the coordinator after each item's review. Grouped by rollout item._
 ### Item 1: schema and migration
 
 - MEDIUM: `agent_outbound_message_attachments` has no sender or user column, so rows cannot be found or purged by agent or user. Retention and purge rules are not decided in this plan.
-- MEDIUM: `outboundMessageId` points at the envelope row, which is `direction = 'inbound'` (agent to platform). The column name and plan wording ("outbound message rows") suggest otherwise. Rename to `sendEnvelopeMessageId`, or note the direction in the comment.
+- Resolved (final gap review, H1): the send text lives in `conversation_messages`, and attachment rows reference the conversation message id, not the envelope row. `outboundMessageId` keeps its name and is documented in the Data Model.
 - MEDIUM: the user-visible send text and delivery status live in `conversation_messages`, not the envelope row. State in the plan that attachments link to the envelope by design.
 - MEDIUM: no index on `copied_document_id` or `source_document_id` (both tables), which the "trace where a document went" use needs. `agent_documents.source_document_id` is unindexed.
 - LOW: the `{ enum }` column style is not the repo's dominant convention (`$type<T>()` and plain text are more common). Behaviour is unaffected.
@@ -392,7 +393,7 @@ _Recorded by the coordinator after each item's review. Grouped by rollout item._
 
 - Decided by the user: a new self-only endpoint (`GET /agents/:id/documents/available`), projected fields, staged and deleted rows excluded, cap 100 with no paging.
 - MEDIUM: a copy delivered to a running agent is staged until the next launch, so `list_agent_documents` will not show it during that session. The delivered message still lists the copy ids, so `read_agent_document` works. Item 7 must rely on the message, not the list, for the current session.
-- MEDIUM: `list_agent_documents` is not in `DURABLE_TOOL_NAMES` and has no entry in `HINTS_BY_TOOL` (`apps/worker/src/stale-result-hints.ts`). Once stale, the 100-document list is cut to 500 to 2,000 characters and the model is not told to re-list. Add a hint.
+- Corrected: a stale-result hint for `list_agent_documents` exists in `HINTS_BY_TOOL` (`apps/worker/src/stale-result-hints.ts`, ~line 34). The earlier entry was wrong. Whether the tool belongs in `DURABLE_TOOL_NAMES` (`structured-tool-loop.ts`) is still open; see Item 4.
 - MEDIUM (open): confirm the judge cannot call `list_agent_documents`. If it can, its result is cut to 16,000 characters in carried history and IDs past that point are lost. Exclude the tool from the judge surface, or accept the loss in writing.
 - LOW: `agent-platform-client.ts` validates `documentId` as `z.string().min(1)`. Use `z.string().uuid()` to match `read_agent_document`.
 - LOW: `agent-creation.test.ts` fake platform lacks `listAgentDocuments`. Add a stub.
@@ -451,7 +452,8 @@ _Recorded by the coordinator after each item's review. Grouped by rollout item._
 - MEDIUM: `copyAllToAgent` and `discardCopies` (`outbound-attachment-resolver.ts`) ignore the result of `removeCopyRecord`. If the second hard-delete fails, the orphan row stays `staged` and visible to the recipient. Return the leftover ids and surface them for reconciliation.
 - MEDIUM: `deliverHumanDocuments` (`agent-message-broker.ts`) has no per-document try/catch. `chat.sendDocument` is documented as never throwing, but a throw would leave later rows `pending`. Settle each row as `failed` and continue.
 - MEDIUM: two concurrent requests with the same `messageId` and `documentIds` can both pass the 409 guard and both stage copies. Claim the message row atomically before staging. `recordPending` also creates new audit rows on every call.
-- MEDIUM: the plan's caption-on-first-document idea was dropped. Telegram now sends text first, then each document with no caption, which avoids repeating the text. Confirm this matches the intended design.
+- Resolved (final gap review, H2): the text is the plain-text caption of the first document when it fits the Telegram caption limit (1024 UTF-16 units after escaping). Otherwise the text is sent first as a separate message, then each document uncaptioned. The caption has no bold header.
+  - Accepted risk (owner decision D3, final gap review HIGH 1): if the captioned first document fails for any reason other than `chat.caption_too_long`, its row is marked failed and the text is sent, then the other documents uncaptioned. The text must reach the recipient. An ambiguous network timeout can mean the captioned send already landed, so the recipient may get the text twice. This duplicate is accepted.
 - LOW: the ownership precondition is not stated on `copyAllToAgent` or `resolveForAgent`. All three callers enforce it (`canPeerSend`, `reachableParent`, and the route's `userId` check). Document it.
 - LOW: `markThreadDelivery` sits before the human document path. Confirm it does not throw, so documents do not stay `pending`.
 - LOW: `email.ts` sets `delivered = true` before the rate-limit `hset`. This is pre-existing. An `hset` failure after a successful send reports a failure for a delivered email.
@@ -506,11 +508,19 @@ _Recorded by the coordinator after each item's review. Grouped by rollout item._
 4. **Large files can blow delivery limits.** Limits must be enforced before attempting send.
 5. **Recipients read text, not PDF bytes.** `read_agent_document` returns extracted text. A recipient that needs to forward a PDF must send the stored file, not its text.
 
+### Final gap review (2026-11-24)
+
+- Decision D3 (binding, user): a document that cannot be read does not stop the text. For `send_message` (Telegram), the text and readable documents are sent, the broker logs a warning, and each failed document id and code is recorded on its attachment row (`deliveryError`). For `send_email`, the email is sent without the unreadable files and the tool result reports them as `attachmentsFailed`. Only per-document failures (`not_found`, `lookup_failed`, `read_failed`) are non-fatal. The 3-document and 5 MiB set rules are unchanged, and a set that breaks them is still rejected before anything is recorded or sent. `prepareForHuman` returns `{ files, failures }`.
+- H2 (resolves Open Question 1): Telegram caption on the first document when it fits, otherwise text first, then uncaptioned documents. The text is sent once in either case.
+- Audit settle paths cover thrown errors (final gap review HIGH 2 and 3). If `prepareForHuman` throws after recording rows, every inserted row is settled `failed` with `audit_failed`, and the call returns an error Result. If `recordAgentMessage` throws, the readable rows (`send_message`) or copy rows (child report) are settled `failed` with `not_recorded`, and the error then propagates. On the child-report path the staged copies are also rolled back, so no orphan copy remains in the parent's store.
+- Telegram caption fallback (final gap review HIGH 1): if the captioned send fails for any reason, the text is sent separately and the rest uncaptioned. A network timeout can still deliver the caption, so the text may appear twice. Accepted: the owner chose text delivery over a rare duplicate (D3).
+- M1 (open decision, no code change): the resolver accepts `staged` and `failed` rows, while `list_agent_documents` shows only materialized rows. A document a sender can attach may not appear in that sender's list. This needs a decision: list the statuses the resolver accepts, or narrow the resolver.
+
 ## Open Questions
 
 Resolved for implementation (2026-11-24):
 
-1. Telegram: the text body is the caption of the first document. If the text exceeds the caption limit, send the text as a separate message first, then the documents.
+1. Telegram (resolved, final gap review H2): the text body is the caption of the first document when it fits the 1024 UTF-16 caption limit after escaping. Otherwise the text is sent as a separate message first, then the documents uncaptioned.
 2. Web chat: out of scope for this plan. The web UI attaches files only in the message composer (inbound). It does not display attachments on agent replies.
 3. Email size: the total cap is 5 MiB before encoding (D5). Email goes through Gmail, not SES (decided 2026-11-24). Attachments use the Gmail media upload endpoint. Its maximum size is not stated on the reference page, so confirm it with a sandbox account before item 9 sets the final limits. The "25 MB per message" figure is a Google support statement and is not verified against the API reference.
 4. Copies and storage quota: out of scope. Grep found no quota on `agent_documents`. The workspace quota (`workspace-quota.ts`) covers workspace files only. Copies are limited by the existing peer and child rate limits (Risk 3). Recorded as an outstanding issue.

@@ -1,5 +1,6 @@
 import type { ChatAddress, ChatChannel, ChatOutboundBody, ChatOutboundDocument } from '@herobids/domain';
-import { forceReply, type TelegramClient } from './telegram-client.js';
+import { err } from '@herobids/domain';
+import { forceReply, TELEGRAM_CAPTION_MAX_CHARS, type TelegramClient } from './telegram-client.js';
 
 export class TelegramChannel implements ChatChannel {
   readonly provider = 'telegram' as const;
@@ -17,15 +18,26 @@ export class TelegramChannel implements ChatChannel {
   }
 
   async sendDocument(to: ChatAddress, document: ChatOutboundDocument) {
+    const caption = document.caption ? plainCaption(document.caption) : undefined;
+    if (caption !== undefined && escapeHtml(caption).length > TELEGRAM_CAPTION_MAX_CHARS) {
+      return err({ code: 'chat.caption_too_long', message: 'caption_too_long' });
+    }
     const result = await this.client.sendDocument({
       chatId: to.address,
       filename: document.filename,
       mimeType: document.mimeType,
       body: document.body,
+      caption,
+      replyMarkup: document.caption?.replyRequested ? forceReply() : undefined,
     });
     if (!result.ok) return result;
     return { ok: true as const, data: { providerMessageId: String(result.data.messageId) } };
   }
+}
+
+function plainCaption(body: ChatOutboundBody): string {
+  if (!body.agentName) return body.body;
+  return `💬 [${body.agentName}]\n${body.subject ? `${body.subject}\n` : ''}${body.body}`;
 }
 
 function escapeHtml(text: string): string {

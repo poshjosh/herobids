@@ -1,5 +1,5 @@
 import { ok, err } from '@herobids/domain';
-import type { DomainError, OutboundAttachmentPort, OutboundDeliveryStatus, OutboundCopy, OutboundFile, PrepareOutboundForHumanInput, Result, StageOutboundForAgentInput, StagedOutboundCopies } from '@herobids/domain';
+import type { DomainError, OutboundAttachmentPort, OutboundDeliveryStatus, OutboundCopy, PreparedOutboundForHuman, PrepareOutboundForHumanInput, Result, StageOutboundForAgentInput, StagedOutboundCopies } from '@herobids/domain';
 import type { NewOutboundAttachmentAudit } from '@herobids/db';
 import type { OutboundAttachmentResolver } from './outbound-attachment-resolver.js';
 import { buildDocumentNoticeText } from './agent-document-notice.js';
@@ -20,34 +20,54 @@ export class OutboundAttachmentService implements OutboundAttachmentPort {
     private readonly audit: OutboundAttachmentAuditStore,
   ) {}
 
-  async prepareForHuman(input: PrepareOutboundForHumanInput): Promise<Result<OutboundFile[], DomainError>> {
-    const resolved = await this.resolver.resolveForAgent(input.senderAgentId, input.documentIds);
+  async prepareForHuman(input: PrepareOutboundForHumanInput): Promise<Result<PreparedOutboundForHuman, DomainError>> {
+    const resolved = await this.resolver.resolveForHuman(input.senderAgentId, input.documentIds);
     if (!resolved.ok) return err(resolved.error);
+    const { readable, unreadable } = resolved.data;
 
-    let auditIds: string[];
+    let auditIds: string[] = [];
     try {
-      auditIds = await this.audit.recordPending(resolved.data.map((document) => ({
-        outboundMessageId: input.outboundMessageId,
-        sourceDocumentId: document.documentId,
-        recipientKind: input.recipientKind,
-        recipientAgentId: null,
-        copiedDocumentId: null,
-        filename: document.filename,
-        mimeType: document.mimeType,
-        sizeBytes: document.sizeBytes,
-      })));
+      auditIds = await this.audit.recordPending([
+        ...readable.map((document) => ({
+          outboundMessageId: input.outboundMessageId,
+          sourceDocumentId: document.documentId,
+          recipientKind: input.recipientKind,
+          recipientAgentId: null,
+          copiedDocumentId: null,
+          filename: document.filename,
+          mimeType: document.mimeType,
+          sizeBytes: document.sizeBytes,
+        })),
+        ...unreadable.map((failure) => ({
+          outboundMessageId: input.outboundMessageId,
+          sourceDocumentId: failure.documentId,
+          recipientKind: input.recipientKind,
+          recipientAgentId: null,
+          copiedDocumentId: null,
+          filename: '',
+          mimeType: '',
+          sizeBytes: 0,
+        })),
+      ]);
+      await Promise.all(unreadable.map((failure, index) =>
+        this.audit.markDelivery(auditIds[readable.length + index] ?? '', 'failed', { deliveryError: failure.code }),
+      ));
     } catch (error) {
+      await this.settle(auditIds, 'failed', { deliveryError: 'audit_failed' });
       return err(auditFailed(error));
     }
 
-    return ok(resolved.data.map((document, index) => ({
-      auditId: auditIds[index] ?? '',
-      documentId: document.documentId,
-      filename: document.filename,
-      mimeType: document.mimeType,
-      sizeBytes: document.sizeBytes,
-      body: document.body,
-    })));
+    return ok({
+      files: readable.map((document, index) => ({
+        auditId: auditIds[index] ?? '',
+        documentId: document.documentId,
+        filename: document.filename,
+        mimeType: document.mimeType,
+        sizeBytes: document.sizeBytes,
+        body: document.body,
+      })),
+      failures: unreadable.map((failure) => ({ documentId: failure.documentId, code: failure.code })),
+    });
   }
 
   async stageForAgent(input: StageOutboundForAgentInput): Promise<Result<StagedOutboundCopies, DomainError>> {
@@ -101,7 +121,7 @@ export class OutboundAttachmentService implements OutboundAttachmentPort {
   }
 
   private async settle(auditIds: string[], status: OutboundDeliveryStatus, detail: { deliveryError: string }): Promise<void> {
-    await Promise.allSettled(auditIds.map((id) => this.audit.markDelivery(id, status, detail)));
+    await Promise.allSettled(auditIds.map(async (id) => this.audit.markDelivery(id, status, detail)));
   }
 }
 

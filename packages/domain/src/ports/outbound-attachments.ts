@@ -13,6 +13,17 @@ export interface OutboundFile {
   body: Buffer;
 }
 
+export interface OutboundFileFailure {
+  documentId: string;
+  code: string;
+}
+
+export interface PreparedOutboundForHuman {
+  files: OutboundFile[];
+  /** Documents that could not be read. The send goes ahead without them. */
+  failures: OutboundFileFailure[];
+}
+
 /** A copy of a sender's document in the recipient agent's store. */
 export interface OutboundCopy {
   auditId: string;
@@ -30,7 +41,7 @@ export interface StagedOutboundCopies {
 }
 
 export interface PrepareOutboundForHumanInput {
-  /** The message's identity in the audit trail (agent_messages.message_id, or a generated id for email). */
+  /** The message's identity in the audit trail: the conversation message id returned to the sender, or a generated id for email. */
   outboundMessageId: string;
   senderAgentId: string;
   recipientKind: OutboundHumanRecipientKind;
@@ -49,7 +60,7 @@ export interface StageOutboundForAgentInput {
  * behind, so the caller can fail the send without cleanup of its own.
  */
 export interface OutboundAttachmentPort {
-  prepareForHuman(input: PrepareOutboundForHumanInput): Promise<Result<OutboundFile[], DomainError>>;
+  prepareForHuman(input: PrepareOutboundForHumanInput): Promise<Result<PreparedOutboundForHuman, DomainError>>;
   stageForAgent(input: StageOutboundForAgentInput): Promise<Result<StagedOutboundCopies, DomainError>>;
   markDelivery(auditId: string, status: OutboundDeliveryStatus, detail?: { deliveryRef?: string; deliveryError?: string }): Promise<Result<void, DomainError>>;
 }

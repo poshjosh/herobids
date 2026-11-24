@@ -183,6 +183,35 @@ describe('OutboundAttachmentResolver.resolveForAgent', () => {
   });
 });
 
+describe('OutboundAttachmentResolver.resolveForHuman', () => {
+  it('returns the readable documents and reports the missing one instead of failing the set', async () => {
+    const { store, repo, resolver } = setup();
+    const readableId = await seedDocument(store, repo, { body: 'hello', filename: 'notes.pdf' });
+    const missingId = randomUUID();
+
+    const result = await resolver.resolveForHuman(SENDER, [readableId, missingId]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.readable.map((file) => file.documentId)).toEqual([readableId]);
+    expect(result.data.unreadable).toEqual([{ documentId: missingId, code: 'outbound_attachment.not_found' }]);
+  });
+
+  it('still rejects a set that breaks the document count rule', async () => {
+    const { store, repo, resolver } = setup();
+    const ids = [
+      await seedDocument(store, repo),
+      await seedDocument(store, repo),
+      await seedDocument(store, repo),
+      await seedDocument(store, repo),
+    ];
+
+    const result = await resolver.resolveForHuman(SENDER, ids);
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'outbound_attachment.too_many' } });
+  });
+});
+
 describe('OutboundAttachmentResolver.copyToAgent', () => {
   it('creates an independent copy for the recipient that points back to the original', async () => {
     const { store, repo, resolver } = setup();

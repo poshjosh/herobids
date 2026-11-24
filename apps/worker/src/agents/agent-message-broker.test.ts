@@ -905,6 +905,7 @@ function makeSendBroker(options: {
 }
 
 const DOC_ID = '33333333-3333-4333-8333-333333333333';
+const DOC_ID_2 = '44444444-4444-4444-8444-444444444444';
 const MSG_ID = '22222222-2222-4222-8222-222222222222';
 
 function makeOutboundPort(files: Array<{ auditId: string; filename: string }> = [
@@ -914,7 +915,10 @@ function makeOutboundPort(files: Array<{ auditId: string; filename: string }> = 
   return {
     prepareForHuman: vi.fn(async () => ({
       ok: true,
-      data: files.map((file) => ({ ...file, documentId: DOC_ID, mimeType: 'application/pdf', sizeBytes: 1, body: Buffer.from('x') })),
+      data: {
+        files: files.map((file) => ({ ...file, documentId: DOC_ID, mimeType: 'application/pdf', sizeBytes: 1, body: Buffer.from('x') })),
+        failures: [],
+      },
     })),
     stageForAgent: vi.fn(async () => ({ ok: false, error: { code: 'outbound_attachment.not_found', message: 'not_found' } })),
     markDelivery: vi.fn(async () => ({ ok: true, data: undefined })),
@@ -925,7 +929,7 @@ describe('AgentMessageBroker — send_message document delivery to a human', () 
   const sendWithDocuments = (documentIds: string[] = [DOC_ID]) =>
     makeSendMessageEnvelope({ payload: { body: 'Hello', documentIds, messageId: MSG_ID } });
 
-  it('sends the text once, then each document once with no caption, and records each outcome', async () => {
+  it('sends the text as the caption of the first document, then each other document uncaptioned', async () => {
     const port = makeOutboundPort();
     const { broker, chatSend, documentSend } = makeSendBroker({ chatOk: true, outboundAttachments: port });
 
@@ -938,44 +942,89 @@ describe('AgentMessageBroker — send_message document delivery to a human', () 
       recipientKind: 'telegram',
       documentIds: [DOC_ID],
     }));
-    expect(chatSend).toHaveBeenCalledTimes(1);
+    expect(chatSend).not.toHaveBeenCalled();
     expect(documentSend).toHaveBeenCalledTimes(2);
-    expect(documentSend.mock.calls.map((call) => call[1].filename)).toEqual(['a.pdf', 'b.pdf']);
-    expect(chatSend.mock.invocationCallOrder[0]).toBeLessThan(documentSend.mock.invocationCallOrder[0]);
+    expect(documentSend.mock.calls[0]?.[1]).toEqual(expect.objectContaining({ filename: 'a.pdf', caption: expect.objectContaining({ body: 'Hello' }) }));
+    expect(documentSend.mock.calls[1]?.[1]).toEqual(expect.objectContaining({ filename: 'b.pdf' }));
+    expect(documentSend.mock.calls[1]?.[1]).not.toHaveProperty('caption');
     expect(port.markDelivery).toHaveBeenCalledWith('audit-1', 'sent', { deliveryRef: 'tg-doc-1' });
     expect(port.markDelivery).toHaveBeenCalledWith('audit-2', 'sent', { deliveryRef: 'tg-doc-1' });
   });
 
-  it('sends no document and marks each row skipped when the text was not delivered', async () => {
+  it('sends the text first and the documents uncaptioned when the text overflows the caption limit', async () => {
     const port = makeOutboundPort();
-    const { broker, chatSend, documentSend } = makeSendBroker({ chatOk: false, outboundAttachments: port });
+    const { broker, chatSend, documentSend } = makeSendBroker({ chatOk: true, outboundAttachments: port });
+    documentSend.mockResolvedValueOnce({ ok: false, error: { code: 'chat.caption_too_long', message: 'caption_too_long' } } as never);
+
+    const result = await broker.processInbound(sendWithDocuments());
+
+    expect(result.accepted).toBe(true);
+    expect(chatSend).toHaveBeenCalledTimes(1);
+    expect(documentSend).toHaveBeenCalledTimes(3);
+    expect(documentSend.mock.calls.slice(1).map((call) => call[1].filename)).toEqual(['a.pdf', 'b.pdf']);
+    expect(documentSend.mock.calls.slice(1).every((call) => !('caption' in call[1]))).toBe(true);
+    expect(chatSend.mock.invocationCallOrder[0]).toBeLessThan(documentSend.mock.invocationCallOrder[1]);
+    expect(port.markDelivery).toHaveBeenCalledWith('audit-1', 'sent', { deliveryRef: 'tg-doc-1' });
+    expect(port.markDelivery).toHaveBeenCalledWith('audit-2', 'sent', { deliveryRef: 'tg-doc-1' });
+  });
+
+  it('sends the text once and the remaining documents when the captioned first document fails for a non-length reason', async () => {
+    const port = makeOutboundPort();
+    const { broker, chatSend, documentSend } = makeSendBroker({ chatOk: true, outboundAttachments: port });
+    documentSend.mockResolvedValueOnce({ ok: false, error: { code: 'chat.send_failed', message: 'send_failed' } } as never);
+
+    const result = await broker.processInbound(sendWithDocuments());
+
+    expect(result.accepted).toBe(true);
+    expect(chatSend).toHaveBeenCalledTimes(1);
+    expect(documentSend).toHaveBeenCalledTimes(2);
+    expect(documentSend.mock.calls[1]?.[1]).toEqual(expect.objectContaining({ filename: 'b.pdf' }));
+    expect(documentSend.mock.calls[1]?.[1]).not.toHaveProperty('caption');
+    expect(port.markDelivery).toHaveBeenCalledWith('audit-1', 'failed', { deliveryError: 'chat.send_failed' });
+    expect(port.markDelivery).toHaveBeenCalledWith('audit-2', 'sent', { deliveryRef: 'tg-doc-1' });
+  });
+
+  it('sends the text with the readable document when another document cannot be read', async () => {
+    const port = makeOutboundPort([{ auditId: 'audit-1', filename: 'a.pdf' }]);
+    port.prepareForHuman.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        files: [{ auditId: 'audit-1', documentId: DOC_ID, filename: 'a.pdf', mimeType: 'application/pdf', sizeBytes: 1, body: Buffer.from('x') }],
+        failures: [{ documentId: DOC_ID_2, code: 'outbound_attachment.read_failed' }],
+      },
+    } as never);
+    const { broker, conversations, chatSend, documentSend } = makeSendBroker({ chatOk: true, outboundAttachments: port });
+
+    const result = await broker.processInbound(sendWithDocuments([DOC_ID, DOC_ID_2]));
+
+    expect(result.accepted).toBe(true);
+    expect(conversations.recordAgentMessage).toHaveBeenCalledTimes(1);
+    expect(chatSend).not.toHaveBeenCalled();
+    expect(documentSend).toHaveBeenCalledTimes(1);
+    expect(documentSend.mock.calls[0]?.[1]).toEqual(expect.objectContaining({ filename: 'a.pdf', caption: expect.objectContaining({ body: 'Hello' }) }));
+    expect(port.markDelivery).toHaveBeenCalledTimes(1);
+    expect(port.markDelivery).toHaveBeenCalledWith('audit-1', 'sent', { deliveryRef: 'tg-doc-1' });
+  });
+
+  it('sends the text alone when no document can be read', async () => {
+    const port = makeOutboundPort([]);
+    port.prepareForHuman.mockResolvedValueOnce({
+      ok: true,
+      data: { files: [], failures: [{ documentId: DOC_ID, code: 'outbound_attachment.read_failed' }] },
+    } as never);
+    const { broker, chatSend, documentSend } = makeSendBroker({ chatOk: true, outboundAttachments: port });
 
     const result = await broker.processInbound(sendWithDocuments());
 
     expect(result.accepted).toBe(true);
     expect(chatSend).toHaveBeenCalledTimes(1);
     expect(documentSend).not.toHaveBeenCalled();
-    expect(port.markDelivery).toHaveBeenCalledWith('audit-1', 'skipped', { deliveryError: 'text_not_delivered' });
-    expect(port.markDelivery).toHaveBeenCalledWith('audit-2', 'skipped', { deliveryError: 'text_not_delivered' });
+    expect(port.markDelivery).not.toHaveBeenCalled();
   });
 
-  it('marks only the failed document as failed and still sends the rest', async () => {
+  it('fails the send without recording or sending when the document set breaks a set-level rule', async () => {
     const port = makeOutboundPort();
-    const { broker, documentSend } = makeSendBroker({ chatOk: true, outboundAttachments: port });
-    documentSend
-      .mockResolvedValueOnce({ ok: false, error: { code: 'chat.send_failed', message: 'send_failed' } } as never)
-      .mockResolvedValueOnce({ ok: true, data: { providerMessageId: 'tg-doc-2', address: { provider: 'telegram', address: '123' } } } as never);
-
-    await broker.processInbound(sendWithDocuments());
-
-    expect(documentSend).toHaveBeenCalledTimes(2);
-    expect(port.markDelivery).toHaveBeenCalledWith('audit-1', 'failed', { deliveryError: 'chat.send_failed' });
-    expect(port.markDelivery).toHaveBeenCalledWith('audit-2', 'sent', { deliveryRef: 'tg-doc-2' });
-  });
-
-  it('fails the send without recording or sending when a document cannot be read', async () => {
-    const port = makeOutboundPort();
-    port.prepareForHuman.mockResolvedValueOnce({ ok: false, error: { code: 'outbound_attachment.not_found', message: 'not_found' } } as never);
+    port.prepareForHuman.mockResolvedValueOnce({ ok: false, error: { code: 'outbound_attachment.too_many', message: 'too_many' } } as never);
     const { broker, conversations, chatSend, documentSend } = makeSendBroker({ chatOk: true, outboundAttachments: port });
 
     const result = await broker.processInbound(sendWithDocuments());
@@ -984,6 +1033,22 @@ describe('AgentMessageBroker — send_message document delivery to a human', () 
     expect(conversations.recordAgentMessage).not.toHaveBeenCalled();
     expect(chatSend).not.toHaveBeenCalled();
     expect(documentSend).not.toHaveBeenCalled();
+  });
+
+  it('marks the readable documents failed and propagates the error when recording the message throws', async () => {
+    const port = makeOutboundPort();
+    const conversations = makeConversations();
+    conversations.recordAgentMessage.mockRejectedValueOnce(new Error('db_unavailable'));
+    const { broker, chatSend, documentSend } = makeSendBroker({ chatOk: true, outboundAttachments: port, conversations });
+
+    const result = await broker.processInbound(sendWithDocuments());
+
+    expect(result.accepted).toBe(false);
+    expect(result.error).toContain('db_unavailable');
+    expect(chatSend).not.toHaveBeenCalled();
+    expect(documentSend).not.toHaveBeenCalled();
+    expect(port.markDelivery).toHaveBeenCalledWith('audit-1', 'failed', { deliveryError: 'not_recorded' });
+    expect(port.markDelivery).toHaveBeenCalledWith('audit-2', 'failed', { deliveryError: 'not_recorded' });
   });
 
   it('makes no attachment or document calls when documentIds is absent', async () => {
@@ -1298,6 +1363,25 @@ describe('AgentMessageBroker — send_message document copies to a parent agent'
     expect(result.accepted).toBe(false);
     expect(rollback).toHaveBeenCalledTimes(1);
     expect(redis.xadd).not.toHaveBeenCalled();
+  });
+
+  it('marks the copies failed and propagates the error when recording the report throws', async () => {
+    const conversations = makeConversations();
+    conversations.recordAgentMessage.mockRejectedValueOnce(new Error('db_unavailable'));
+    const port = portWithStage({ ok: true, data: { copies: [{ auditId: 'copy-audit-1', sourceDocumentId: DOC_ID, copiedDocumentId: 'copy-doc-1', filename: 'a.pdf' }], notice: 'NOTICE', rollback: vi.fn(async () => {}) } });
+    const { broker, redis } = makeSendBroker({
+      ...childOptions,
+      conversations,
+      redis: { xadd: vi.fn(async () => '1-0') },
+      outboundAttachments: port,
+    });
+
+    const result = await broker.processInbound(sendWithDocuments());
+
+    expect(result.accepted).toBe(false);
+    expect(result.error).toContain('db_unavailable');
+    expect(redis.xadd).not.toHaveBeenCalled();
+    expect((port as unknown as { markDelivery: ReturnType<typeof vi.fn> }).markDelivery).toHaveBeenCalledWith('copy-audit-1', 'failed', { deliveryError: 'not_recorded' });
   });
 });
 
