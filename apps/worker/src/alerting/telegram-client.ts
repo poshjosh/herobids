@@ -9,6 +9,12 @@ export interface TelegramSendResult {
 
 export type TelegramReplyMarkup = Record<string, unknown>;
 
+/** Telegram rejects captions longer than this (counted in UTF-16 units, as JS `length` does). */
+const TELEGRAM_CAPTION_MAX_CHARS = 1024;
+
+/** Telegram rejects sendMessage text longer than this. */
+const TELEGRAM_MESSAGE_MAX_CHARS = 4096;
+
 export function forceReply(): TelegramReplyMarkup {
   return {
     force_reply: true,
@@ -46,6 +52,65 @@ export class TelegramClient {
           disable_web_page_preview: true,
           ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
         }),
+      });
+
+      if (!response.ok) {
+        const body = await response.text();
+        return err({ code: 'telegram.http_error', message: `HTTP ${response.status}: ${body}` });
+      }
+
+      const data = await response.json() as { ok: boolean; result?: { message_id: number }; description?: string };
+      if (!data.ok) {
+        return err({ code: 'telegram.api_error', message: data.description ?? 'Unknown Telegram API error' });
+      }
+
+      return ok({ messageId: data.result!.message_id });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return err({ code: 'telegram.network_error', message });
+    }
+  }
+
+  /**
+   * Upload a file to a chat via multipart/form-data.
+   * `caption` is plain text; it is HTML-escaped before sending (parse_mode HTML).
+   * The 1024-unit limit is checked against the escaped text, which over-counts entities and is conservative.
+   * Captions over the limit are sent first as text messages, split into chunks of at most 4096 escaped units
+   * (each chunk is escaped separately so no entity is split), never truncated.
+   * Returns the document message's id.
+   */
+  async sendDocument(params: {
+    chatId: string;
+    filename: string;
+    mimeType: string;
+    body: Buffer;
+    caption?: string;
+    replyMarkup?: TelegramReplyMarkup;
+  }): Promise<Result<TelegramSendResult, { code: string; message: string }>> {
+    let caption = params.caption ? escapeHtml(params.caption) : undefined;
+    if (caption && caption.length > TELEGRAM_CAPTION_MAX_CHARS) {
+      for (const chunk of splitIntoEscapedChunks(params.caption ?? '', TELEGRAM_MESSAGE_MAX_CHARS)) {
+        const textResult = await this.sendText(params.chatId, escapeHtml(chunk));
+        if (!textResult.ok) return textResult;
+      }
+      caption = undefined;
+    }
+
+    try {
+      const form = new FormData();
+      form.append('chat_id', params.chatId);
+      form.append('document', new Blob([new Uint8Array(params.body)], { type: params.mimeType }), params.filename);
+      if (caption) {
+        form.append('caption', caption);
+        form.append('parse_mode', 'HTML');
+      }
+      if (params.replyMarkup) {
+        form.append('reply_markup', JSON.stringify(params.replyMarkup));
+      }
+
+      const response = await fetch(`${this.baseUrl}/sendDocument`, {
+        method: 'POST',
+        body: form,
       });
 
       if (!response.ok) {
@@ -157,4 +222,27 @@ function escapeHtml(text: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+/**
+ * Split raw text into chunks whose HTML-escaped length is at most `maxEscapedLength`.
+ * Iterates by code point so surrogate pairs are never cut; escaping is per character,
+ * so the escaped length of a chunk is the sum of its code points' escaped lengths.
+ */
+function splitIntoEscapedChunks(text: string, maxEscapedLength: number): string[] {
+  const chunks: string[] = [];
+  let current = '';
+  let currentEscapedLength = 0;
+  for (const char of text) {
+    const escapedLength = escapeHtml(char).length;
+    if (currentEscapedLength + escapedLength > maxEscapedLength) {
+      chunks.push(current);
+      current = '';
+      currentEscapedLength = 0;
+    }
+    current += char;
+    currentEscapedLength += escapedLength;
+  }
+  if (current) chunks.push(current);
+  return chunks;
 }

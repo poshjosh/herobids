@@ -330,7 +330,7 @@ Status is tracked per item: `PENDING`, `DONE`, or `BLOCKED`.
 2. [DONE] Add `documentIds` to the four payload and parameter schemas
 3. [DONE] Add `OutboundAttachmentResolver` (resolve and copy)
 4. [DONE] Add `list_agent_documents`
-5. [PENDING] Extend `TelegramClient` with `sendDocument`
+5. [DONE] Extend `TelegramClient` with `sendDocument`
 6. [PENDING] Extend the SES adapter with raw MIME for `send_email` attachments
 7. [PENDING] Update the broker, and the peer and child paths, to resolve and deliver or copy
 8. [PENDING] Update the tool descriptions
@@ -400,6 +400,17 @@ _Recorded by the coordinator after each item's review. Grouped by rollout item._
 - LOW: integration test gaps: no `failed` lifecycle exclusion case; the 403 test's `not.toContain('secret-original/')` is nearly vacuous; an unused `Redis` connection.
 - LOW: the plan's "New tool" section removed "Requires no new recipient rules". Confirm the removal was intended.
 - Note: the manifest row for `list_agent_documents` was added to `docs/features/pending/000-capability-foundations/009-initial-capability-registry-and-tool-ownership-manifest.md`, which is outside the plan. Required by `providers.test.ts`.
+
+### Item 5: Telegram `sendDocument`
+
+- MEDIUM (must settle before item 7): `sendDocument` sends the overflow text on every call. A caller that attaches several documents with one long caption would send the text once per document. Item 7 must send the overflow text once, then the documents uncaptioned.
+- MEDIUM: if chunk N of an overflow send fails, earlier chunks are already delivered and the error carries no progress. A retry would duplicate text. Return progress or a distinct code for item 7.
+- MEDIUM: `splitIntoEscapedChunks` returns raw, unescaped chunks. The name suggests escaped output. Rename it to say it splits raw text by escaped length.
+- MEDIUM: no test covers an entity or surrogate pair straddling the 4096 boundary, such as `'a'.repeat(4095) + '&'` or `'a'.repeat(4095) + '😀'`. The current code is correct, but a naive slice-after-escape would pass the tests.
+- MEDIUM: `apps/worker/tsconfig.json` excludes test files, so `telegram-client.test.ts` is not type-checked by `tsc`. Confirm a test typecheck covers it.
+- LOW: the response-parsing block is duplicated across `sendText` and `sendDocument`. Extract a shared helper, which also removes the non-null `data.result!` assertion.
+- LOW: the class comment says "sendMessage endpoint only." Update it to cover `sendDocument`.
+- LOW: the 1024 and 4096 limits are counted on escaped UTF-16 length. This is conservative. The JSDoc says so.
 
 ## Testing Plan
 
