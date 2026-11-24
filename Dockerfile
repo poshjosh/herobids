@@ -15,13 +15,12 @@ RUN corepack enable
 FROM base AS build-shared
 WORKDIR /app
 COPY . .
-# GitHub Packages auth for @poshjosh/contracts (scope-only .npmrc; token from
-# the NPM_TOKEN build secret, never baked into the image). The secret is mounted
-# as a file at /run/secrets/NPM_TOKEN; read it (not an env var) so the token is
-# never captured in an image layer.
+# GitHub Packages auth for @poshjosh/contracts. The token is read from the
+# NPM_TOKEN build secret into a temporary user config that is deleted in the same
+# RUN, so it never lands in an image layer. Repo .npmrc stays scope-only.
 RUN --mount=type=secret,id=NPM_TOKEN \
     --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    sh -c 'printf "//npm.pkg.github.com/:_authToken=%s\n" "$(cat /run/secrets/NPM_TOKEN)" >> .npmrc && pnpm install --frozen-lockfile'
+    sh -c 'umask 077 && printf "//npm.pkg.github.com/:_authToken=%s\n" "$(cat /run/secrets/NPM_TOKEN)" > /tmp/npm-auth && NPM_CONFIG_USERCONFIG=/tmp/npm-auth pnpm install --frozen-lockfile; rc=$?; rm -f /tmp/npm-auth; exit $rc'
 RUN pnpm --filter @herobids/domain run build && \
     pnpm --filter @herobids/db run build && \
     pnpm --filter @herobids/documents run build && \
@@ -37,13 +36,13 @@ RUN pnpm --filter @herobids/worker run build
 
 # ── deploy-api: self-contained production layout ──────────────────────────────
 FROM build-api AS deploy-api
-RUN echo "inject-workspace-packages=true" >> .npmrc && \
-    pnpm --filter @herobids/api deploy --prod /deploy/api
+RUN --mount=type=secret,id=NPM_TOKEN \
+    sh -c 'umask 077 && printf "//npm.pkg.github.com/:_authToken=%s\n" "$(cat /run/secrets/NPM_TOKEN)" > /tmp/npm-auth && echo "inject-workspace-packages=true" >> .npmrc && NPM_CONFIG_USERCONFIG=/tmp/npm-auth pnpm --filter @herobids/api deploy --prod /deploy/api; rc=$?; rm -f /tmp/npm-auth; exit $rc'
 
 # ── deploy-worker: self-contained production layout ───────────────────────────
 FROM build-worker AS deploy-worker
-RUN echo "inject-workspace-packages=true" >> .npmrc && \
-    pnpm --filter @herobids/worker deploy --prod /deploy/worker
+RUN --mount=type=secret,id=NPM_TOKEN \
+    sh -c 'umask 077 && printf "//npm.pkg.github.com/:_authToken=%s\n" "$(cat /run/secrets/NPM_TOKEN)" > /tmp/npm-auth && echo "inject-workspace-packages=true" >> .npmrc && NPM_CONFIG_USERCONFIG=/tmp/npm-auth pnpm --filter @herobids/worker deploy --prod /deploy/worker; rc=$?; rm -f /tmp/npm-auth; exit $rc'
 
 # ── api runtime ───────────────────────────────────────────────────────────────
 FROM node:22-alpine AS api

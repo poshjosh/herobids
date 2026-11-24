@@ -26,6 +26,10 @@
 set -euo pipefail
 
 API="${API_BASE_URL:-http://localhost:3000}"
+if ! curl -sf -o /dev/null "$API/health"; then
+  echo "FATAL: API not reachable at $API (start it, or set API_BASE_URL)" >&2
+  exit 1
+fi
 TEST_EMAIL="${TEST_EMAIL:-runtime-policy-test@local.test}"
 TEST_PASSWORD="${TEST_PASSWORD:-E2ETest123!}"
 TOKEN=""
@@ -178,7 +182,8 @@ else
   assert_eq "judgeMaxTurns" "500" "$(echo "$policy" | jq -r '.judgeMaxTurns')"
   assert_eq "maxHistoryTokens" "40000" "$(echo "$policy" | jq -r '.maxHistoryTokens')"
   assert_eq "weekendPause" "false" "$(echo "$policy" | jq -r '.weekendPause')"
-  assert_eq "maxHoldDurationMs" "5400000" "$(echo "$policy" | jq -r '.maxHoldDurationMs')"
+  # Careful uses a 90-min tick, so max hold is 5 × 90 min = 27000000 ms.
+  assert_eq "maxHoldDurationMs" "27000000" "$(echo "$policy" | jq -r '.maxHoldDurationMs')"
 
   # No style restricts active hours any more (careful used to be 14–20 UTC), so
   # allowedHoursUtc is empty (always-on) for every style. D6 still applies to
