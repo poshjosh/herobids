@@ -157,6 +157,16 @@ export type ArtifactPublishPayload = z.infer<typeof ArtifactPublishPayloadSchema
  * Brokered outbound user message — agent requests the platform send a message to the user.
  * The platform owns recipient resolution. Body is bounded. Always available in the MVP.
  */
+/**
+ * Optional ids of up to 3 agent documents to attach to an outbound send. Shared by the model-facing tool schemas and the
+ * payloads. `.describe()` must come before `.optional()`: after it, zod drops the description from the JSON schema.
+ */
+export const DocumentIdsParam = z
+  .array(z.string().min(1))
+  .max(3)
+  .describe('Up to 3 document IDs from list_agent_documents or from a document notice you received')
+  .optional();
+
 export const SendMessagePayloadSchema = z.object({
   /** Optional short subject or category (max 200 chars) */
   subject: z.string().max(200).optional(),
@@ -172,7 +182,7 @@ export const SendMessagePayloadSchema = z.object({
    */
   messageClass: z.enum(['routine', 'alert', 'reminder']).optional(),
   /** Optional ids of up to 3 agent documents the sender holds, to attach. */
-  documentIds: z.array(z.string().min(1)).max(3).optional(),
+  documentIds: DocumentIdsParam,
   /** Platform-internal: the id the worker gave this message. Not in the model-facing params, so the model cannot set it. */
   messageId: z.string().uuid().optional(),
 });
@@ -247,7 +257,7 @@ export const PeerSendPayloadSchema = z.object({
   agent: z.string().trim().min(1).max(200),
   message: z.string().min(1).max(PEER_MESSAGE_SAFETY_MAX_CHARS),
   requestMessageId: z.string().min(1),
-  documentIds: z.array(z.string().min(1)).max(3).optional(),
+  documentIds: DocumentIdsParam,
 });
 export type PeerSendPayload = z.infer<typeof PeerSendPayloadSchema>;
 
@@ -280,7 +290,7 @@ export const PeerMessagePayloadSchema = z.object({
     fromAgentId: z.string().min(1),
     fromAgentName: z.string(),
   }),
-  documentIds: z.array(z.string().min(1)).max(3).optional(),
+  documentIds: DocumentIdsParam,
 });
 export type PeerMessagePayload = z.infer<typeof PeerMessagePayloadSchema>;
 

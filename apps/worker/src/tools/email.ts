@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import type { AgentTool, OutboundAttachmentPort, ToolResult, ToolContext } from '@herobids/domain';
+import { DocumentIdsParam, type AgentTool, type OutboundAttachmentPort, type ToolResult, type ToolContext } from '@herobids/domain';
 import type { Database } from '@herobids/db';
 import { convertZodToJsonSchema } from './registry.js';
 import { resolveGmailTokens } from '../gmail-credential-resolver.js';
@@ -66,13 +66,13 @@ const SendEmailParamsSchema = z.object({
   bcc: z.union([z.string().email(), z.array(z.string().email()).max(10)]).optional(),
   /** Optional connection ID to select which connected email account to send from. */
   fromConnectionId: z.string().min(1).optional(),
-  documentIds: z.array(z.string().min(1)).max(3).optional(),
+  documentIds: DocumentIdsParam,
 });
 
 export const sendEmailTool: AgentTool = {
   name: 'send_email',
   description:
-    'Send an email via a connected email account. Supports cc, bcc, and optional fromConnectionId.',
+    'Send an email via a connected email account. Supports cc, bcc, and optional fromConnectionId. Set documentIds (up to 3, from list_agent_documents or a document notice you received) to attach documents you hold; recipients receive them as attachments.',
   parametersSchema: SendEmailParamsSchema,
   parameters: convertZodToJsonSchema(SendEmailParamsSchema),
   category: 'write-messaging',

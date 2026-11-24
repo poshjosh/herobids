@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { AgentTool, ToolContext, ToolResult } from '@herobids/domain';
-import { AGENT_MESSAGE_TYPES, PEER_ERROR_CODES, PEER_MESSAGE_SAFETY_MAX_CHARS, PeerSendResultSchema } from '@herobids/domain';
+import { DocumentIdsParam, AGENT_MESSAGE_TYPES, PEER_ERROR_CODES, PEER_MESSAGE_SAFETY_MAX_CHARS, PeerSendResultSchema } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { parseBrokerDenialReply } from './tool-errors.js';
 
@@ -24,12 +24,12 @@ const MessagePeerAgentParamsSchema = z.object({
   agent: z.string().trim().min(1).max(200).describe('The id or exact name of another agent of the same user'),
   // Safety cap only; the operator's messageMaxChars is the limit that applies and the platform enforces it.
   message: z.string().min(1).max(PEER_MESSAGE_SAFETY_MAX_CHARS).describe('The message to send to the other agent'),
-  documentIds: z.array(z.string().min(1)).max(3).optional(),
+  documentIds: DocumentIdsParam,
 }).strict();
 
 export const messagePeerAgentTool: AgentTool = {
   name: MESSAGE_PEER_AGENT_TOOL_NAME,
-  description: 'Send a message to another agent that belongs to the same user. The recipient wakes and reads it. Messages are rate limited per user, and the user can pause agent-to-agent messaging. If the recipient is not found, the error lists your other agents.',
+  description: 'Send a message to another agent that belongs to the same user. The recipient wakes and reads it. Messages are rate limited per user, and the user can pause agent-to-agent messaging. If the recipient is not found, the error lists your other agents. Set documentIds (up to 3, from list_agent_documents or a document notice you received) to attach documents you hold: the recipient agent receives an independent copy.',
   parametersSchema: MessagePeerAgentParamsSchema,
   parameters: convertZodToJsonSchema(MessagePeerAgentParamsSchema),
   category: 'write-messaging',

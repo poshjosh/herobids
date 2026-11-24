@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
-import { AGENT_MESSAGE_TYPES, shortMessageId } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, DocumentIdsParam, shortMessageId } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 
 // --- send_message ---
@@ -11,12 +11,12 @@ export const SendMessageParamsSchema = z.object({
   subject: z.string().max(200).optional(),
   messageClass: z.enum(['routine', 'alert', 'reminder']).optional(),
   contextRef: z.string().max(200).optional(),
-  documentIds: z.array(z.string().min(1)).max(3).optional(),
+  documentIds: DocumentIdsParam,
 });
 
 const sendMessageTool: AgentTool = {
   name: 'send_message',
-  description: 'Send a message to the user via the platform messaging system. Use for communicating with the user — important updates, alerts, reminders, or status reports. Body is limited to 2000 characters. For a child agent, this goes to your creator while it is running; if your creator is unreachable, it goes to your user. For sending email to external recipients, use send_email instead.',
+  description: 'Send a message to the user via the platform messaging system. Use for communicating with the user — important updates, alerts, reminders, or status reports. Body is limited to 2000 characters. For a child agent, this goes to your creator while it is running; if your creator is unreachable, it goes to your user. For sending email to external recipients, use send_email instead. Set documentIds (up to 3, from list_agent_documents or a document notice you received) to attach documents you hold: a person receives them as attachments, and an agent receives an independent copy.',
   parametersSchema: SendMessageParamsSchema,
   parameters: convertZodToJsonSchema(SendMessageParamsSchema),
   category: 'write-messaging',

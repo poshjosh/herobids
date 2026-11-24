@@ -31,6 +31,7 @@ const HINTS_BY_TOOL: Readonly<Record<string, HintBuilder>> = {
   read_file_lines: readHint,
   search_files: () => staleSearchHint(),
   browse_url: browseHint,
+  list_agent_documents: () => 'Call list_agent_documents again to see the full list of document IDs.',
 };
 
 /** Hint for the cut marker of a stale tool result, or undefined when a re-read is not cheap. */

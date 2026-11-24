@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { isUserOnlySkill, type AgentAllowance, type AgentPlatformError, type AgentTool, type ChildAgentCreated, type ToolResult, type ToolContext } from '@herobids/domain';
+import { DocumentIdsParam, isUserOnlySkill, type AgentAllowance, type AgentPlatformError, type AgentTool, type ChildAgentCreated, type ToolResult, type ToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 
 /**
@@ -71,7 +71,7 @@ const PauseChildParamsSchema = ChildAgentIdSchema.extend({
 
 const MessageChildParamsSchema = ChildAgentIdSchema.extend({
   message: z.string().min(1).max(4000).describe('Message to send to the child agent'),
-  documentIds: z.array(z.string().min(1)).max(3).optional(),
+  documentIds: DocumentIdsParam,
 }).strict();
 
 const DeleteChildParamsSchema = ChildAgentIdSchema.extend({
@@ -283,7 +283,7 @@ const deleteChildAgentTool: AgentTool = {
 
 const messageChildAgentTool: AgentTool = {
   name: 'message_child_agent',
-  description: 'Send your instruction or direction to one of your direct child agents. The child treats it as authority from its creator. Use message_peer_agent for collaboration or a second opinion, which carries no authority. Messages you send are rate limited per parent-child pair.',
+  description: 'Send your instruction or direction to one of your direct child agents. The child treats it as authority from its creator. Use message_peer_agent for collaboration or a second opinion, which carries no authority. Messages you send are rate limited per parent-child pair. Set documentIds (up to 3, from list_agent_documents or a document notice you received) to attach documents you hold: the recipient agent receives an independent copy.',
   parametersSchema: MessageChildParamsSchema,
   parameters: convertZodToJsonSchema(MessageChildParamsSchema),
   category: 'write-messaging',

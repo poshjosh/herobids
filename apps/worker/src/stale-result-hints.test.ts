@@ -29,4 +29,9 @@ describe('describeCutResult', () => {
   it('gives no browse_url hint when the old result is not JSON', () => {
     expect(describeCutResult({ toolName: 'browse_url', args: {}, originalContent: 'browse_url failed: x' })).toBeUndefined();
   });
+
+  it('adds the list_agent_documents hint to list the document IDs again', () => {
+    expect(describeCutResult({ toolName: 'list_agent_documents', args: {}, originalContent: '[]' }))
+      .toBe('Call list_agent_documents again to see the full list of document IDs.');
+  });
 });

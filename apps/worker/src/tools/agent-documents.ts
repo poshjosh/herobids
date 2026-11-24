@@ -9,7 +9,7 @@ const ListAgentDocumentsParamsSchema = z.object({});
 
 const listAgentDocumentsTool: AgentTool = {
   name: 'list_agent_documents',
-  description: 'List the documents you hold, up to 100 (no paging). Returns documentId values for use in documentIds on send tools and in read_agent_document.',
+  description: 'List the documents you hold, up to 100 (no paging). Lists only materialized, available documents. Call it before a send that uses documentIds. Returns documentId values for the send tools and for read_agent_document.',
   parametersSchema: ListAgentDocumentsParamsSchema,
   parameters: convertZodToJsonSchema(ListAgentDocumentsParamsSchema),
   category: 'read-database',

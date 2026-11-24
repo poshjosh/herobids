@@ -259,3 +259,16 @@ describe('convertZodToJsonSchema draft normalisation', () => {
     expect(tools.size).toBeLessThanOrEqual(smallest);
   });
 });
+
+// The model reads a property description only when the schema keeps it, so every send tool that takes documentIds needs one.
+describe('outbound documentIds JSON schema', () => {
+  it.each(['send_message', 'send_email', 'message_child_agent', 'message_peer_agent'])(
+    '%s exposes a documentIds description to the model',
+    (toolName) => {
+      const parameters = createToolRegistry().get(toolName)?.parameters as
+        | { properties?: Record<string, { description?: unknown }> }
+        | undefined;
+      expect(parameters?.properties?.['documentIds']?.description).toEqual(expect.any(String));
+    },
+  );
+});

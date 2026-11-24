@@ -335,7 +335,7 @@ Status is tracked per item: `PENDING`, `DONE`, or `BLOCKED`.
 5. [DONE] Extend `TelegramClient` with `sendDocument`
 6. [DONE] Add attachments to the Gmail adapter's raw MIME builder for `send_email`, and fix the pre-existing header injection in it
 7. [DONE] Update the broker, and the peer and child paths, to resolve and deliver or copy
-8. [PENDING] Update the tool descriptions
+8. [DONE] Update the tool descriptions
 9. [PENDING] Add tests, then observability and limits
 
 ## Outstanding Issues
@@ -433,6 +433,16 @@ _Recorded by the coordinator after each item's review. Grouped by rollout item._
 - LOW: sparse arrays are dropped silently by `.map`. Use `Array.from` or `for...of`.
 - LOW: the `42` attachment test passes without the `typeof` check, because the filename check throws the same code. Add a test that isolates the non-object check.
 - LOW: the plain-text part is `8bit` with no line-length limit on the body. Consider quoted-printable.
+
+### Item 8: tool descriptions
+
+- MEDIUM: the `list_agent_documents` stale-result hint (`stale-result-hints.ts`) is runtime behaviour, not a description. It is a partial fix for the item 4 hint gap. `list_agent_documents` is still missing from `DURABLE_TOOL_NAMES` (`structured-tool-loop.ts`). Decide whether to add it.
+- MEDIUM: no test checks per-tool description parity between the worker and `TOOL_CATALOG` (`packages/domain/src/tools.ts`). Add an equality check in `tool-registry.test.ts`, after the domain dist rebuild.
+- LOW: the `send_message` description is about 577 characters. Plan D1 asks for one sentence per tool. Shorten it and keep the two copies in sync.
+- LOW: the `tool-registry.test.ts` description assertions use `expect.any(String)`. Assert the wording or a substring so a regression to a generic description is caught.
+- LOW: the "Brokered outbound user message" JSDoc sits above `DocumentIdsParam` in `agent-protocol.ts`, and `SendMessagePayloadSchema` lost its doc comment. Move it back.
+- LOW: `apps/api/src/routes/agent-interactivity.ts` still has a raw `documentIds` schema. It could use `DocumentIdsParam`.
+- LOW: `tool-registry.test.ts` has no trailing newline.
 
 ### Item 7: broker, peer, child, and `send_email` wiring
 
