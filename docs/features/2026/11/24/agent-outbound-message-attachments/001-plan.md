@@ -11,7 +11,7 @@ Agents can send only text. No agent can send a document (PDF, DOCX, or text) to 
 
 Current state:
 - `send_message` accepts `subject`, `body`, `messageClass`, `emailDelivery`, `contextRef`. Telegram delivery uses `sendMessage` only.
-- `send_email` accepts `to`, `cc`, `bcc`, `subject`, `body`, `fromConnectionId`. SES delivery uses `Content.Simple` only.
+- `send_email` accepts `to`, `cc`, `bcc`, `subject`, `body`, `fromConnectionId`. It sends through the Gmail adapter (`apps/worker/src/gmail-adapter.ts`), which builds a raw RFC 2822 message with no attachments. SES sends only platform alerts and billing mail, so it is not part of this plan.
 - `message_child_agent` accepts `agentId` and `message`. `message_peer_agent` accepts `agent` and `message`. Both are text only.
 - Agents can read a stored document (`read_agent_document`) but cannot send one.
 
@@ -75,7 +75,7 @@ Documents go out in their stored form: `.pdf` stays `.pdf` and `.docx` stays `.d
 ### D5: Limits
 
 - max 3 documents per message (existing store limit: 10 MiB per upload)
-- max 5 MiB total per message before encoding, for every tool. SES `SendRawEmail` caps the whole message, including attachments, at 10 MB (AWS docs, checked 2026-11-24). Base64 adds about 33%, so 5 MiB of attachments fits with headroom.
+- max 5 MiB total per message before encoding, for every tool. Gmail accepts up to 25 MB per message after encoding for personal accounts (Google support, checked 2026-11-24). Base64 adds about 33%, so 5 MiB of attachments fits with headroom. Telegram's document limit is far higher.
 
 ## Current Implementation Constraints
 
@@ -131,7 +131,7 @@ flowchart TD
     C --> D[AgentDocumentsRepository]
     C --> E[DocumentStore]
 
-    B -->|human recipient| F[TelegramClient.sendDocument / SES raw MIME]
+    B -->|human recipient| F[TelegramClient.sendDocument / Gmail raw MIME]
     B -->|agent recipient| G[copy blob into recipient store and insert agent_documents row]
 
     B --> H[(agent_messages: send envelope)]
@@ -252,11 +252,13 @@ interface EmailMessage {
 }
 ```
 
-SES implementation notes:
+Gmail implementation notes:
 - `send_email` recipients (`to`, `cc`, `bcc`) are unchanged. Attachments follow the same recipients, with no extra rule.
-- switch from `Content.Simple` to raw MIME when attachments exist
-- preserve current simple path for no-attachment emails
-- generate `multipart/mixed` with text/plain and optional text/html alternatives
+- `gmail-adapter.ts` already builds a raw RFC 2822 message. Add attachments to that builder, not a second MIME path.
+- preserve the current message for no-attachment emails
+- generate `multipart/mixed` with the text body and the attachment parts
+- messages with attachments go through the media upload endpoint (`/upload/gmail/v1/users/me/messages/send?uploadType=media`, `Content-Type: message/rfc822`, raw MIME bytes). Messages without attachments keep the JSON `raw` path (decision from the user, 2026-11-24). Google's docs do not state a JSON `raw` size limit, and the upload endpoint's maximum size is not stated on the reference page (see Item 6 Outstanding Issues).
+- fix the pre-existing header injection in the same builder: reject CR or LF in `to`, `cc`, `bcc`, and encode `subject` (decision from the user, 2026-11-24)
 
 ### Agent copy (new)
 
@@ -331,7 +333,7 @@ Status is tracked per item: `PENDING`, `DONE`, or `BLOCKED`.
 3. [DONE] Add `OutboundAttachmentResolver` (resolve and copy)
 4. [DONE] Add `list_agent_documents`
 5. [DONE] Extend `TelegramClient` with `sendDocument`
-6. [PENDING] Extend the SES adapter with raw MIME for `send_email` attachments
+6. [DONE] Add attachments to the Gmail adapter's raw MIME builder for `send_email`, and fix the pre-existing header injection in it
 7. [PENDING] Update the broker, and the peer and child paths, to resolve and deliver or copy
 8. [PENDING] Update the tool descriptions
 9. [PENDING] Add tests, then observability and limits
@@ -412,6 +414,26 @@ _Recorded by the coordinator after each item's review. Grouped by rollout item._
 - LOW: the class comment says "sendMessage endpoint only." Update it to cover `sendDocument`.
 - LOW: the 1024 and 4096 limits are counted on escaped UTF-16 length. This is conservative. The JSDoc says so.
 
+### Item 6: Gmail attachments
+
+- MEDIUM (item 7 must settle): `tools/email.ts` maps errors with `fault = !status || status >= 500`, so status-less `email.*` validation errors are reported as platform faults with `retryable: false`. Item 7 must set `fault: false` for `email.*` validation codes, without giving them a fake HTTP status.
+- MEDIUM: the 5 MiB cap counts attachment bytes only, not the text body. Decide whether the body counts toward the cap.
+- MEDIUM: the upload endpoint's maximum size is not stated on the reference page. The uploads guide gives "5 MB or less" as the simple-upload example. Base64 inflates a near-cap message by about a third, so confirm with a sandbox Gmail account at about 3 MB and 5 MiB before item 9 sets the limits.
+- MEDIUM: no live Gmail test yet. Unit tests check the request shape only. Send one attachment to a sandbox account to confirm the `8bit` body and long header lines are accepted.
+- MEDIUM: a `contentType` failure uses `email.invalid_attachment`. Add `email.invalid_content_type`.
+- MEDIUM: the `Content-Disposition` line is not folded. A 255-byte filename can exceed the RFC 5322 998-octet line limit. Fold the header or cap the encoded length.
+- MEDIUM: no test covers a non-OK response on either send path. Assert `gmail.send_failed` with the status on the upload path.
+- MEDIUM: the subject test covers a single encoded word only. Add a non-ASCII subject longer than one encoded word, and assert each word is at most 75 characters and decodes to the original.
+- MEDIUM: the test named "byte-for-byte unchanged" holds only for ASCII subjects. Rename it, or add a non-ASCII case that documents the change.
+- LOW: zero-byte attachments are accepted. Decide whether to reject them.
+- LOW: a tab in an ASCII subject is now RFC 2047-encoded, which differs from HEAD. Allow `\t` in the printable pattern to restore byte parity.
+- LOW: an undefined `to` emits an empty `To:` header. Reject an empty `to`.
+- LOW: the multipart boundary is not checked against the body. A 96-bit random boundary makes collision negligible.
+- LOW: a lone CR in the multipart text is not normalised. Use `/\r\n|\r|\n/g`.
+- LOW: sparse arrays are dropped silently by `.map`. Use `Array.from` or `for...of`.
+- LOW: the `42` attachment test passes without the `typeof` check, because the filename check throws the same code. Add a test that isolates the non-object check.
+- LOW: the plain-text part is `8bit` with no line-length limit on the body. Consider quoted-printable.
+
 ## Testing Plan
 
 ### Tools and broker
@@ -428,7 +450,7 @@ _Recorded by the coordinator after each item's review. Grouped by rollout item._
 - `send_email` with one PDF produces valid `multipart/mixed` MIME
 - `message_peer_agent` with a document creates a copy owned by the peer, and the delivered message lists the new id
 - `message_child_agent` does the same for the child
-- a Telegram or SES failure marks that attachment `failed` and still delivers the text
+- a Telegram or Gmail failure marks that attachment `failed` and still delivers the text
 
 ### Integration
 
@@ -438,7 +460,7 @@ _Recorded by the coordinator after each item's review. Grouped by rollout item._
 
 ## Risks
 
-1. **Email MIME generation is the hardest part.** SES simple-send does not cover attachments; raw MIME correctness matters.
+1. **Email MIME generation is the hardest part.** The Gmail adapter sends text only today; raw MIME correctness matters.
 2. **Telegram UX can be clumsy for multiple files.** Caption and ordering behavior should be explicit.
 3. **Copies use storage on the recipient side.** An agent that sends documents to peers repeatedly, or to a loop of peers, fills their stores. The existing peer and child rate limits should apply to copies too.
 4. **Large files can blow delivery limits.** Limits must be enforced before attempting send.
@@ -450,7 +472,7 @@ Resolved for implementation (2026-11-24):
 
 1. Telegram: the text body is the caption of the first document. If the text exceeds the caption limit, send the text as a separate message first, then the documents.
 2. Web chat: out of scope for this plan. The web UI attaches files only in the message composer (inbound). It does not display attachments on agent replies.
-3. SES: resolved. The raw limit is 10 MB including attachments, so the total cap is 5 MiB before encoding (D5).
+3. Email size: the total cap is 5 MiB before encoding (D5). Email goes through Gmail, not SES (decided 2026-11-24). Attachments use the Gmail media upload endpoint. Its maximum size is not stated on the reference page, so confirm it with a sandbox account before item 9 sets the final limits. The "25 MB per message" figure is a Google support statement and is not verified against the API reference.
 4. Copies and storage quota: out of scope. Grep found no quota on `agent_documents`. The workspace quota (`workspace-quota.ts`) covers workspace files only. Copies are limited by the existing peer and child rate limits (Risk 3). Recorded as an outstanding issue.
 
 ## Recommendation
