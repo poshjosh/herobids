@@ -5,7 +5,7 @@ import { agentDocuments } from './schema/index.js';
 
 // ── TypeScript literal union types for constrained enum columns ──
 
-export type DocumentSource = 'control_plane' | 'telegram' | 'web_chat' | 'whatsapp' | 'sms';
+export type DocumentSource = 'control_plane' | 'telegram' | 'web_chat' | 'whatsapp' | 'sms' | 'agent';
 export type ExtractionStatus = 'not_needed' | 'ready' | 'failed';
 export type DocumentLifecycleState = 'staged' | 'materialized' | 'deleted' | 'failed';
 
@@ -16,6 +16,7 @@ export interface InsertAgentDocument {
   userId: string;
   source: DocumentSource;
   sourceRef?: string | null;
+  sourceDocumentId?: string | null;
   originalFilename: string;
   mimeType: string;
   sizeBytes: number;
@@ -49,6 +50,7 @@ export class AgentDocumentsRepository {
       userId: input.userId,
       source: input.source,
       sourceRef: input.sourceRef ?? null,
+      sourceDocumentId: input.sourceDocumentId ?? null,
       originalFilename: input.originalFilename,
       mimeType: input.mimeType,
       sizeBytes: input.sizeBytes,

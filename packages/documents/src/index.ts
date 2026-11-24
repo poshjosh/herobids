@@ -6,3 +6,5 @@ export { buildDocumentNoticeText, parseDocumentNoticeText } from './agent-docume
 export type { DocumentNoticeParams, ParsedDocumentNotice } from './agent-document-notice.js';
 export { readAgentDocumentPage, selectTextStoreKey, DOCUMENT_TEXT_PAGE_CHARS, DOCUMENT_TEXT_MAX_BYTES } from './agent-document-read.js';
 export type { AgentDocumentRow, AgentDocumentLookup, AgentDocumentTextPage, AgentDocumentReadError } from './agent-document-read.js';
+export { OutboundAttachmentResolver } from './outbound-attachment-resolver.js';
+export type { AttachmentResolveError, CopiedDocument, OutboundDocumentRepository, OutboundDocumentRow, ResolvedAttachment } from './outbound-attachment-resolver.js';

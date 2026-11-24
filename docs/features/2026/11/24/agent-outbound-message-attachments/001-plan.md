@@ -330,7 +330,7 @@ Status is tracked per item: `PENDING`, `DONE`, or `BLOCKED`.
 
 1. [DONE] Add the `agent_outbound_message_attachments` table and the `agent_documents.sourceDocumentId` column
 2. [DONE] Add `documentIds` to the four payload and parameter schemas
-3. [PENDING] Add `OutboundAttachmentResolver` (resolve and copy)
+3. [DONE] Add `OutboundAttachmentResolver` (resolve and copy)
 4. [PENDING] Add `list_agent_documents`
 5. [PENDING] Extend `TelegramClient` with `sendDocument`
 6. [PENDING] Extend the SES adapter with raw MIME for `send_email` attachments
@@ -364,6 +364,29 @@ _Recorded by the coordinator after each item's review. Grouped by rollout item._
 - LOW: no test covers an empty array `[]`, which the plan requires to behave as omitted.
 - LOW: the four 4-case test blocks are duplicated across worker test files, and the domain `it.each` overlaps with them.
 - LOW: `packages/domain/dist` is stale until rebuilt. Rebuild before item 7.
+
+### Item 3: `OutboundAttachmentResolver`
+
+- REQUIRED FOR ITEM 7: when `copyToAgent` returns `copy_failed` with `context.orphanedDocumentId`, a staged row with bytes remains and is listed to the recipient (`agent-runtime-launcher.ts` lists staged documents). The caller must hard-delete that id, or retry, before reporting failure to the sender.
+- MEDIUM: the copy's `sizeBytes` is copied from the source's recorded metadata, not from the bytes actually written. Set it from the read length and re-check the cap.
+- MEDIUM: `discard` ignores the `Result` of `store.delete`, so failed unlinks are silent. Check it and log the failing store keys.
+- MEDIUM: `copyToAgent` does not check that the recipient agent belongs to the sender's user. Item 4 or item 7 must verify this, or the precondition must be documented.
+- MEDIUM: a caller can hand-build a `ResolvedAttachment`, and `copyToAgent` then copies any `extractedTextStoreKey`. Track objects issued by `resolveForAgent` (module-private `WeakSet`) and check membership.
+- MEDIUM (pre-existing): `LocalDocumentStore.put` writes the body, then the meta file. If the meta write fails, the body is orphaned and the resolver cannot clean it up. Unlink in the catch.
+- MEDIUM: `UploadDocumentParams.source` accepts `'agent'` without a `sourceDocumentId`. Type it as `Exclude<DocumentSource, 'agent'>`.
+- MEDIUM: no integration test for `sourceDocumentId` round-trip through `create()` (needs Postgres).
+- MEDIUM: unit coverage gaps: `duplicate`, `lookup_failed`, `read_failed`, put and read failures inside `copyToAgent`, `[own, foreign]` batch with no reads, boundaries (3 documents, exactly 5 MiB, 5 MiB + 1), copy with no extracted text.
+- MEDIUM: partial failure across several copies is not rolled back. Earlier successful copies stay. Item 7 must handle this.
+- LOW: raw `error.message` text flows into Result messages that may reach agent-facing output. Use fixed messages and log the raw error.
+- LOW: a copy with text is forced to `ready` even when the source extraction `failed`, which contradicts the comment.
+- LOW: the `toExtractionStatus` comment conflicts with its mapping.
+- LOW: `MAX_OUTBOUND_DOCUMENTS` and `MAX_OUTBOUND_TOTAL_BYTES` are hardcoded. Confirm whether they belong in operator config.
+- LOW: no compile-time check that `AgentDocumentsRepository` satisfies `OutboundDocumentRepository`. Add a type-only check at the composition site.
+- LOW: a weak assertion message at the read-back test, and `seedDocument` uses `failed` where `not_needed` fits.
+- LOW: `apps/web/src/lib/api-client.ts` `AgentDocument.source` union lacks `'agent'`.
+- LOW: plan alignment: the resolver lives in `packages/documents` while the plan recommends a worker service. `ResolvedAttachment` has extra fields. Update the plan text.
+- LOW: `Promise.all` over `store.delete` could reject instead of returning a Result. Use `allSettled`.
+- LOW: when `hardDelete` fails because the DB is down and `create` never committed, `orphanedDocumentId` names a row that does not exist, and blobs leak.
 
 ## Testing Plan
 
