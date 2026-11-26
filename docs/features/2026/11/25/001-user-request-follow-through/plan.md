@@ -1,6 +1,6 @@
 # User request follow-through: an agent always reports an outcome, without being told to
 
-Status: Revised 2026-11-26 after Phase 0 (`evidence.md`). Owner decisions D9 to D12 (2026-11-25) and D13 to D17 (2026-11-26) recorded. Phase 1 is built first; Phases 2 and 3 wait for the decision gate (D17). The token values in D13 are a recommendation for the owner to confirm (O10). O4, O7, O8 and O9 remain open. Nothing is implemented.
+Status: Revised 2026-11-26 after Phase 0 (`evidence.md`). Owner decisions D9 to D12 (2026-11-25) and D13 to D17 (2026-11-26) recorded. Phase 1 is built first; Phases 2 and 3 wait for the decision gate (D17). The token values in D13 were confirmed by the owner (O10, D18). O4, O7, O8 and O9 remain open. Phase 1 is being implemented.
 Date: 2026-11-25, revised 2026-11-26
 Follows: `docs/features/2026/11/17/001-continuation-guard/plan.md` (the `finish_run` tool, stop hook and nudge). This plan builds on that mechanism and does not replace it.
 
@@ -38,6 +38,7 @@ The platform never writes chat messages to the user. Only the agent does. All li
 | D14 | **Decided 2026-11-26.** One owed-outcome record per agent, not a ledger with one record per user message. Any closing message closes it. There is no `inReplyTo` (was O3). |
 | D15 | **Decided 2026-11-26.** The MCP Tasks and A2A status names in D6 replace the earlier `done` and `question`. |
 | D16 | **Decided 2026-11-26.** "No UI change" is dropped. Phase 3 adds a status line to the chat that is not a chat message. |
+| D18 | **Decided 2026-11-26.** The token values in A1 are accepted (was O10): reserves 16,384 judge and 4,096 scout; ceilings 65,536 and 16,384; 32,000 for an unknown model. |
 | D17 | **Decided 2026-11-26.** Phase 1 ships alone first and runs on staging for about a week. Phases 2 and 3 are built only as the decision gate (section "Decision gate after Phase 1") requires. |
 
 ## Problem
@@ -476,13 +477,12 @@ Phase 3 (only if the gate calls for it):
 
 ## Open questions (for the owner)
 
-Decided: O1 (D9), O2 (D10), O3 (D14, no `inReplyTo`), O5 (D12), O6 (D11).
+Decided: O1 (D9), O2 (D10), O3 (D14, no `inReplyTo`), O5 (D12), O6 (D11), O10 (D18).
 
 - **O4.** When the agent sent an acknowledgement and then writes its outcome as plain text without `send_message`, should that text be delivered automatically? Proposed: no; the report-back nudge covers it.
 - **O7.** `finish_run(blocked)`: proposed to require a `failed` or `input_required` message. Confirm.
 - **O8.** Rename `[awaiting reply]`, or leave it (D7)?
 - **O9.** Skill-set trimming per goal type is out of scope. Confirm.
-- **O10.** Confirm the token values in A1 (reserve 16,384 judge and 4,096 scout; ceilings 65,536 and 16,384) and the 32,000 default for unknown models.
 
 ## Acceptance criteria
 
@@ -511,12 +511,12 @@ Phase 3:
 
 Phase 1:
 - [x] WP0 Evidence note for the 2026-11-25 run (`evidence.md`)
-- [ ] WP1 Output budget (A1)
-- [ ] WP2 Length recovery (A2) and `lengthRecoveries`
-- [ ] WP3 Instructions block, base-skill sentence and `long-running-task` text
-- [ ] WP4 Measurement in the `evaluate-*` skills
-- [ ] WP5 Phase 1 docs and CHANGELOG; full test, lint and build
-- [ ] WP6 Staging week, `results.md` and gate decision
+- [ ] PENDING WP1 Output budget (A1)
+- [ ] PENDING WP2 Length recovery (A2) and `lengthRecoveries`
+- [ ] PENDING WP3 Instructions block, base-skill sentence and `long-running-task` text
+- [ ] PENDING WP4 Measurement in the `evaluate-*` skills
+- [ ] PENDING WP5 Phase 1 docs and CHANGELOG; full test, lint and build
+- [ ] NOT STARTED (needs a staging deploy and a week of traffic; owner-run) WP6 Staging week, `results.md` and gate decision
 
 Phase 2 (if the gate calls for it):
 - [ ] WP7 `followThrough` config and `follow-through.ts`
