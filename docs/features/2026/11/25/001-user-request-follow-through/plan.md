@@ -34,12 +34,13 @@ The platform never writes chat messages to the user. Only the agent does. All li
 | D10 | **Decided 2026-11-25.** No `enabled` flag for Phase 2, consistent with the continuation guard. Staged rollout uses the agent image pin. Roll back by releasing the previous image. |
 | D11 | **Decided 2026-11-25.** The report-back check applies to trading agents' conversations too. |
 | D12 | **Decided 2026-11-25.** Defaults: `minWorkCallsSinceMessage` 3, `reportBack.maxNudges` 1, `defaultUpdateMinutes` 15, `maxWakes` 3. |
-| D13 | **Decided 2026-11-26 (values to confirm, O10).** Raise both `judgeMaxTokens` and `scoutMaxTokens`. Every output limit must leave room for an answer after the thinking budget: `judgeMaxTokens ≥ deepThinkingTokens + judgeOutputReserveTokens` and `scoutMaxTokens ≥ lightThinkingTokens + scoutOutputReserveTokens`. Not the model's absolute maximum: see section A1 for why. A test enforces the rule for every style default and the ceilings. |
+| D13 | **Decided 2026-11-26 (values to confirm, O10).** Raise both `judgeMaxTokens` and `scoutMaxTokens`. Every output limit must leave room for an answer after the thinking budget: `judgeMaxTokens ≥ deepThinkingTokens + judgeOutputReserveTokens` and `scoutMaxTokens ≥ mediumThinking + scoutOutputReserveTokens`, where `mediumThinking = round((lightThinkingTokens + deepThinkingTokens) / 2)`, the token budget of `medium`, the scout's highest level (D19; was `lightThinkingTokens`). Not the model's absolute maximum: see section A1 for why. A test enforces the rule for every style default and the ceilings. |
 | D14 | **Decided 2026-11-26.** One owed-outcome record per agent, not a ledger with one record per user message. Any closing message closes it. There is no `inReplyTo` (was O3). |
 | D15 | **Decided 2026-11-26.** The MCP Tasks and A2A status names in D6 replace the earlier `done` and `question`. |
 | D16 | **Decided 2026-11-26.** "No UI change" is dropped. Phase 3 adds a status line to the chat that is not a chat message. |
-| D18 | **Decided 2026-11-26.** The token values in A1 are accepted (was O10): reserves 16,384 judge and 4,096 scout; ceilings 65,536 and 16,384; 32,000 for an unknown model. |
+| D18 | **Decided 2026-11-26.** The token values in A1 are accepted (was O10): reserves 16,384 judge and 4,096 scout; ceilings 65,536 and 16,384 (scout ceiling raised to 28,672 by D19); 32,000 for an unknown model. |
 | D17 | **Decided 2026-11-26.** Phase 1 ships alone first and runs on staging for about a week. Phases 2 and 3 are built only as the decision gate (section "Decision gate after Phase 1") requires. |
+| D19 | **Decided 2026-11-26: scout limits sized for medium reasoning.** The scout runs at up to `medium` (`scoutReasoningMax`), so its limit is sized for medium thinking, not light: `scoutMaxTokens ≥ round((lightThinkingTokens + deepThinkingTokens) / 2) + scoutOutputReserveTokens`, the same midpoint `resolveReasoningBudgetTokens` in `packages/llm` uses for `medium`. Scout defaults careful 10,240, balanced 16,384, bold 24,576; scout ceiling 28,672 ((8,192 + 32,768) / 2 + 8,192). A token-budget scout at `medium` is no longer stepped down to `low` unless the model's maximum output is lower. The judge rule is unchanged. |
 
 ## Problem
 
@@ -114,10 +115,12 @@ For every message a user (or a child's creator) sends, the agent reports an outc
 
   | Style | `scoutMaxTokens` now → proposed | `judgeMaxTokens` now → proposed |
   |---|---|---|
-  | careful | 1,024 → 6,144 | 4,096 → 26,624 |
-  | balanced | 2,048 → 8,192 | 8,192 → 36,864 |
-  | bold | 4,096 → 12,288 | 16,384 → 49,152 |
-  | ceiling | 4,096 → 16,384 | 16,384 → 65,536 |
+  | careful | 1,024 → 10,240 | 4,096 → 26,624 |
+  | balanced | 2,048 → 16,384 | 8,192 → 36,864 |
+  | bold | 4,096 → 24,576 | 16,384 → 49,152 |
+  | ceiling | 4,096 → 28,672 | 16,384 → 65,536 |
+
+  Scout values per D19 (sized for `medium` thinking); the first proposal was 6,144 / 8,192 / 12,288, ceiling 16,384.
 
 - `resolveAgentRuntimePolicy` raises a resolved limit that breaks the rule (for example an older override) to the minimum the rule needs, and logs it once. An override cannot recreate the incident.
 - Why not "the maximum possible": (1) a limit above the model's maximum output is rejected by the provider, and there is no per-model output maximum in the code today, so add `maxOutputTokens` per model (default 32,000 for an unknown model) and clamp each request to it; (2) calls are not streamed and `LLM_TIMEOUT_MS` defaults to 60 seconds (the cut-off call took 34.8 s for 8,192 tokens), so the timeout must scale with the limit: `timeoutMs = max(LLM_TIMEOUT_MS, limit × llm.timeoutMsPerOutputToken)` (config, default 6 ms, so 49,152 tokens get about 5 minutes); (3) a model given more room tends to think longer. Billing is for tokens produced, not for the limit, so a higher limit costs nothing on calls that do not need it. The reserve rule gives every call room for an answer without paying for an unbounded think.
@@ -408,7 +411,7 @@ After Phase 1 on staging (`job-searcher` and at least one other agent with chat 
 2. Run the evaluation scenario, including stopping the worker mid-run, and record what the user saw and when.
 3. A plain question: one message, no extra call.
 4. A trading agent with a chat message: no change in trading behaviour.
-5. Each day, record: cut-off calls, `lengthRecoveries`, failed ticks, "No feedback?" events, average judge output tokens and cost per tick (compared with the week before).
+5. Each day, record: cut-off calls, `lengthRecoveries`, failed ticks, "No feedback?" events, average judge and scout output tokens per call by style, and cost per tick (compared with the week before). The scout limits rose most (D19), and the scout is the most-called model.
 6. Write the numbers and the gate decision in `results.md`.
 
 ## Decision gate after Phase 1
@@ -572,7 +575,11 @@ Phase 3 (if the gate calls for it):
 
 ### Phase 1 final review (no critical or high; owner decisions needed)
 
-- MEDIUM (owner decision): for token-budget (non-Claude) models, every scout call at `medium` steps down to `low` in every style, because the D13 scout rule covers light thinking only (`medium` = (light + deep) / 2 plus the reserve exceeds `scoutMaxTokens`). Options: size `scoutMaxTokens` for the scout's highest allowed level, or accept it.
+- ~~MEDIUM (owner decision): for token-budget (non-Claude) models, every scout call at `medium` steps down to `low` in every style, because the D13 scout rule covers light thinking only.~~ Resolved by D19: the scout limits are sized for `medium`.
 - MEDIUM (owner decision): for effort-based Claude models the reserve is not guaranteed after a clamp (e.g. `claude-opus-4`, 32,000 max, on the bold judge keeps `high` effort). Only length recovery covers it. Options: step effort down when a Claude request is clamped, or reword edge case 19. Watch FT2 cut-off counts for Claude agents in the staging week.
 - LOW: when the level is already `low`, a recovery retry differs only by the hint; the recovery log could say `levelUnchanged: true`.
+
+### D19 scout raise (from the code review; its HIGH stale-docs finding and both drift guards were fixed)
+
+- MEDIUM (watch): scout limits rose 2.5 to 6 times from the original values; effort-based Claude scouts may think longer with more room. Tracked in Phase 1 verification step 5.
 

@@ -427,7 +427,7 @@ describe('DockerAgentManager — LLM env forwarding (bug #22)', () => {
     );
     await manager.start({
       ...SPEC,
-      agentConfig: { goal: 'test', resolvedRuntimePolicy: { judgeMaxTokens: 49_152, scoutMaxTokens: 12_288 } },
+      agentConfig: { goal: 'test', resolvedRuntimePolicy: { judgeMaxTokens: 49_152, scoutMaxTokens: 24_576 } },
     });
 
     const env = getContainerEnv(fetchMock);

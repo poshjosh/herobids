@@ -109,7 +109,9 @@ the call ends with finish reason `length` (Anthropic: `max_tokens`): an empty re
 
 Output reserve rule (runtime policy):
 - `judgeMaxTokens >= deepThinkingTokens + judgeOutputReserveTokens` and
-  `scoutMaxTokens >= lightThinkingTokens + scoutOutputReserveTokens`. The reserves are per-style policy fields
+  `scoutMaxTokens >= round((lightThinkingTokens + deepThinkingTokens) / 2) + scoutOutputReserveTokens`: the
+  scout limit is sized for `medium` (the scout's highest level, whose token budget is the midpoint of light and
+  deep), so a token-budget scout at `medium` is not stepped down unless the model's maximum output is lower. The reserves are per-style policy fields
   (defaults 16,384 judge and 4,096 scout) that a user can override within the ceilings. Style defaults and
   ceilings are in [Runtime Policy and Reasoning](../tech/agents/runtime-policy-and-reasoning.md).
 - `resolveAgentRuntimePolicy` raises a resolved limit that breaks the rule (for example an older, lower

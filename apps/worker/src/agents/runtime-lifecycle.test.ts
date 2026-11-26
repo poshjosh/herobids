@@ -79,7 +79,7 @@ describe('buildAgentEnv', () => {
 
   it('raises LLM_TIMEOUT_MS to fit the largest resolved output limit, capped at the maximum call timeout', () => {
     const config: AgentEnvConfig = { ...BASE_ENV_CONFIG, llmTimeoutMsPerOutputToken: 6, llmMaxCallTimeoutMs: 600_000 };
-    const agentConfigJson = JSON.stringify({ resolvedRuntimePolicy: { judgeMaxTokens: 49_152, scoutMaxTokens: 12_288 } });
+    const agentConfigJson = JSON.stringify({ resolvedRuntimePolicy: { judgeMaxTokens: 49_152, scoutMaxTokens: 24_576 } });
 
     const env = buildAgentEnv('agent-1', 'sess-1', agentConfigJson, '{}', config);
     expect(env['LLM_TIMEOUT_MS']).toBe(String(49_152 * 6));

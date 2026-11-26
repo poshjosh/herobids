@@ -201,6 +201,7 @@ export function resolveReasoningParams(
 /**
  * Thinking tokens a token-budget model gets at a reasoning level (the `max_tokens` shape above).
  * Effort-based models are not capped by it, only by the request's output limit.
+ * The `medium` midpoint must match resolveMediumThinkingTokens in packages/domain/src/config/schema.ts.
  */
 export function resolveReasoningBudgetTokens(
   level: ReasoningLevel,

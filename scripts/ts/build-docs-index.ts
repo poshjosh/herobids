@@ -325,7 +325,7 @@ Careful:
   - dailySpendBudget: $1/day
   - openPositionEscalationToJudgePolicy: uncovered_or_triggered
   - scoutMaxTurns: 50, judgeMaxTurns: 500
-  - scoutMaxTokens: 6,144, judgeMaxTokens: 26,624
+  - scoutMaxTokens: 10,240, judgeMaxTokens: 26,624
   - allowedHoursUtc: all (24/7)
   - weekendPause: false
   - maxHoldDuration: 450 minutes (7.5 hours)
@@ -336,7 +336,7 @@ Balanced:
   - dailySpendBudget: $5/day
   - openPositionEscalationToJudgePolicy: always
   - scoutMaxTurns: 50, judgeMaxTurns: 500
-  - scoutMaxTokens: 8,192, judgeMaxTokens: 36,864
+  - scoutMaxTokens: 16,384, judgeMaxTokens: 36,864
   - allowedHoursUtc: all (24/7)
   - weekendPause: false
   - maxHoldDuration: 90 minutes (1.5 hours)
@@ -347,7 +347,7 @@ Bold:
   - dailySpendBudget: $30/day
   - openPositionEscalationToJudgePolicy: always
   - scoutMaxTurns: 50, judgeMaxTurns: 500
-  - scoutMaxTokens: 12,288, judgeMaxTokens: 49,152
+  - scoutMaxTokens: 24,576, judgeMaxTokens: 49,152
   - allowedHoursUtc: all (24/7)
   - weekendPause: false
   - maxHoldDuration: 10 minutes

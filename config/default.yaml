@@ -450,8 +450,9 @@ externalBackendObservability:
 # judgeMaxTokens, lightThinkingTokens, deepThinkingTokens, scoutOutputReserveTokens,
 # judgeOutputReserveTokens, allowedHoursUtc, weekendPause, all context budgets,
 # and maxHoldDurationMs. A resolved judgeMaxTokens below deepThinkingTokens +
-# judgeOutputReserveTokens (scout: lightThinkingTokens + scoutOutputReserveTokens)
-# is raised to that sum, capped at the ceiling.
+# judgeOutputReserveTokens (scout: medium thinking, round((lightThinkingTokens +
+# deepThinkingTokens) / 2), + scoutOutputReserveTokens) is raised to that sum,
+# capped at the ceiling.
 #
 # See docs/features/2026/06/27/007-per-agent-runtime-controls/ for details.
 agentRuntime:

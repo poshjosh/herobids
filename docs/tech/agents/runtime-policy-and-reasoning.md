@@ -36,7 +36,7 @@ Three styles define the baseline. All numeric values are backed by
 | **Escalation policy** | uncovered_or_triggered | always | always |
 | `scoutMaxTurns` | 50 | 50 | 50 |
 | `judgeMaxTurns` | 500 | 500 | 500 |
-| `scoutMaxTokens` | 6 144 | 8 192 | 12 288 |
+| `scoutMaxTokens` | 10 240 | 16 384 | 24 576 |
 | `judgeMaxTokens` | 26 624 | 36 864 | 49 152 |
 | `lightThinkingTokens` | 2 048 | 4 096 | 8 192 |
 | `deepThinkingTokens` | 10 240 | 20 480 | 32 768 ¹ |
@@ -143,7 +143,9 @@ tool calls is a fraction of the figure shown. A response that spends the whole l
 
 To leave room for an answer, the resolved limits keep an output reserve after thinking:
 `judgeMaxTokens >= deepThinkingTokens + judgeOutputReserveTokens` and
-`scoutMaxTokens >= lightThinkingTokens + scoutOutputReserveTokens`. `resolveAgentRuntimePolicy` raises a
+`scoutMaxTokens >= round((lightThinkingTokens + deepThinkingTokens) / 2) + scoutOutputReserveTokens`
+(the scout limit is sized for `medium`, its highest reasoning level, whose token budget is the midpoint of
+light and deep, so raising `deepThinkingTokens` also raises the scout minimum). `resolveAgentRuntimePolicy` raises a
 lower value (for example an older override) to that sum, capped at the ceiling, and the worker logs it. Each
 call is then clamped to the model's maximum output, the reasoning level steps down for token-budget models
 when the reserve no longer fits, and the call timeout scales with the limit. A call that is still cut off is
@@ -207,7 +209,7 @@ No agent can be configured beyond these, regardless of style or overrides.
 |---------|-------|
 | `scoutMaxTurns` | 500 |
 | `judgeMaxTurns` | 10 000 |
-| `scoutMaxTokens` | 16 384 |
+| `scoutMaxTokens` | 28 672 |
 | `judgeMaxTokens` | 65 536 |
 | `lightThinkingTokens` | 8 192 |
 | `deepThinkingTokens` | 32 768 |
@@ -232,7 +234,7 @@ response. Four levels are defined in `ReasoningLevelSchema`:
 |-------|---------|
 | `none` | No reasoning tokens — fastest, cheapest |
 | `low` | Light reasoning (e.g. 2 048 tokens) |
-| `medium` | Moderate reasoning (~6 144 tokens average) |
+| `medium` | Moderate reasoning (midpoint of light and deep, e.g. 6 144 for careful) |
 | `high` | Deep reasoning (e.g. 10 240+ tokens) |
 
 The actual token budgets come from the **style default** `lightThinkingTokens`

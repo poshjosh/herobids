@@ -25,7 +25,7 @@ describe('resolveAgentRuntimePolicy', () => {
     const policy = resolveAgentRuntimePolicy('bold', null);
     expect(policy.scoutMaxTurns).toBe(50);
     expect(policy.judgeMaxTurns).toBe(500);
-    expect(policy.scoutMaxTokens).toBe(12288);
+    expect(policy.scoutMaxTokens).toBe(24576);
     expect(policy.judgeMaxTokens).toBe(49152);
     expect(policy.lightThinkingTokens).toBe(8192);
     expect(policy.deepThinkingTokens).toBe(32768);
@@ -46,7 +46,7 @@ describe('resolveAgentRuntimePolicy', () => {
     const policy = resolveAgentRuntimePolicy('careful', null);
     expect(policy.scoutMaxTurns).toBe(50);
     expect(policy.judgeMaxTurns).toBe(500);
-    expect(policy.scoutMaxTokens).toBe(6144);
+    expect(policy.scoutMaxTokens).toBe(10240);
     expect(policy.judgeMaxTokens).toBe(26624);
     expect(policy.lightThinkingTokens).toBe(2048);
     expect(policy.deepThinkingTokens).toBe(10240);
@@ -61,7 +61,7 @@ describe('resolveAgentRuntimePolicy', () => {
     const policy = resolveAgentRuntimePolicy('balanced', null);
     expect(policy.scoutMaxTurns).toBe(50);
     expect(policy.judgeMaxTurns).toBe(500);
-    expect(policy.scoutMaxTokens).toBe(8192);
+    expect(policy.scoutMaxTokens).toBe(16384);
     expect(policy.judgeMaxTokens).toBe(36864);
     expect(policy.lightThinkingTokens).toBe(4096);
     expect(policy.deepThinkingTokens).toBe(20480);
@@ -218,17 +218,23 @@ describe('resolveAgentRuntimePolicy — skip-unchanged (D9)', () => {
 
 describe('output budget leaves room for an answer after thinking', () => {
   const styles: AgentStyleValue[] = ['careful', 'balanced', 'bold'];
+  // The scout runs at up to `medium`, whose token budget is the midpoint of light and deep (as in the llm package).
+  const mediumThinking = (light: number, deep: number) => Math.round((light + deep) / 2);
 
   it.each(styles)('%s style defaults keep the output reserve after thinking', (style) => {
     const d = AGENT_STYLE_RUNTIME_DEFAULTS[style];
     expect(d.judgeMaxTokens).toBeGreaterThanOrEqual(d.deepThinkingTokens + d.judgeOutputReserveTokens);
-    expect(d.scoutMaxTokens).toBeGreaterThanOrEqual(d.lightThinkingTokens + d.scoutOutputReserveTokens);
+    expect(d.scoutMaxTokens).toBeGreaterThanOrEqual(
+      mediumThinking(d.lightThinkingTokens, d.deepThinkingTokens) + d.scoutOutputReserveTokens,
+    );
   });
 
   it('the ceilings keep the output reserve after the most thinking allowed', () => {
     const c = RUNTIME_POLICY_CEILINGS;
     expect(c.judgeMaxTokens).toBeGreaterThanOrEqual(c.deepThinkingTokens + c.judgeOutputReserveTokens);
-    expect(c.scoutMaxTokens).toBeGreaterThanOrEqual(c.lightThinkingTokens + c.scoutOutputReserveTokens);
+    expect(c.scoutMaxTokens).toBeGreaterThanOrEqual(
+      mediumThinking(c.lightThinkingTokens, c.deepThinkingTokens) + c.scoutOutputReserveTokens,
+    );
   });
 
   it.each(styles)('%s style defaults resolve without being raised', (style) => {
@@ -245,9 +251,10 @@ describe('output budget leaves room for an answer after thinking', () => {
       { onOutputBudgetRaised: (a) => raised.push(a) },
     );
     expect(policy.judgeMaxTokens).toBe(20480 + 16384);
-    expect(policy.scoutMaxTokens).toBe(4096 + 4096);
+    // balanced medium thinking (4,096 + 20,480) / 2 = 12,288, plus the scout reserve 4,096
+    expect(policy.scoutMaxTokens).toBe(12288 + 4096);
     expect(raised).toEqual([
-      { field: 'scoutMaxTokens', from: 2048, to: 8192, required: 8192 },
+      { field: 'scoutMaxTokens', from: 2048, to: 16384, required: 16384 },
       { field: 'judgeMaxTokens', from: 8192, to: 36864, required: 36864 },
     ]);
   });
@@ -255,6 +262,13 @@ describe('output budget leaves room for an answer after thinking', () => {
   it('raises the limit when a larger thinking override breaks the rule', () => {
     const policy = resolveAgentRuntimePolicy('careful', { deepThinkingTokens: 30000 });
     expect(policy.judgeMaxTokens).toBe(30000 + 16384);
+    // scout: medium thinking (2,048 + 30,000) / 2 = 16,024, plus the scout reserve 4,096
+    expect(policy.scoutMaxTokens).toBe(16024 + 4096);
+  });
+
+  it('keeps a scout override that meets the medium-thinking rule', () => {
+    const policy = resolveAgentRuntimePolicy('careful', { scoutMaxTokens: 12000 });
+    expect(policy.scoutMaxTokens).toBe(12000);
   });
 
   it('uses the reserve override in the rule', () => {

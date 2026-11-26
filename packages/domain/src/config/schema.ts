@@ -254,11 +254,12 @@ export { TradingSessionNameSchema };
 export const RUNTIME_POLICY_CEILINGS = {
   scoutMaxTurns: 500,
   judgeMaxTurns: 10_000,
-  scoutMaxTokens: 16_384,
+  scoutMaxTokens: 28_672,
   judgeMaxTokens: 65_536,
   lightThinkingTokens: 8_192,
   deepThinkingTokens: 32_768,
-  // At most the token ceiling minus the thinking ceiling, so the ceilings always satisfy the output reserve rule.
+  // At most the token ceiling minus the thinking ceiling (medium thinking for the scout, deep for the judge),
+  // so the ceilings always satisfy the output reserve rule.
   scoutOutputReserveTokens: 8_192,
   judgeOutputReserveTokens: 32_768,
   scoutReasoningMax: 'medium' as const,
@@ -357,7 +358,7 @@ export interface ResolvedAgentRuntimePolicy {
   judgeMaxTokens: number;
   lightThinkingTokens: number;
   deepThinkingTokens: number;
-  /** Output tokens the scout limit keeps free after light thinking: scoutMaxTokens >= lightThinkingTokens + this. */
+  /** Output tokens the scout limit keeps free after medium thinking: scoutMaxTokens >= medium thinking tokens + this. */
   scoutOutputReserveTokens: number;
   /** Output tokens the judge limit keeps free after deep thinking: judgeMaxTokens >= deepThinkingTokens + this. */
   judgeOutputReserveTokens: number;
@@ -410,7 +411,7 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     openPositionEscalationToJudgePolicy: 'uncovered_or_triggered',
     scoutMaxTurns: DEFAULT_SCOUT_MAX_TURNS,
     judgeMaxTurns: DEFAULT_JUDGE_MAX_TURNS,
-    scoutMaxTokens: 6_144,
+    scoutMaxTokens: 10_240,
     judgeMaxTokens: 26_624,
     lightThinkingTokens: 2_048,
     deepThinkingTokens: 10_240,
@@ -441,7 +442,7 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     openPositionEscalationToJudgePolicy: 'always',
     scoutMaxTurns: DEFAULT_SCOUT_MAX_TURNS,
     judgeMaxTurns: DEFAULT_JUDGE_MAX_TURNS,
-    scoutMaxTokens: 8_192,
+    scoutMaxTokens: 16_384,
     judgeMaxTokens: 36_864,
     lightThinkingTokens: 4_096,
     deepThinkingTokens: 20_480,
@@ -474,7 +475,7 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     openPositionEscalationToJudgePolicy: 'always',
     scoutMaxTurns: DEFAULT_SCOUT_MAX_TURNS,
     judgeMaxTurns: DEFAULT_JUDGE_MAX_TURNS,
-    scoutMaxTokens: 12_288,
+    scoutMaxTokens: 24_576,
     judgeMaxTokens: 49_152,
     lightThinkingTokens: 8_192,
     deepThinkingTokens: 32_768, // 20_480 × 2 = 40_960 exceeds ceiling 32_768 → clamped to ceiling
@@ -507,6 +508,14 @@ export interface OutputBudgetAdjustment {
   to: number;
   /** thinking tokens + output reserve; `to` is lower only when the ceiling caps it. */
   required: number;
+}
+
+/**
+ * Thinking tokens of reasoning level `medium` on a token-budget model: the midpoint of light and deep.
+ * Same formula as resolveReasoningBudgetTokens in packages/llm/src/llm-provider.ts (llm does not depend on domain).
+ */
+export function resolveMediumThinkingTokens(lightThinkingTokens: number, deepThinkingTokens: number): number {
+  return Math.round((lightThinkingTokens + deepThinkingTokens) / 2);
 }
 
 /**
@@ -570,7 +579,12 @@ export function resolveAgentRuntimePolicy(
     scoutMaxTurns: o.scoutMaxTurns ?? defaults.scoutMaxTurns,
     judgeMaxTurns: o.judgeMaxTurns ?? defaults.judgeMaxTurns,
     scoutMaxTokens: enforceOutputReserve(
-      'scoutMaxTokens', o.scoutMaxTokens ?? defaults.scoutMaxTokens, lightThinkingTokens, scoutOutputReserveTokens, onRaised,
+      'scoutMaxTokens',
+      o.scoutMaxTokens ?? defaults.scoutMaxTokens,
+      // The scout runs at up to `medium` reasoning (scoutReasoningMax), so its limit is sized for medium thinking.
+      resolveMediumThinkingTokens(lightThinkingTokens, deepThinkingTokens),
+      scoutOutputReserveTokens,
+      onRaised,
     ),
     judgeMaxTokens: enforceOutputReserve(
       'judgeMaxTokens', o.judgeMaxTokens ?? defaults.judgeMaxTokens, deepThinkingTokens, judgeOutputReserveTokens, onRaised,

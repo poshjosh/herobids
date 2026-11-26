@@ -156,7 +156,7 @@ describe('resolveLlmCallOutputBudget', () => {
   });
 
   it('lowers the reasoning level of an unclamped call whose level needs more thinking than the limit leaves room for', () => {
-    // Scout at 'high' with a limit sized for light thinking: 20,480 + 4,096 > 8,192; medium: 12,288 + 4,096 > 8,192
+    // A limit sized for light thinking only: high 20,480 + 4,096 > 8,192; medium 12,288 + 4,096 > 8,192
     const budget = resolveLlmCallOutputBudget({
       ...base,
       outputReserveTokens: 4_096,
@@ -168,6 +168,18 @@ describe('resolveLlmCallOutputBudget', () => {
     expect(budget.maxTokens).toBe(8_192);
     expect(budget.reasoningLevel).toBe('low');
     expect(budget.reasoningLoweredFrom).toBe('high');
+  });
+
+  it('keeps a balanced token-budget scout at medium on a model with the default maximum output', () => {
+    // balanced scoutMaxTokens 16,384 (D19): medium 12,288 + scout reserve 4,096 <= 16,384 <= default 32,000
+    const budget = resolveLlmCallOutputBudget({
+      ...base,
+      outputReserveTokens: 4_096,
+      model: 'unknown-vendor/unknown-model',
+      maxTokens: 16_384,
+      reasoningLevel: 'medium',
+    });
+    expect(budget).toEqual({ maxTokens: 16_384, timeoutMs: 16_384 * 6, reasoningLevel: 'medium' });
   });
 
   it('keeps the level of an effort-based model, which is not bound by the thinking budget', () => {
