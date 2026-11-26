@@ -156,6 +156,8 @@ export async function callLlmWithRetry(
     onRetry?: (info: { attempt: number; delayMs: number; classification: RuntimeFailureClassification }) => void;
     /** Fires on every non-fatal failed attempt, including the final one after retries are exhausted. */
     onAttemptFailed?: (info: { attempt: number; classification: RuntimeFailureClassification }) => void;
+    /** Return true to return this error at once instead of retrying the same request (the caller recovers it). */
+    skipRetry?: (error: LlmProviderError) => boolean;
   },
 ): Promise<LlmRetryResult> {
   const caller = options?.call ?? callLlmProvider;
@@ -178,6 +180,9 @@ export async function callLlmWithRetry(
     }
 
     options?.onAttemptFailed?.({ attempt: attempt + 1, classification });
+    if (options?.skipRetry?.(result.error)) {
+      return { result, attempts: attempt + 1, delaysMs, classification };
+    }
 
     let delayMs: number | null = null;
     if (result.error.code === 'provider.http_429') {

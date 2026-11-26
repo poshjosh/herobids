@@ -202,6 +202,7 @@ const agentRuntimeConfigJson = JSON.stringify({
     maxCallTimeoutMs: appConfig.llm.maxCallTimeoutMs,
     defaultMaxOutputTokens: appConfig.llm.defaultMaxOutputTokens,
     maxOutputTokensByModel: appConfig.llm.maxOutputTokensByModel,
+    lengthRecovery: appConfig.llm.lengthRecovery,
   },
 });
 

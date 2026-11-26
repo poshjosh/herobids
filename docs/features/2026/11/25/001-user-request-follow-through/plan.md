@@ -512,7 +512,7 @@ Phase 3:
 Phase 1:
 - [x] WP0 Evidence note for the 2026-11-25 run (`evidence.md`)
 - [x] DONE WP1 Output budget (A1)
-- [ ] PENDING WP2 Length recovery (A2) and `lengthRecoveries`
+- [x] DONE WP2 Length recovery (A2) and `lengthRecoveries`
 - [ ] PENDING WP3 Instructions block, base-skill sentence and `long-running-task` text
 - [ ] PENDING WP4 Measurement in the `evaluate-*` skills
 - [ ] PENDING WP5 Phase 1 docs and CHANGELOG; full test, lint and build
@@ -544,4 +544,12 @@ Phase 3 (if the gate calls for it):
 - LOW: the container timeout for older images is scaled from the unclamped limit (overestimates; safe direction). Worth a comment.
 - LOW: a future model id such as `claude-opus-4-9` matches `claude-opus-4` (32,000, safe but low); add new models to the table when they ship.
 - Not done: the web overrides form does not expose the two reserve fields; a user's low override is silently raised (the API returns the effective value).
+
+### WP2 Length recovery (from the code review, no critical or high; items 1, 4 and 5 of that review were fixed: the step-down stops at `low`, `maxRetries` has a maximum of 3, the empty-reply warning logs `continues`)
+
+- MEDIUM (verify against the API): a native-Anthropic cut-off `tool_use` block whose `input` is a partial object with `stop_reason: max_tokens` may pass as a valid call, so no recovery happens. Fix: in `callAnthropicProvider`, treat `stop_reason === 'max_tokens'` with a trailing `tool_use` block as `invalidToolArgsError(…, 'max_tokens')`, with a test. The incident path (OpenRouter, `length`) is covered.
+- LOW: no test that an Anthropic invalid-tool-args error carries `finishReason: 'max_tokens'`.
+- LOW: no test that `llm.lengthRecovery` reaches the agent through `agentRuntimeConfigJson` (and defaults when an older worker omits it).
+- LOW: `buildLengthRecovery` in `agent.ts` is not covered by a test; an integration test with a fake provider (cut-off, then recovery) checking `lengthRecoveries: 1` and single billing per call would cover it.
+- LOW (Phase 3): `lengthRecoveries` is not shown in the API activity view.
 

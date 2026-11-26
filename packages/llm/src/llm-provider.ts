@@ -120,6 +120,8 @@ export interface LlmProviderError {
   message: string;
   retryable: boolean;
   retryAfterMs?: number;
+  /** Provider finish reason of the response that failed, when it says (set for `provider.invalid_tool_args`). */
+  finishReason?: string;
 }
 
 export type LlmResult = { ok: true; data: LlmResponse } | { ok: false; error: LlmProviderError };
@@ -382,14 +384,12 @@ async function callOpenAiCompatibleProvider(
     const rawContent = typeof message?.content === 'string' ? message.content : '';
     const content = stripReasoningContent(rawContent);
     let toolCalls: LlmToolCall[];
+    const rawFinishReason = data.choices?.[0]?.finish_reason;
+    const finishReason = typeof rawFinishReason === 'string' ? rawFinishReason : undefined;
     try {
-      const finishReason = data.choices?.[0]?.finish_reason;
-      toolCalls = normalizeOpenAiToolCalls(
-        message?.tool_calls,
-        typeof finishReason === 'string' ? finishReason : undefined,
-      );
+      toolCalls = normalizeOpenAiToolCalls(message?.tool_calls, finishReason);
     } catch (error) {
-      return invalidToolArgsError(error);
+      return invalidToolArgsError(error, finishReason);
     }
     return {
       ok: true,
@@ -415,7 +415,7 @@ async function callOpenAiCompatibleProvider(
           ? Math.max(data.usage.completion_tokens - reasoningTokens, 0)
           : undefined,
         cachedInputTokens: data.usage?.prompt_tokens_details?.cached_tokens,
-        finishReason: typeof data.choices?.[0]?.finish_reason === 'string' ? data.choices[0].finish_reason : undefined,
+        finishReason,
         contentCharsBeforeStrip: rawContent.length,
       },
     };
@@ -553,7 +553,7 @@ async function callAnthropicProvider(
     try {
       toolCalls = normalizeAnthropicToolCalls(contentBlocks);
     } catch (error) {
-      return invalidToolArgsError(error);
+      return invalidToolArgsError(error, typeof data.stop_reason === 'string' ? data.stop_reason : undefined);
     }
 
     return {
@@ -959,7 +959,7 @@ function asToolArgs(value: unknown, context: ToolCallContext): Record<string, un
   return value as Record<string, unknown>;
 }
 
-function invalidToolArgsError(error: unknown): LlmResult {
+function invalidToolArgsError(error: unknown, finishReason: string | undefined): LlmResult {
   const message = error instanceof Error ? error.message : String(error);
   return {
     ok: false,
@@ -967,6 +967,7 @@ function invalidToolArgsError(error: unknown): LlmResult {
       code: 'provider.invalid_tool_args',
       message,
       retryable: false,
+      ...(finishReason !== undefined ? { finishReason } : {}),
     },
   };
 }

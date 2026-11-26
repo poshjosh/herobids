@@ -73,6 +73,8 @@ export interface ContinuationCompletionInput {
   toolVisible: boolean;
   nudgesUsed: number;
   finishRun: FinishRunRecord | undefined;
+  /** Calls cut off at the output limit and retried with a lower reasoning level. */
+  lengthRecoveries?: number;
 }
 
 /**
@@ -83,10 +85,12 @@ export function buildContinuationCompletionFields(input: ContinuationCompletionI
   nudgeCount?: number;
   finishRunStatus?: FinishRunRecord['status'];
   finishRunReason?: string;
+  lengthRecoveries?: number;
 } {
   return {
     ...(input.toolVisible || input.nudgesUsed > 0 ? { nudgeCount: input.nudgesUsed } : {}),
     ...(input.finishRun ? { finishRunStatus: input.finishRun.status, finishRunReason: input.finishRun.reason } : {}),
+    ...(input.lengthRecoveries ? { lengthRecoveries: input.lengthRecoveries } : {}),
   };
 }
 export interface FinalTextTurnInput {

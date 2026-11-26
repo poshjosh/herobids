@@ -11,6 +11,8 @@ export {
   resolveModelMaxOutputTokens,
   resolveLlmCallOutputBudget,
   scaleTimeoutForOutput,
+  lowerReasoningLevel,
+  isOutputLimitFinishReason,
 } from './output-budget.js';
 export type { OutputBudgetConfig, LlmCallOutputBudget } from './output-budget.js';
 export type {

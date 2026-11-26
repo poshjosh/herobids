@@ -130,6 +130,14 @@ describe('buildContinuationCompletionFields', () => {
     expect(buildContinuationCompletionFields({ toolVisible: true, nudgesUsed: 2, finishRun: { status: 'blocked', reason: 'no access' } }))
       .toEqual({ nudgeCount: 2, finishRunStatus: 'blocked', finishRunReason: 'no access' });
   });
+  it('reports the length recoveries of the run when there were any', () => {
+    expect(buildContinuationCompletionFields({ toolVisible: false, nudgesUsed: 0, finishRun: undefined, lengthRecoveries: 2 }))
+      .toEqual({ lengthRecoveries: 2 });
+  });
+  it('omits the length recoveries when there were none', () => {
+    expect(buildContinuationCompletionFields({ toolVisible: true, nudgesUsed: 0, finishRun: undefined, lengthRecoveries: 0 }))
+      .toEqual({ nudgeCount: 0 });
+  });
 });
 
 describe('decideFinalTextPersistence', () => {

@@ -145,6 +145,41 @@ describe('callLlmWithRetry', () => {
     expect(sleep).toHaveBeenCalledTimes(2);
   });
 
+  it('returns an error at once, without retrying, when skipRetry says so', async () => {
+    const cutOff = { ok: false, error: { code: 'provider.invalid_tool_args', message: 'cut off', retryable: false, finishReason: 'length' } };
+    const call = vi.fn().mockResolvedValue(cutOff);
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const onAttemptFailed = vi.fn();
+
+    const result = await callLlmWithRetry(
+      { provider: 'openai', model: 'test', maxTokens: 100, timeoutMs: 1000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 100 },
+      { call, sleep, onAttemptFailed, skipRetry: (error) => error.finishReason === 'length' },
+    );
+
+    expect(result.result).toEqual(cutOff);
+    expect(result.attempts).toBe(1);
+    expect(sleep).not.toHaveBeenCalled();
+    expect(onAttemptFailed).toHaveBeenCalledWith({ attempt: 1, classification: expect.objectContaining({ reasonCode: 'llm.invalid_tool_args' }) });
+  });
+
+  it('keeps the normal retry for errors skipRetry does not match', async () => {
+    const call = vi.fn()
+      .mockResolvedValueOnce({ ok: false, error: { code: 'provider.invalid_tool_args', message: 'malformed JSON', retryable: false, finishReason: 'tool_calls' } })
+      .mockResolvedValueOnce({ ok: true, data: { content: 'ok', model: 'test', provider: 'openai', tokensUsed: 10, latencyMs: 10, cached: false } });
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    const result = await callLlmWithRetry(
+      { provider: 'openai', model: 'test', maxTokens: 100, timeoutMs: 1000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 100 },
+      { call, sleep, skipRetry: (error) => error.finishReason === 'length' },
+    );
+
+    expect(result.result.ok).toBe(true);
+    expect(result.attempts).toBe(2);
+    expect(sleep).toHaveBeenCalledWith(2_000);
+  });
+
   it('retries 5xx responses with fixed backoff', async () => {
     const call = vi.fn()
       .mockResolvedValueOnce({ ok: false, error: { code: 'provider.http_503', message: 'server error', retryable: true } })

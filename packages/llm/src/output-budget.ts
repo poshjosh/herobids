@@ -30,6 +30,16 @@ const LOWER_REASONING_LEVEL: Record<ReasoningLevel, ReasoningLevel> = {
   none: 'none',
 };
 
+/** One reasoning level lower (`high` → `medium` → `low` → `none`); `none` stays `none`. */
+export function lowerReasoningLevel(level: ReasoningLevel): ReasoningLevel {
+  return LOWER_REASONING_LEVEL[level];
+}
+
+/** True when the provider stopped because the output-token limit was reached (`length`, or Anthropic's `max_tokens`). */
+export function isOutputLimitFinishReason(finishReason: string | undefined): boolean {
+  return finishReason === 'length' || finishReason === 'max_tokens';
+}
+
 const MODEL_KEY_BOUNDARIES = new Set(['-', ':', '@', '/']);
 
 function normalizeModelKey(value: string): string {
@@ -116,7 +126,7 @@ export function resolveLlmCallOutputBudget(params: {
       reserveUnmet = true;
       break;
     }
-    reasoningLevel = LOWER_REASONING_LEVEL[reasoningLevel];
+    reasoningLevel = lowerReasoningLevel(reasoningLevel);
   }
 
   return {

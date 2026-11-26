@@ -418,6 +418,13 @@ describe('callLlmProvider invalid tool arguments message', () => {
     toolCalls: Array<{ id: string; name: string; arguments: string }>,
     finishReason?: string,
   ) {
+    return (await invalidToolArgsErrorFor(toolCalls, finishReason)).message;
+  }
+
+  async function invalidToolArgsErrorFor(
+    toolCalls: Array<{ id: string; name: string; arguments: string }>,
+    finishReason?: string,
+  ) {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       choices: [{
         ...(finishReason ? { finish_reason: finishReason } : {}),
@@ -441,7 +448,7 @@ describe('callLlmProvider invalid tool arguments message', () => {
     if (result.ok) throw new Error('expected failure');
     expect(result.error.code).toBe('provider.invalid_tool_args');
     expect(result.error.retryable).toBe(false);
-    return result.error.message;
+    return result.error;
   }
 
   it('names the tool and call in the invalid arguments error', async () => {
@@ -470,6 +477,19 @@ describe('callLlmProvider invalid tool arguments message', () => {
     );
     expect(message).toContain('cut off');
     expect(message).toContain('finished with reason "length"');
+  });
+
+  it('carries the finish reason on the error so a cut-off call can be recovered', async () => {
+    const error = await invalidToolArgsErrorFor(
+      [{ id: 'call_1', name: 'write_file', arguments: '{"path":"a","content":"abc' }],
+      'length',
+    );
+    expect(error.finishReason).toBe('length');
+  });
+
+  it('leaves the finish reason off the error when the provider gives none', async () => {
+    const error = await invalidToolArgsErrorFor([{ id: 'call_1', name: 'write_file', arguments: '{not-json' }]);
+    expect(error).not.toHaveProperty('finishReason');
   });
 
   it('keeps the cut-off hint and finish reason for a very long tool name and call id', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveLlmCallOutputBudget, resolveModelMaxOutputTokens, scaleTimeoutForOutput, type OutputBudgetConfig } from './output-budget.js';
+import { isOutputLimitFinishReason, lowerReasoningLevel, resolveLlmCallOutputBudget, resolveModelMaxOutputTokens, scaleTimeoutForOutput, type OutputBudgetConfig } from './output-budget.js';
 
 const config: OutputBudgetConfig = {
   timeoutMsPerOutputToken: 6,
@@ -191,5 +191,27 @@ describe('resolveLlmCallOutputBudget', () => {
   it('keeps the level when the limit already leaves the reserve after thinking', () => {
     const budget = resolveLlmCallOutputBudget({ ...base, model: 'acme-reasoner', maxTokens: 32_000, reasoningLevel: 'medium' });
     expect(budget).toEqual({ maxTokens: 32_000, timeoutMs: 32_000 * 6, reasoningLevel: 'medium' });
+  });
+});
+
+describe('lowerReasoningLevel', () => {
+  it('steps one level down and stays at none', () => {
+    expect(lowerReasoningLevel('high')).toBe('medium');
+    expect(lowerReasoningLevel('medium')).toBe('low');
+    expect(lowerReasoningLevel('low')).toBe('none');
+    expect(lowerReasoningLevel('none')).toBe('none');
+  });
+});
+
+describe('isOutputLimitFinishReason', () => {
+  it('recognises the output-limit finish reasons of both API formats', () => {
+    expect(isOutputLimitFinishReason('length')).toBe(true);
+    expect(isOutputLimitFinishReason('max_tokens')).toBe(true);
+  });
+
+  it('rejects other or missing finish reasons', () => {
+    expect(isOutputLimitFinishReason('stop')).toBe(false);
+    expect(isOutputLimitFinishReason('tool_calls')).toBe(false);
+    expect(isOutputLimitFinishReason(undefined)).toBe(false);
   });
 });

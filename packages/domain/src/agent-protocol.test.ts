@@ -1041,6 +1041,10 @@ describe('tick turn events', () => {
       expect(parsed.unresolvedToolFailureCount).toBe(2);
       expect(parsed.unresolvedToolFailures).toEqual(['set_memory']);
     });
+    it('keeps the length recovery count so it reaches the stored event', () => {
+      expect(LlmCompletedPayloadSchema.parse({ ...base, lengthRecoveries: 1 }).lengthRecoveries).toBe(1);
+      expect(LlmCompletedPayloadSchema.safeParse({ ...base, lengthRecoveries: 0 }).success).toBe(false);
+    });
     it('rejects an unknown finish_run status', () => {
       expect(LlmCompletedPayloadSchema.safeParse({ ...base, finishRunStatus: 'done' }).success).toBe(false);
     });

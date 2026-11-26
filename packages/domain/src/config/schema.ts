@@ -231,6 +231,12 @@ export const LlmOutputBudgetConfigSchema = z.object({
   })),
 });
 
+/** Retry of a judge or scout call cut off at the output limit (finish reason `length`). */
+export const LlmLengthRecoveryConfigSchema = z.object({
+  /** Retries per turn, each with one reasoning level lower and a hint to think briefly. 0 = resend the same request as for other failures. */
+  maxRetries: z.number().int().min(0).max(3).default(1),
+});
+
 // ── Per-agent runtime policy ────────────────────────────────────────────────
 
 // Trading session windows relocated to a trading-owned module (source-fix request 002).
@@ -638,6 +644,7 @@ export const LlmRuntimeConfigSchema = z.object({
   scout: LlmScoutConfigSchema.default({}),
   thinking: LlmThinkingConfigSchema.default({}),
   ...LlmOutputBudgetConfigSchema.shape,
+  lengthRecovery: LlmLengthRecoveryConfigSchema.default({}),
 });
 
 export const ApiConfigSchema = z.object({
@@ -1802,6 +1809,7 @@ export const AgentRuntimePolicySchema = AgentRuntimeConfigSchema.extend({
     judge: LlmJudgeConfigSchema.default({}),
     thinking: LlmThinkingConfigSchema.default({}),
     ...LlmOutputBudgetConfigSchema.shape,
+    lengthRecovery: LlmLengthRecoveryConfigSchema.default({}),
   }).default({}),
 });
 

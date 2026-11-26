@@ -101,7 +101,7 @@ import { cleanupBrowserSessions } from './tools/browser.js';
 import { getWorkspacePaths } from './tools/workspace.js';
 import { installExternalSkillsAtStart, type InstallableExternalSkill } from './external-skill-startup.js';
 import { npxSkillsCliInstaller } from './tools/skills.js';
-import { runStructuredToolLoop } from './structured-tool-loop.js';
+import { runStructuredToolLoop, type LengthRecoveryOptions } from './structured-tool-loop.js';
 import { UnresolvedToolFailureTracker, buildContinuationCompletionFields, decideContinuationNudge, decideFinalTextPersistence, recordFinishRun, type FinishRunRecord } from './continuation-guard.js';
 import { resolveJudgeMaxTokens } from './judge-max-tokens.js';
 import { describeCutResult } from './stale-result-hints.js';
@@ -1000,6 +1000,27 @@ function resolveCallOutputBudget(
       : 'Adjusted output-token limit or reasoning level to fit the model maximum output and the output reserve');
   }
   return budget;
+}
+
+// Retry of a call cut off at the output limit: one reasoning level lower per retry, mapped for the call's model.
+function buildLengthRecovery(
+  phase: 'scout' | 'judge',
+  model: string,
+  reasoningLevel: ReasoningLevel,
+  onRecovered?: () => void,
+): LengthRecoveryOptions {
+  return {
+    maxRetries: agentRuntimePolicy.llm.lengthRecovery.maxRetries,
+    reasoningLevel,
+    resolveReasoning: (level) => resolveReasoningParams(level, model, agentRuntimePolicy.llm.thinking),
+    onRecovery: ({ turnIndex, cause, fromLevel, toLevel, recovery }) => {
+      logger.warn(
+        { phase, turnIndex, cause, fromReasoningLevel: fromLevel, toReasoningLevel: toLevel, recovery },
+        'Retrying LLM call cut off at the output limit with a lower reasoning level',
+      );
+      onRecovered?.();
+    },
+  };
 }
 
 const DEFAULT_RATE_CARD_NAME = process.env['USAGE_BILLING_RATE_CARD'] ?? 'default';
@@ -4179,6 +4200,7 @@ async function runActiveTick(): Promise<void> {
           ),
         },
         maxTurns: scoutLoopConfig.maxTurns,
+        lengthRecovery: buildLengthRecovery('scout', lightModel, scoutBudget.reasoningLevel),
         toolResultFullRetentionTurns: runtimeState.runtimeDescriptor.budgets.toolResultFullRetentionTurns,
         toolResultMaxStaleChars: runtimeState.runtimeDescriptor.budgets.toolResultMaxStaleChars,
         describeCutResult,
@@ -4439,6 +4461,7 @@ async function runActiveTick(): Promise<void> {
     // outcome of the tick, which depends only on whether a message was sent (activeTick.replied).
     let judgeFinishRun: FinishRunRecord | undefined;
     let judgeNudgesSent = 0;
+    let judgeLengthRecoveries = 0;
     const judgeToolFailures = new UnresolvedToolFailureTracker();
     // Text of the latest turn that called finish_run; stored after the loop if that turn ended the run.
     let judgeFinishTurnText: string | undefined;
@@ -4490,6 +4513,9 @@ async function runActiveTick(): Promise<void> {
         ),
       },
       maxTurns: judgeLoopConfig.maxTurns,
+      lengthRecovery: buildLengthRecovery('judge', costProfile.heavyModel, judgeBudget.reasoningLevel, () => {
+        judgeLengthRecoveries += 1;
+      }),
       // Fresh clock for this run: the system prompt's time is fixed at tick start. Sent for the request only.
       getTurnContext: ({ turnIndex }) => {
         const { enabled, minTurnsBeforeShown } = agentRuntimePolicy.runStatusHint;
@@ -4558,6 +4584,8 @@ async function runActiveTick(): Promise<void> {
             contentCharsBeforeStrip: result.data.contentCharsBeforeStrip,
             latencyMs: result.data.latencyMs,
             finishRunCalled: judgeFinishRun !== undefined,
+            // True when a cut-off recovery retry follows, so this reply does not end the run.
+            continues,
           }, 'Judge model returned an empty reply with no tool call');
         }
         // A nudged turn is not the end of the run, so its reply must not reach history or the timeline.
@@ -4700,6 +4728,7 @@ async function runActiveTick(): Promise<void> {
         toolVisible: allowedTools().has('finish_run'),
         nudgesUsed: judgeNudgesSent,
         finishRun: judgeFinishRun,
+        lengthRecoveries: judgeLengthRecoveries,
       }),
       ...judgeToolFailures.summary(),
       errorMessage: !judgeLoopResult.ok ? judgeLoopResult.error.message : undefined,

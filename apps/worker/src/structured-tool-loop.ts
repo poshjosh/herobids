@@ -1,7 +1,44 @@
-import type { LlmProviderConfig, LlmProviderError, LlmRequest, LlmToolCall, LlmToolDefinition, LlmMessage, LlmResponse } from '@herobids/llm';
-import { stripReasoningContent } from '@herobids/llm';
+import type { LlmProviderConfig, LlmProviderError, LlmRequest, LlmResult, LlmToolCall, LlmToolDefinition, LlmMessage, LlmResponse, ReasoningLevel } from '@herobids/llm';
+import { isOutputLimitFinishReason, lowerReasoningLevel, stripReasoningContent } from '@herobids/llm';
 import { callLlmWithRetry } from './runtime-errors.js';
-import type { RuntimeFailureClassification } from './runtime-errors.js';
+import type { LlmRetryResult, RuntimeFailureClassification } from './runtime-errors.js';
+
+/** Added to the turn context of a length-recovery retry only. */
+export const LENGTH_RECOVERY_HINT =
+  'Your last response was cut off at the output limit. Think briefly and make smaller tool calls (split long file content across `append_file` calls).';
+
+/** How a call was cut off at the output limit: tool-call JSON cut short, or no text and no tool call. */
+export type LengthRecoveryCause = 'invalid_tool_args' | 'empty_reply';
+
+export interface LengthRecoveryOptions {
+  /** Recovery retries per turn. 0 = off: a cut-off call gets the normal retry of the same request. */
+  maxRetries: number;
+  /** Reasoning level of the normal request; each recovery retry steps one level lower. */
+  reasoningLevel: ReasoningLevel;
+  /** Request `reasoning` for a level, with the same mapping that built `requestBase.reasoning`. */
+  resolveReasoning: (level: ReasoningLevel) => LlmRequest['reasoning'];
+  onRecovery?: (info: {
+    turnIndex: number;
+    cause: LengthRecoveryCause;
+    fromLevel: ReasoningLevel;
+    toLevel: ReasoningLevel;
+    /** 1 for the first recovery retry of the turn. */
+    recovery: number;
+  }) => void;
+}
+
+function isCutOffToolArgsError(error: LlmProviderError): boolean {
+  return error.code === 'provider.invalid_tool_args' && isOutputLimitFinishReason(error.finishReason);
+}
+
+function detectLengthCutOff(result: LlmResult): LengthRecoveryCause | undefined {
+  if (!result.ok) {
+    return isCutOffToolArgsError(result.error) ? 'invalid_tool_args' : undefined;
+  }
+  const { data } = result;
+  const empty = data.toolCalls.length === 0 && stripReasoningContent(data.content).trim() === '';
+  return empty && isOutputLimitFinishReason(data.finishReason) ? 'empty_reply' : undefined;
+}
 
 /**
  * Tool results that must survive stale-result truncation. These return durable
@@ -39,7 +76,7 @@ export interface StructuredToolLoopOptions {
     result: { ok: true; data: LlmResponse };
     assistantResponse: string;
     toolCalls: LlmToolCall[];
-    /** True when a nudge follows this turn, so the run is not over. */
+    /** True when a nudge or a length-recovery retry follows this turn, so the run is not over. */
     continues: boolean;
   }) => Promise<void> | void;
   /**
@@ -96,6 +133,11 @@ export interface StructuredToolLoopOptions {
    * history that later turns resend. Return undefined to send nothing for the turn.
    */
   getTurnContext?: (info: { turnIndex: number }) => string | undefined;
+  /**
+   * Retry a call cut off at the output limit (cut-off tool-call JSON, or an empty reply) with one reasoning level
+   * lower and LENGTH_RECOVERY_HINT, instead of resending the same request. Omit to keep the normal retry.
+   */
+  lengthRecovery?: LengthRecoveryOptions;
   /** After this many retention turns, truncate older tool results to maxStaleChars. Omit to disable. */
   toolResultFullRetentionTurns?: number;
   /** Max chars to keep in a stale tool result (appends '...[cut: kept N of M chars]'). */
@@ -222,27 +264,67 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
     turnsUsed = turnIndex + 1;
     const activeTools = options.getTools ? options.getTools() : options.tools;
     const turnContext = options.getTurnContext?.({ turnIndex });
-    const requestMessages: LlmMessage[] = turnContext
-      ? [...messages, { role: 'user', content: turnContext, volatile: true }]
-      : messages;
-    const turnResultWithRetry = await callLlmWithRetry(
-      options.providerConfig,
-      {
-        ...options.requestBase,
-        messages: requestMessages,
-        tools: activeTools,
-        toolChoice: turnToolChoice,
-      },
-      {
-        ...options.retryPolicy,
-        onRetry: options.onRetry
-          ? ({ attempt, delayMs, classification }) => options.onRetry?.({ turnIndex, attempt, delayMs, classification })
-          : undefined,
-        onAttemptFailed: options.onFailedAttempt
-          ? ({ attempt, classification }) => options.onFailedAttempt?.({ turnIndex, attempt, classification })
-          : undefined,
-      },
-    );
+    const lengthRecovery = options.lengthRecovery !== undefined && options.lengthRecovery.maxRetries > 0
+      ? options.lengthRecovery
+      : undefined;
+    // Set once a recovery retry starts: the lowered level for this turn's next request.
+    let recoveryLevel: ReasoningLevel | undefined;
+    let recoveries = 0;
+    // Attempt numbers continue across recovery retries, so each failed attempt of the turn has its own number.
+    let attemptOffset = 0;
+    let turnResultWithRetry: LlmRetryResult;
+    for (;;) {
+      // One trailing volatile message: a second user message would split the prompt-cache boundary.
+      const requestContext = recoveryLevel !== undefined
+        ? [turnContext, LENGTH_RECOVERY_HINT].filter((part) => part !== undefined && part !== '').join('\n\n')
+        : turnContext;
+      const requestMessages: LlmMessage[] = requestContext
+        ? [...messages, { role: 'user', content: requestContext, volatile: true }]
+        : messages;
+      const offset = attemptOffset;
+      turnResultWithRetry = await callLlmWithRetry(
+        options.providerConfig,
+        {
+          ...options.requestBase,
+          ...(lengthRecovery && recoveryLevel !== undefined ? { reasoning: lengthRecovery.resolveReasoning(recoveryLevel) } : {}),
+          messages: requestMessages,
+          tools: activeTools,
+          toolChoice: turnToolChoice,
+        },
+        {
+          ...options.retryPolicy,
+          onRetry: options.onRetry
+            ? ({ attempt, delayMs, classification }) =>
+              options.onRetry?.({ turnIndex, attempt: offset + attempt, delayMs, classification })
+            : undefined,
+          onAttemptFailed: options.onFailedAttempt
+            ? ({ attempt, classification }) =>
+              options.onFailedAttempt?.({ turnIndex, attempt: offset + attempt, classification })
+            : undefined,
+          // Resending a cut-off request repeats the cut-off; recovery replaces that retry, also once it is used up.
+          ...(lengthRecovery ? { skipRetry: isCutOffToolArgsError } : {}),
+        },
+      );
+      attemptOffset += turnResultWithRetry.attempts;
+      if (lengthRecovery === undefined || recoveries >= lengthRecovery.maxRetries) break;
+      const cause = detectLengthCutOff(turnResultWithRetry.result);
+      if (cause === undefined) break;
+      if (cause === 'empty_reply' && turnResultWithRetry.result.ok) {
+        // Still a completed call: report it so its usage is recorded.
+        await options.onAssistantTurn?.({
+          turnIndex,
+          result: turnResultWithRetry.result,
+          assistantResponse: '',
+          toolCalls: [],
+          continues: true,
+        });
+      }
+      const fromLevel = recoveryLevel ?? lengthRecovery.reasoningLevel;
+      // Stop at `low`: `none` drops the reasoning parameter, and some providers then use their own, higher default.
+      recoveryLevel = fromLevel === 'low' || fromLevel === 'none' ? fromLevel : lowerReasoningLevel(fromLevel);
+      recoveries++;
+      lengthRecovery.onRecovery?.({ turnIndex, cause, fromLevel, toLevel: recoveryLevel, recovery: recoveries });
+    }
 
     if (!turnResultWithRetry.result.ok) {
       return {

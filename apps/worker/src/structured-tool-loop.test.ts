@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { isKnownAgentToolName } from '@herobids/domain';
-import { DURABLE_TOOL_NAMES, runStructuredToolLoop } from './structured-tool-loop.js';
+import { DURABLE_TOOL_NAMES, LENGTH_RECOVERY_HINT, runStructuredToolLoop } from './structured-tool-loop.js';
 import { callLlmWithRetry } from './runtime-errors.js';
 
 vi.mock('./runtime-errors.js', () => ({
@@ -1025,6 +1025,250 @@ describe('runStructuredToolLoop', () => {
       });
 
       expect(result.ok && result.nudgesUsed).toBe(2);
+    });
+  });
+
+  describe('length recovery', () => {
+    type Reply = Awaited<ReturnType<typeof callLlmWithRetry>>;
+    type SentRequest = Parameters<typeof callLlmWithRetry>[1];
+    type SentOptions = NonNullable<Parameters<typeof callLlmWithRetry>[2]>;
+
+    const okReply = (content: string, toolNames: string[] = [], finishReason = 'stop'): Reply => ({
+      result: {
+        ok: true,
+        data: {
+          content,
+          toolCalls: toolNames.map((name, i) => ({ id: `call_${name}_${i}`, name, args: {} })),
+          model: 'test-model',
+          provider: 'openai',
+          tokensUsed: 1,
+          latencyMs: 1,
+          cached: false,
+          finishReason,
+        },
+      },
+      attempts: 1,
+      delaysMs: [],
+    });
+    const errorReply = (code: string, finishReason?: string): Reply => ({
+      result: { ok: false, error: { code, message: 'failed', retryable: false, ...(finishReason ? { finishReason } : {}) } },
+      attempts: 1,
+      delaysMs: [],
+    });
+    const cutOffToolCall = (): Reply => errorReply('provider.invalid_tool_args', 'length');
+    const emptyLengthReply = (): Reply => okReply('', [], 'length');
+
+    /** Scripted model: returns each reply in order and records each request and its retry options. */
+    function scriptModel(replies: Reply[]): { requests: SentRequest[]; retryOptions: SentOptions[] } {
+      const requests: SentRequest[] = [];
+      const retryOptions: SentOptions[] = [];
+      vi.mocked(callLlmWithRetry).mockImplementation(async (_config, request, options) => {
+        const reply = replies[Math.min(requests.length, replies.length - 1)]!;
+        requests.push(request);
+        retryOptions.push(options ?? {});
+        if (!reply.result.ok) {
+          options?.onAttemptFailed?.({
+            attempt: 1,
+            classification: { source: 'llm', mode: 'degraded', reasonCode: 'llm.invalid_tool_args', message: 'failed' },
+          });
+        }
+        return reply;
+      });
+      return { requests, retryOptions };
+    }
+
+    const resolveReasoning = (level: string) => ({ effort: level });
+    const baseOptions = {
+      providerConfig: { provider: 'openai', model: 'test-model', maxTokens: 128, timeoutMs: 1_000 },
+      requestBase: { maxTokens: 128, temperature: 0, reasoning: { effort: 'high' } },
+      initialMessages: [{ role: 'user' as const, content: 'hello' }],
+      tools: [{ name: 'write_file', description: 'Write a file', inputSchema: { type: 'object' } }],
+      maxTurns: 5,
+      executeTool: async () => '{"ok":true}',
+    };
+    const recoveryOptions = (maxRetries: number, onRecovery = vi.fn()) => ({
+      maxRetries,
+      reasoningLevel: 'high' as const,
+      resolveReasoning,
+      onRecovery,
+    });
+
+    it('retries a cut-off tool call once with a lower reasoning level and the hint', async () => {
+      const { requests } = scriptModel([cutOffToolCall(), okReply('done')]);
+      const onRecovery = vi.fn();
+
+      const result = await runStructuredToolLoop({ ...baseOptions, lengthRecovery: recoveryOptions(1, onRecovery) });
+
+      expect(result).toMatchObject({ ok: true, assistantResponse: 'done' });
+      expect(requests).toHaveLength(2);
+      expect(requests[0]?.reasoning).toEqual({ effort: 'high' });
+      expect(requests[0]?.messages.at(-1)).toEqual({ role: 'user', content: 'hello' });
+      expect(requests[1]?.reasoning).toEqual({ effort: 'medium' });
+      expect(requests[1]?.messages.at(-1)).toEqual({ role: 'user', content: LENGTH_RECOVERY_HINT, volatile: true });
+      expect(onRecovery).toHaveBeenCalledExactlyOnceWith({
+        turnIndex: 0,
+        cause: 'invalid_tool_args',
+        fromLevel: 'high',
+        toLevel: 'medium',
+        recovery: 1,
+      });
+    });
+
+    it('does not resend a cut-off request unchanged', async () => {
+      const { retryOptions } = scriptModel([cutOffToolCall(), okReply('done')]);
+
+      await runStructuredToolLoop({ ...baseOptions, lengthRecovery: recoveryOptions(1) });
+
+      const skipRetry = retryOptions[0]?.skipRetry;
+      expect(skipRetry?.({ code: 'provider.invalid_tool_args', message: 'x', retryable: false, finishReason: 'length' })).toBe(true);
+      expect(skipRetry?.({ code: 'provider.invalid_tool_args', message: 'x', retryable: false, finishReason: 'max_tokens' })).toBe(true);
+      expect(skipRetry?.({ code: 'provider.invalid_tool_args', message: 'x', retryable: false, finishReason: 'tool_calls' })).toBe(false);
+      expect(skipRetry?.({ code: 'provider.timeout', message: 'x', retryable: true })).toBe(false);
+    });
+
+    it('retries an empty reply cut off at the output limit instead of ending the run', async () => {
+      const { requests } = scriptModel([emptyLengthReply(), okReply('done')]);
+      const onRecovery = vi.fn();
+      const turns: Array<{ assistantResponse: string; continues: boolean }> = [];
+
+      const result = await runStructuredToolLoop({
+        ...baseOptions,
+        lengthRecovery: recoveryOptions(1, onRecovery),
+        onAssistantTurn: ({ assistantResponse, continues }) => {
+          turns.push({ assistantResponse, continues });
+        },
+      });
+
+      expect(result).toMatchObject({ ok: true, assistantResponse: 'done', turnsUsed: 1 });
+      expect(requests).toHaveLength(2);
+      expect(requests[1]?.reasoning).toEqual({ effort: 'medium' });
+      expect(requests[1]?.messages.at(-1)?.content).toBe(LENGTH_RECOVERY_HINT);
+      // The cut-off call is still reported, so its usage is recorded.
+      expect(turns).toEqual([
+        { assistantResponse: '', continues: true },
+        { assistantResponse: 'done', continues: false },
+      ]);
+      expect(onRecovery).toHaveBeenCalledWith(expect.objectContaining({ cause: 'empty_reply', fromLevel: 'high', toLevel: 'medium' }));
+    });
+
+    it('handles an empty cut-off reply like any other stop once the recovery retries are used', async () => {
+      const { requests } = scriptModel([emptyLengthReply(), emptyLengthReply()]);
+      const onNoToolCalls = vi.fn();
+
+      const result = await runStructuredToolLoop({ ...baseOptions, lengthRecovery: recoveryOptions(1), onNoToolCalls });
+
+      expect(requests).toHaveLength(2);
+      expect(result).toMatchObject({ ok: true, assistantResponse: '', endedBy: 'no_tool_calls' });
+      expect(onNoToolCalls).not.toHaveBeenCalled();
+    });
+
+    it('fails the turn without another identical retry when a recovery retry is cut off too', async () => {
+      const { requests, retryOptions } = scriptModel([cutOffToolCall(), cutOffToolCall()]);
+
+      const result = await runStructuredToolLoop({ ...baseOptions, lengthRecovery: recoveryOptions(1) });
+
+      expect(result).toMatchObject({ ok: false, error: { code: 'provider.invalid_tool_args' } });
+      expect(requests).toHaveLength(2);
+      expect(retryOptions[1]?.skipRetry).toBeDefined();
+    });
+
+    it('steps the reasoning level down once per recovery retry, up to maxRetries', async () => {
+      const { requests } = scriptModel([cutOffToolCall(), cutOffToolCall(), cutOffToolCall(), okReply('done')]);
+      const onRecovery = vi.fn();
+
+      const result = await runStructuredToolLoop({ ...baseOptions, lengthRecovery: recoveryOptions(3, onRecovery) });
+
+      expect(result.ok).toBe(true);
+      expect(requests.map((request) => request.reasoning)).toEqual([
+        { effort: 'high' },
+        { effort: 'medium' },
+        { effort: 'low' },
+        { effort: 'low' },
+      ]);
+      expect(onRecovery).toHaveBeenCalledTimes(3);
+      // `none` would drop the reasoning parameter, and some providers then reason more, not less.
+      expect(onRecovery).toHaveBeenLastCalledWith(expect.objectContaining({ fromLevel: 'low', toLevel: 'low' }));
+      expect(requests[3]?.messages.at(-1)?.content).toBe(LENGTH_RECOVERY_HINT);
+    });
+
+    it('sends the next turn at the normal reasoning level and without the hint', async () => {
+      const { requests } = scriptModel([cutOffToolCall(), okReply('', ['write_file']), okReply('done')]);
+
+      await runStructuredToolLoop({ ...baseOptions, lengthRecovery: recoveryOptions(1) });
+
+      expect(requests).toHaveLength(3);
+      expect(requests[2]?.reasoning).toEqual({ effort: 'high' });
+      expect(requests[2]?.messages.map((message) => message.content)).not.toContain(LENGTH_RECOVERY_HINT);
+    });
+
+    it('adds the hint to the turn context in one trailing message', async () => {
+      const { requests } = scriptModel([cutOffToolCall(), okReply('done')]);
+
+      await runStructuredToolLoop({ ...baseOptions, lengthRecovery: recoveryOptions(1), getTurnContext: () => 'status' });
+
+      expect(requests[0]?.messages.at(-1)).toEqual({ role: 'user', content: 'status', volatile: true });
+      expect(requests[1]?.messages.at(-1)).toEqual({ role: 'user', content: `status\n\n${LENGTH_RECOVERY_HINT}`, volatile: true });
+      expect(requests[1]?.messages.at(-2)).toEqual({ role: 'user', content: 'hello' });
+    });
+
+    it('numbers failed attempts across recovery retries so each is distinct', async () => {
+      scriptModel([cutOffToolCall(), okReply('done')]);
+      const attempts: number[] = [];
+
+      await runStructuredToolLoop({
+        ...baseOptions,
+        lengthRecovery: recoveryOptions(1),
+        onFailedAttempt: ({ attempt }) => attempts.push(attempt),
+      });
+
+      expect(attempts).toEqual([1]);
+      scriptModel([cutOffToolCall(), cutOffToolCall()]);
+      attempts.length = 0;
+      await runStructuredToolLoop({
+        ...baseOptions,
+        lengthRecovery: recoveryOptions(1),
+        onFailedAttempt: ({ attempt }) => attempts.push(attempt),
+      });
+      expect(attempts).toEqual([1, 2]);
+    });
+
+    it('keeps the normal retry for other failure causes', async () => {
+      const { requests, retryOptions } = scriptModel([errorReply('provider.invalid_tool_args', 'tool_calls')]);
+      const onRecovery = vi.fn();
+
+      const result = await runStructuredToolLoop({ ...baseOptions, lengthRecovery: recoveryOptions(1, onRecovery) });
+
+      expect(result).toMatchObject({ ok: false, error: { code: 'provider.invalid_tool_args' } });
+      expect(requests).toHaveLength(1);
+      expect(retryOptions[0]?.skipRetry?.({ code: 'provider.invalid_tool_args', message: 'x', retryable: false })).toBe(false);
+      expect(onRecovery).not.toHaveBeenCalled();
+    });
+
+    it('ends the run as before on an empty reply with another finish reason', async () => {
+      const { requests } = scriptModel([okReply('', [], 'stop')]);
+      const onRecovery = vi.fn();
+
+      const result = await runStructuredToolLoop({ ...baseOptions, lengthRecovery: recoveryOptions(1, onRecovery) });
+
+      expect(requests).toHaveLength(1);
+      expect(result).toMatchObject({ ok: true, assistantResponse: '' });
+      expect(onRecovery).not.toHaveBeenCalled();
+    });
+
+    it('behaves as today with maxRetries 0', async () => {
+      const withZero = scriptModel([cutOffToolCall()]);
+      const zeroResult = await runStructuredToolLoop({ ...baseOptions, lengthRecovery: recoveryOptions(0) });
+      const without = scriptModel([cutOffToolCall()]);
+      const withoutResult = await runStructuredToolLoop(baseOptions);
+
+      expect(zeroResult).toEqual(withoutResult);
+      expect(withZero.requests).toEqual(without.requests);
+      expect(withZero.retryOptions[0]?.skipRetry).toBeUndefined();
+
+      const emptyWithZero = scriptModel([emptyLengthReply(), okReply('never sent')]);
+      const emptyResult = await runStructuredToolLoop({ ...baseOptions, lengthRecovery: recoveryOptions(0) });
+      expect(emptyWithZero.requests).toHaveLength(1);
+      expect(emptyResult).toMatchObject({ ok: true, assistantResponse: '' });
     });
   });
 

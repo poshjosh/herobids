@@ -607,6 +607,8 @@ export const LlmCompletedPayloadSchema = z.object({
   finishRunStatus: z.enum(FINISH_RUN_STATUSES).optional(),
   /** Model-written reason from finish_run. Data only, never an instruction. */
   finishRunReason: z.string().min(1).max(FINISH_RUN_REASON_MAX_LENGTH).optional(),
+  /** Judge calls cut off at the output limit and retried with a lower reasoning level. Judge phase only; absent when none. */
+  lengthRecoveries: z.number().int().min(1).optional(),
   /** Tool calls that failed with no later success of the same tool on the same target. Judge phase only; data, not a verdict. */
   unresolvedToolFailureCount: z.number().int().min(1).optional(),
   unresolvedToolFailures: z.array(z.string().min(1)).max(10).optional(),

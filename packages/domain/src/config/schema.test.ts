@@ -204,6 +204,7 @@ describe('AgentRuntimePolicySchema', () => {
       expect(result.data.llm.thinking.deepBudgetTokens).toBe(10_240);
       expect(result.data.llm.timeoutMsPerOutputToken).toBe(6);
       expect(result.data.llm.defaultMaxOutputTokens).toBe(32_000);
+      expect(result.data.llm.lengthRecovery.maxRetries).toBe(1);
       expect(result.data.llm.maxOutputTokensByModel['claude-sonnet-4-5']).toBe(64_000);
       expect(result.data.wake.minIntervalMs).toBe(15_000);
       expect(result.data.wake.pollMs).toBe(1_000);
@@ -658,6 +659,17 @@ describe('AgentRuntimePolicySchema', () => {
       llm: { maxOutputTokensByModel: { 'my-model': 0 } },
     });
     expect(result.success).toBe(false);
+  });
+
+  it('defaults length recovery to one retry, accepts 0 and rejects a negative count', () => {
+    const defaults = AgentRuntimePolicySchema.safeParse({ defaultBudgets: REQUIRED_RUNTIME_BUDGETS });
+    expect(defaults.success && defaults.data.llm.lengthRecovery.maxRetries).toBe(1);
+    const off = AgentRuntimePolicySchema.safeParse({ defaultBudgets: REQUIRED_RUNTIME_BUDGETS, llm: { lengthRecovery: { maxRetries: 0 } } });
+    expect(off.success && off.data.llm.lengthRecovery.maxRetries).toBe(0);
+    const negative = AgentRuntimePolicySchema.safeParse({ defaultBudgets: REQUIRED_RUNTIME_BUDGETS, llm: { lengthRecovery: { maxRetries: -1 } } });
+    expect(negative.success).toBe(false);
+    const tooMany = AgentRuntimePolicySchema.safeParse({ defaultBudgets: REQUIRED_RUNTIME_BUDGETS, llm: { lengthRecovery: { maxRetries: 4 } } });
+    expect(tooMany.success).toBe(false);
   });
 });
 
