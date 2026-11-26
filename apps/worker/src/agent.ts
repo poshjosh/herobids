@@ -4183,7 +4183,7 @@ async function runActiveTick(): Promise<void> {
 
       scoutReasoning = resolveRunReasoning(
         sharedRunClassification,
-        agentConfig.resolvedRuntimePolicy?.scoutReasoning ?? 'medium',
+        agentConfig.resolvedRuntimePolicy?.scoutReasoning ?? AGENT_STYLE_RUNTIME_DEFAULTS.balanced.scoutReasoning,
         agentConfig.resolvedRuntimePolicy?.adaptScoutReasoning !== false,
       );
       // What the provider was last sent, which differs from the level after a provider fallback (D23).
@@ -4426,7 +4426,7 @@ async function runActiveTick(): Promise<void> {
     const judgeRunClassification = resolveJudgeRunClassification(sharedRunClassification, costProfile.defaultThinking === 'deep');
     const judgeReasoning = resolveRunReasoning(
       judgeRunClassification,
-      agentConfig.resolvedRuntimePolicy?.judgeReasoning ?? 'medium',
+      agentConfig.resolvedRuntimePolicy?.judgeReasoning ?? AGENT_STYLE_RUNTIME_DEFAULTS.balanced.judgeReasoning,
       agentConfig.resolvedRuntimePolicy?.adaptJudgeReasoning !== false,
     );
     previousRegimePass = skipDecision.regime?.pass ?? previousRegimePass;

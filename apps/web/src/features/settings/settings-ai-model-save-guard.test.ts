@@ -7,7 +7,7 @@
  *   - the selection matches the currently saved settings
  */
 import { describe, expect, it } from 'vitest';
-import { createClearedAiModelSettings, shouldDisableAiModelSave } from './ai-model-settings.js';
+import { EMPTY_AI_MODEL_SELECTION, createClearedAiModelSettings, normalizeAiModelSelection, shouldDisableAiModelSave, toAiModelSettingsUpdate } from './ai-model-settings.js';
 import { resolveDefaultModelSelection } from './ModelSelectionFields.js';
 import type { AiModelSelectionState } from './ai-model-settings.js';
 
@@ -113,5 +113,32 @@ describe('Settings page — AI model Save button disable predicate', () => {
         false,
       ),
     ).toBe(true);
+  });
+});
+
+describe('Settings page — reasoning levels the user did not choose', () => {
+  const models = { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' };
+
+  it('starts with no reasoning level chosen', () => {
+    expect(EMPTY_AI_MODEL_SELECTION.scoutReasoning).toBe('');
+    expect(EMPTY_AI_MODEL_SELECTION.judgeReasoning).toBe('');
+    expect(normalizeAiModelSelection({ ...models, scoutReasoning: null, judgeReasoning: null, adaptScoutReasoning: null, adaptJudgeReasoning: null }))
+      .toMatchObject({ scoutReasoning: '', judgeReasoning: '' });
+  });
+
+  it('saves null for an unchosen level so agents keep their style default', () => {
+    const update = toAiModelSettingsUpdate({ ...EMPTY_AI_MODEL_SELECTION, ...models });
+    expect(update).toEqual({ ...models, scoutReasoning: null, judgeReasoning: null, adaptScoutReasoning: true, adaptJudgeReasoning: true });
+  });
+
+  it('saves a level the user chose', () => {
+    const update = toAiModelSettingsUpdate({ ...EMPTY_AI_MODEL_SELECTION, ...models, scoutReasoning: 'none', judgeReasoning: 'high' });
+    expect(update).toMatchObject({ scoutReasoning: 'none', judgeReasoning: 'high' });
+  });
+
+  it('treats a saved null level as unchanged when nothing is chosen', () => {
+    const saved = { ...models, scoutReasoning: null, judgeReasoning: null, adaptScoutReasoning: true, adaptJudgeReasoning: true };
+    expect(shouldDisableAiModelSave(normalizeAiModelSelection(saved), saved, false)).toBe(true);
+    expect(shouldDisableAiModelSave({ ...normalizeAiModelSelection(saved), judgeReasoning: 'low' }, saved, false)).toBe(false);
   });
 });

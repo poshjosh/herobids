@@ -58,7 +58,10 @@ function modelContainsKey(model: string, key: string): boolean {
   return false;
 }
 
-/** Most output tokens the model accepts: the longest matching table key wins, else the default for unknown models. */
+/**
+ * Most output tokens the model accepts: the longest matching table key wins, else the default for unknown models.
+ * findModelMaxOutputTokens in packages/domain/src/config/schema.ts applies the same rule for the web; keep them in step.
+ */
 export function resolveModelMaxOutputTokens(
   model: string,
   config: Pick<OutputBudgetConfig, 'defaultMaxOutputTokens' | 'maxOutputTokensByModel'>,

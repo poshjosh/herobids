@@ -99,6 +99,7 @@ export {
   type OutputBudgetAdjustment,
   LlmOutputBudgetConfigSchema,
   DEFAULT_MAX_OUTPUT_TOKENS_BY_MODEL,
+  findModelMaxOutputTokens,
   RegimeParamsSchema,
   RsiParamsSchema,
   MacdParamsSchema,

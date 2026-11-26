@@ -1,5 +1,8 @@
 import {
   AGENT_STYLE_RUNTIME_DEFAULTS,
+  findModelMaxOutputTokens,
+  resolveAgentRuntimePolicy,
+  resolveMediumThinkingTokens,
   resolveStyleTradingTickIntervalMs,
   type ReasoningLevel,
   type TradingSessionName,
@@ -45,6 +48,53 @@ export function resolveStyleDefaults(style: AgentStyleValue): StyleDefaults {
     return STYLE_CONFIG.balanced;
   }
   return config;
+}
+
+/** A selected model whose maximum output cannot fit the thinking budget of the agent's reasoning level plus the output reserve. */
+export interface ModelOutputLimitShortfall {
+  role: 'scout' | 'judge';
+  reasoning: ReasoningLevel;
+  maxOutputTokens: number;
+  /** Thinking budget for `reasoning` plus the role's output reserve. */
+  requiredTokens: number;
+}
+
+function resolveThinkingBudgetTokens(level: ReasoningLevel, lightThinkingTokens: number, deepThinkingTokens: number): number {
+  switch (level) {
+    case 'none': return 0;
+    case 'low': return lightThinkingTokens;
+    case 'medium': return resolveMediumThinkingTokens(lightThinkingTokens, deepThinkingTokens);
+    case 'high': return deepThinkingTokens;
+  }
+}
+
+/**
+ * D21 (C): models that cannot fit the thinking budget of the chosen (or style default) reasoning level plus the output
+ * reserve, so replies may be cut off. Uses the token-budget formula, applied to every model in the built-in table.
+ * Only the built-in DEFAULT_MAX_OUTPUT_TOKENS_BY_MODEL table is checked: operator `llm.maxOutputTokensByModel`
+ * overrides and the operator default for unknown models are not visible to the web, so those models are not warned about.
+ */
+export function findModelOutputLimitShortfalls(params: {
+  style: AgentStyleValue;
+  overrides: RuntimePolicyOverrides | null | undefined;
+  lightModel: string | null | undefined;
+  heavyModel: string | null | undefined;
+}): ModelOutputLimitShortfall[] {
+  const policy = resolveAgentRuntimePolicy(params.style, params.overrides);
+  const checks = [
+    { role: 'scout' as const, model: params.lightModel, reasoning: policy.scoutReasoning, reserveTokens: policy.scoutOutputReserveTokens },
+    { role: 'judge' as const, model: params.heavyModel, reasoning: policy.judgeReasoning, reserveTokens: policy.judgeOutputReserveTokens },
+  ];
+  const shortfalls: ModelOutputLimitShortfall[] = [];
+  for (const { role, model, reasoning, reserveTokens } of checks) {
+    const maxOutputTokens = model ? findModelMaxOutputTokens(model) : undefined;
+    if (maxOutputTokens === undefined) continue;
+    const requiredTokens = resolveThinkingBudgetTokens(reasoning, policy.lightThinkingTokens, policy.deepThinkingTokens) + reserveTokens;
+    if (requiredTokens > maxOutputTokens) {
+      shortfalls.push({ role, reasoning, maxOutputTokens, requiredTokens });
+    }
+  }
+  return shortfalls;
 }
 
 /**

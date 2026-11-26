@@ -29,6 +29,7 @@ import { AgentFormBody, AgentIdentityFields } from './AgentFormBody.js';
 import { NotificationsBlock } from '../notifications/NotificationsBlock.js';
 import { type AgentFormState, agentToFormState } from './agent-form-state.js';
 import { RuntimePolicySection } from './RuntimePolicySection.js';
+import { ModelOutputLimitWarning } from './ModelOutputLimitWarning.js';
 import { AgentConnectionField } from './AgentConnectionField.js';
 import {
   saveEditAgentOAuthDraft,
@@ -135,10 +136,11 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
 
   // Resolve the effective reasoning levels for display in the model override section.
   // If the agent has an explicit override in runtimePolicyOverrides, use that.
-  // Otherwise, show the inherited value from saved AI settings (or fallback defaults).
+  // Otherwise the runtime uses the style default (D22); saved AI settings apply only when an agent is created.
   const resolvedRuntimeOverrides = runtimePolicyOverrides ?? {};
-  const inheritedScoutReasoning = inheritedModelSettings?.scoutReasoning ?? 'none';
-  const inheritedJudgeReasoning = inheritedModelSettings?.judgeReasoning ?? 'medium';
+  const styleDefaults = resolveStyleDefaults(style);
+  const inheritedScoutReasoning = intl.formatMessage({ id: `aiModels.reasoning.${styleDefaults.scoutReasoning}` });
+  const inheritedJudgeReasoning = intl.formatMessage({ id: `aiModels.reasoning.${styleDefaults.judgeReasoning}` });
   const effectiveScoutReasoning = (resolvedRuntimeOverrides.scoutReasoning as string | null) ?? null;
   const effectiveJudgeReasoning = (resolvedRuntimeOverrides.judgeReasoning as string | null) ?? null;
 
@@ -838,6 +840,17 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                       </div>
                     </>
                   )}
+
+                  <ModelOutputLimitWarning
+                    style={style}
+                    overrides={runtimePolicyOverrides}
+                    lightModel={modelOverrideEnabled
+                      ? modelForm.lightModel
+                      : (inheritedModelSettings?.lightModel ?? availableModelsQuery.data?.defaults?.lightModel)}
+                    heavyModel={modelOverrideEnabled
+                      ? modelForm.heavyModel
+                      : (inheritedModelSettings?.heavyModel ?? availableModelsQuery.data?.defaults?.heavyModel)}
+                  />
                 </div>
               ) : null
             }

@@ -99,7 +99,7 @@ For every message a user (or a child's creator) sends, the agent reports an outc
 
 ## Behaviour (what the user and the operator will see)
 
-1. A model call always has room for an answer after thinking. When an answer is still cut off, the platform retries once with less thinking and a hint to make smaller tool calls, instead of resending the same request.
+1. A model call always has room for an answer after thinking. When an answer is still cut off, the platform retries once at the same reasoning level with a hint to make smaller tool calls, instead of resending the same request (D21).
 2. A user message is received. The agent replies as today. If the reply is an acknowledgement and the agent then works, an outcome stays owed.
 3. While the agent works, each model call shows it one line: when it last told the user something and that the outcome is still owed.
 4. Before the run ends (no tool call, or `finish_run`) after work since its last message, the agent is asked once, with the concrete facts, to tell the user what is done, what remains and when they will hear next.
@@ -132,9 +132,9 @@ For every message a user (or a child's creator) sends, the agent reports an outc
 
 **A2. Cut-off recovery (R0).** When a judge or scout call ends with finish reason `length`, either as an empty reply or as `llm.invalid_tool_args` from cut-off arguments:
 
-- Retry at most `llm.lengthRecovery.maxRetries` (default 1) times per turn with the reasoning level one step lower (`high` → `medium` → `low`) and a turn-context line: "Your last response was cut off at the output limit. Think briefly and make smaller tool calls (split long file content across `append_file` calls)." This replaces the current retry of the same request for that cause only. Other causes keep today's retry.
+- Retry at most `llm.lengthRecovery.maxRetries` (default 1) times per turn at the same reasoning level (no step-down, D21) and a turn-context line: "Your last response was cut off at the output limit. Think briefly and make smaller tool calls (split long file content across `append_file` calls)." This replaces the current retry of the same request for that cause only. Other causes keep today's retry.
 - An empty reply with finish reason `length` is not the end of the run. After the recovery retries are used, it is handled like any other stop (B and C apply).
-- Log each recovery with the old and new reasoning level.
+- Log each recovery with the reasoning level (unchanged, per D21).
 - Find the exact retry site before implementing (the "Retrying judge LLM call after backoff" path in `structured-tool-loop.ts` or `packages/llm`).
 
 **A3. Instructions block** (`runtime-composition.ts`, about line 2723). Add this before "After responding, continue your job, if any.", which is kept. As shipped, it is scoped to requests so routine wakes send nothing extra; "the user" is `${reader}` ("your creator or user" for a child):
@@ -315,7 +315,7 @@ followThrough: z.object({
 |---|---|---|
 | 1 | `packages/domain/src/config/schema.ts` | Token values, reserves, ceilings, the D13 rule in `resolveAgentRuntimePolicy`, `llm.lengthRecovery`, `llm.timeoutMsPerOutputToken` |
 | 1 | `packages/llm/src/*` (verify) | Per-model `maxOutputTokens` and clamping; scaled timeout |
-| 1 | `apps/worker/src/structured-tool-loop.ts` (verify retry site) | `length` recovery: lower reasoning, hint line, one retry |
+| 1 | `apps/worker/src/structured-tool-loop.ts` (verify retry site) | `length` recovery: hint line, one retry at the same level (D21) |
 | 1 | `apps/worker/src/agent.ts` | Empty `length` reply handling; `lengthRecoveries` on the judge event |
 | 1 | `apps/worker/src/runtime-composition.ts` | Instructions text (R1) |
 | 1 | `packages/domain/src/skills.ts` | `BASE_SKILL` sentence and `LONG_RUNNING_TASK_SKILL` text |
@@ -386,7 +386,7 @@ followThrough: z.object({
 
 Phase 1:
 - Schema: every style default and the ceilings satisfy the D13 rule; an override below the rule is raised; the scaled timeout; clamping to a model's maximum output.
-- Length recovery: a cut-off tool call is retried once with a lower reasoning level and the hint; an empty `length` reply is retried, not ended; other failure causes keep today's retry; `maxRetries: 0` behaves as today; `lengthRecoveries` is counted on the event.
+- Length recovery: a cut-off tool call is retried once at the same reasoning level with the hint (D21); an empty `length` reply is retried, not ended; other failure causes keep today's retry; `maxRetries: 0` behaves as today; `lengthRecoveries` is counted on the event.
 - `runtime-composition.test.ts`, `skills.test.ts`: the new text.
 
 Phase 2:
@@ -524,7 +524,7 @@ Phase 1:
 - [x] DONE WP4 Measurement in the `evaluate-*` skills
 - [x] DONE WP5 Phase 1 docs and CHANGELOG; full test, lint and build
 - [x] DONE WP7 Reasoning follows the user's choice (D20, D21, D23): adaptive mapping, generic triggers, no step-downs, explicit off, event fields
-- [ ] PENDING WP8 Style reasoning defaults and settings (D21 C, D22): defaults, create screen, settings warning
+- [x] DONE WP8 Style reasoning defaults and settings (D21 C, D22): defaults, create screen, settings warning (migration 0094 dropped by owner: pre-launch, no existing agents to migrate)
 - [ ] NOT STARTED (needs a staging deploy and a week of traffic; owner-run) WP6 Staging week, `results.md` and gate decision
 
 Phase 2 (if the gate calls for it):
@@ -544,6 +544,14 @@ Phase 3 (if the gate calls for it):
 
 - Not checked while drafting (verify before implementing): the retry site for `llm.invalid_tool_args`; whether any LLM call is streamed; where a per-model output maximum should live; where user messages are captured (`agent.ts` about lines 3056 to 3190); the tick-failure path for marking a failed run; where per-agent Redis keys are cleaned up on delete; the web chat component and how it receives activity updates; whether the tick gate lets a `reminder` wake through while a run is active.
 - Unrelated defects from Phase 0, to file separately: trading reads on a non-trading agent's ticks; Conversation section ordering (`#26c7f840` before `#cf8ca737`).
+
+### WP8 Style defaults and settings (from the review, after the migration was dropped)
+
+- Decided by the owner: the settings warning stays approximate for Claude models (the worker decides their thinking size; the web applies the token-budget formula to every model in the built-in table). Keep as a known approximation.
+- Decided by the owner: no step-downs for lighter runs (WP7 kept as built).
+- Not covered: operator `llm.maxOutputTokensByModel` overrides are invisible to the web, so those models are not warned about; unknown models are not checked.
+- Not yet done: the visual pass (create → Advanced → AI labels; warning on `anthropic/claude-opus-4` at bold high vs low; edit modal; Settings "Agent style default"; Arabic RTL; warning banner in light and dark mode). Lint, build and unit tests pass.
+- Migration `0094_reset_unchosen_ai_reasoning` was dropped: pre-launch, existing agents read their own `resolvedRuntimePolicy`, and the saved user settings only pre-fill new agents.
 
 ### WP1 Output budget (from the last code review, no critical or high)
 

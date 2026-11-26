@@ -39,6 +39,7 @@ import { intentToFormState } from './agent-form-state.js';
 import { defaultTechnicalConfigFormState, technicalFormStateToPayload, type TechnicalConfigFormState } from './technical-config-helpers.js';
 import { validateCreateAgentForm, type ValidationConstraints } from './form-validation.js';
 import { RuntimePolicySection } from './RuntimePolicySection.js';
+import { ModelOutputLimitWarning } from './ModelOutputLimitWarning.js';
 
 
 import { VENUE_TYPE_MAP, buildVenueTypeMap } from './venue-mapping.js';
@@ -872,14 +873,22 @@ export function CreateAgentFlow({
                     }}
                   />
 
+                  <ModelOutputLimitWarning
+                    style={intent.style}
+                    overrides={intent.runtimePolicyOverrides}
+                    lightModel={intent.lightModel}
+                    heavyModel={intent.heavyModel}
+                  />
+
                   {/* Reasoning level dropdowns */}
                   {(() => {
-                    const savedReasoning = aiSettingsQuery.data?.aiModelConfig;
                     const overrides = intent.runtimePolicyOverrides ?? {};
                     const scoutVal = (overrides.scoutReasoning as string | null) ?? null;
                     const judgeVal = (overrides.judgeReasoning as string | null) ?? null;
-                    const inheritedScout = savedReasoning?.scoutReasoning ?? 'none';
-                    const inheritedJudge = savedReasoning?.judgeReasoning ?? 'medium';
+                    // A level saved in AI settings is copied into the overrides on load, so "inherit" runs the style default (D22).
+                    const styleDefaults = resolveStyleDefaults(intent.style);
+                    const inheritedScout = intl.formatMessage({ id: `aiModels.reasoning.${styleDefaults.scoutReasoning}` });
+                    const inheritedJudge = intl.formatMessage({ id: `aiModels.reasoning.${styleDefaults.judgeReasoning}` });
 
                     return (
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -1372,8 +1381,9 @@ export function CreateAgentFlow({
             )}
             {SHOW_FULL_CREATE_REVIEW && showIntelligence && (() => {
               const overrides = intent.runtimePolicyOverrides ?? {};
-              const scoutReasoning = (overrides.scoutReasoning as string | undefined) ?? (aiSettingsQuery.data?.aiModelConfig?.scoutReasoning ?? 'none');
-              const judgeReasoning = (overrides.judgeReasoning as string | undefined) ?? (aiSettingsQuery.data?.aiModelConfig?.judgeReasoning ?? 'medium');
+              const styleDefaults = resolveStyleDefaults(intent.style);
+              const scoutReasoning = overrides.scoutReasoning ?? styleDefaults.scoutReasoning;
+              const judgeReasoning = overrides.judgeReasoning ?? styleDefaults.judgeReasoning;
               const scoutLabel = intl.formatMessage({ id: `aiModels.reasoning.${scoutReasoning}` });
               const judgeLabel = intl.formatMessage({ id: `aiModels.reasoning.${judgeReasoning}` });
               const isOverridden = (overrides.scoutReasoning != null || overrides.judgeReasoning != null);

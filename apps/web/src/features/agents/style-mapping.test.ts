@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { deriveStyleMaxHoldDurationMs } from '@herobids/domain';
 import {
+  findModelOutputLimitShortfalls,
   formatStyleSummary,
   resolveModelPricing,
   resolveStyleDefaults,
@@ -394,5 +395,98 @@ describe('skip-unchanged defaults (D9)', () => {
   it('defaults to true for a trading agent and false otherwise', () => {
     expect(resolveDefaultSkipUnchangedTicks(true)).toBe(true);
     expect(resolveDefaultSkipUnchangedTicks(false)).toBe(false);
+  });
+});
+
+describe('style reasoning defaults (D22)', () => {
+  it('exposes the per-style scout and judge reasoning the runtime uses when no level is set', () => {
+    expect(resolveStyleDefaults('careful')).toMatchObject({ scoutReasoning: 'none', judgeReasoning: 'low' });
+    expect(resolveStyleDefaults('balanced')).toMatchObject({ scoutReasoning: 'low', judgeReasoning: 'medium' });
+    expect(resolveStyleDefaults('bold')).toMatchObject({ scoutReasoning: 'medium', judgeReasoning: 'high' });
+  });
+});
+
+describe('findModelOutputLimitShortfalls (D21 C)', () => {
+  const opus4 = 'anthropic/claude-opus-4'; // 32,000 output tokens
+
+  it('warns about a judge model that cannot fit the deep thinking budget plus the judge reserve at high reasoning', () => {
+    // bold: deep 32,768 + judge reserve 16,384
+    expect(findModelOutputLimitShortfalls({
+      style: 'bold',
+      overrides: { judgeReasoning: 'high' },
+      lightModel: 'xiaomi/mimo-v2.6-flash',
+      heavyModel: opus4,
+    })).toEqual([{ role: 'judge', reasoning: 'high', maxOutputTokens: 32_000, requiredTokens: 49_152 }]);
+  });
+
+  it('uses the style default reasoning level when none is chosen', () => {
+    expect(findModelOutputLimitShortfalls({ style: 'bold', overrides: null, lightModel: '', heavyModel: opus4 }))
+      .toEqual([{ role: 'judge', reasoning: 'high', maxOutputTokens: 32_000, requiredTokens: 49_152 }]);
+  });
+
+  it('does not warn when the chosen lower level fits the model', () => {
+    // bold judge low: light 8,192 + judge reserve 16,384 = 24,576 <= 32,000
+    expect(findModelOutputLimitShortfalls({
+      style: 'bold',
+      overrides: { judgeReasoning: 'low' },
+      lightModel: '',
+      heavyModel: opus4,
+    })).toEqual([]);
+  });
+
+  it('sizes medium reasoning at the midpoint of the light and deep budgets', () => {
+    // balanced scout medium: round((4,096 + 20,480) / 2) + scout reserve 4,096 = 16,384
+    expect(findModelOutputLimitShortfalls({
+      style: 'balanced',
+      overrides: { scoutReasoning: 'medium' },
+      lightModel: 'anthropic/claude-3.5-haiku',
+      heavyModel: 'anthropic/claude-haiku-5.5',
+    })).toEqual([{ role: 'scout', reasoning: 'medium', maxOutputTokens: 8_192, requiredTokens: 16_384 }]);
+  });
+
+  it('counts no thinking at reasoning none, only the reserve', () => {
+    // careful scout none: 0 + scout reserve 4,096 fits a 4,096-token model; low adds light 2,048
+    expect(findModelOutputLimitShortfalls({
+      style: 'careful',
+      overrides: null,
+      lightModel: 'claude-3-haiku-20240307',
+      heavyModel: '',
+    })).toEqual([]);
+    expect(findModelOutputLimitShortfalls({
+      style: 'careful',
+      overrides: { scoutReasoning: 'low' },
+      lightModel: 'claude-3-haiku-20240307',
+      heavyModel: '',
+    })).toEqual([{ role: 'scout', reasoning: 'low', maxOutputTokens: 4_096, requiredTokens: 6_144 }]);
+  });
+
+  it('reports nothing for the default models on any style', () => {
+    for (const style of ['careful', 'balanced', 'bold'] as const) {
+      expect(findModelOutputLimitShortfalls({
+        style,
+        overrides: null,
+        lightModel: 'xiaomi/mimo-v2.6-flash',
+        heavyModel: 'anthropic/claude-haiku-5.5',
+      })).toEqual([]);
+    }
+  });
+
+  it('uses the override thinking budget instead of the style budget', () => {
+    // bold judge high with deep 8,192: 8,192 + 16,384 = 24,576 <= 32,000
+    expect(findModelOutputLimitShortfalls({
+      style: 'bold',
+      overrides: { deepThinkingTokens: 8_192 },
+      lightModel: '',
+      heavyModel: opus4,
+    })).toEqual([]);
+  });
+
+  it('does not warn for a model that is not in the table, or when no model is selected', () => {
+    expect(findModelOutputLimitShortfalls({
+      style: 'bold',
+      overrides: null,
+      lightModel: 'qwen3:8b',
+      heavyModel: '',
+    })).toEqual([]);
   });
 });

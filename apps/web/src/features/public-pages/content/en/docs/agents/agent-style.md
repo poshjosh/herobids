@@ -43,10 +43,12 @@ At 20 seconds per turn, 50 scout turns is about 17 minutes and 500 judge turns i
 
 | | **Careful** | **Balanced** | **Bold** |
 |---|---|---|---|
-| **Economy (scout) reasoning** | Medium | Medium | Medium |
-| **Judge reasoning** | Medium | High | High |
+| **Economy (scout) reasoning** | None | Low | Medium |
+| **Judge reasoning** | Low | Medium | High |
 
-Economy models already keep costs low, so every style uses at least medium reasoning for the economy model.
+These are the levels an agent uses when you do not choose one. A level you choose in the agent's AI settings is kept and used exactly, and the create screen shows the style's levels as the default.
+
+If the selected economy or premium model can write fewer tokens per reply than the thinking budget for the agent's scout or judge reasoning level (none: 0, low: light, medium: halfway between light and deep, high: deep) plus that role's output reserve, the create screen and the agent's edit screen show a warning: replies may be cut off. Choose a larger model, a lower reasoning level or a lower style.
 
 ### Active Hours
 

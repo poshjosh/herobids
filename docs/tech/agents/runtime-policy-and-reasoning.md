@@ -42,8 +42,8 @@ Three styles define the baseline. All numeric values are backed by
 | `deepThinkingTokens` | 10 240 | 20 480 | 32 768 ¹ |
 | `scoutOutputReserveTokens` | 4 096 | 4 096 | 4 096 |
 | `judgeOutputReserveTokens` | 16 384 | 16 384 | 16 384 |
-| `scoutReasoning` | medium | medium | medium |
-| `judgeReasoning` | medium | high | high |
+| `scoutReasoning` | none | low | medium |
+| `judgeReasoning` | low | medium | high |
 | `adaptScoutReasoning` | true | true | true |
 | `adaptJudgeReasoning` | true | true | true |
 | `allowedHoursUtc` | [] (all) | [] (all) | [] (all) |
@@ -256,6 +256,29 @@ and the judge:
 
 Adaptive is `adaptScoutReasoning` / `adaptJudgeReasoning` (default `true`). A user who picks `medium` gets
 `medium` on an important run, never `high`.
+
+#### Where the level comes from (D22)
+
+An agent with no explicit level uses its style default (table above): careful scout `none`, judge `low`;
+balanced scout `low`, judge `medium`; bold scout `medium`, judge `high`. Token limits stay sized for the
+highest level a user may choose, so an explicit level is kept and honoured exactly. The worker falls back to
+the balanced defaults only when no resolved policy reached it.
+
+The create screen and the edit modal show the style default as the "Style default (…)" option. The user's
+Settings page offers "Agent style default" for each level; that saves `null`, so a new agent keeps its style
+default. A level chosen there is copied into a new agent's overrides when it is created; it does not change
+existing agents.
+
+#### Model output warning (D21 C)
+
+The AI section of the create screen and the edit modal warns, without blocking, when the thinking budget for
+the chosen (or style default) reasoning level plus that role's output reserve is more than the selected economy
+or premium model's maximum output (`findModelMaxOutputTokens`, `DEFAULT_MAX_OUTPUT_TOKENS_BY_MODEL` in
+`packages/domain/src/config/schema.ts`). The thinking budget per level is: none 0, low light, medium halfway
+between light and deep, high deep. Only models in the built-in table are checked; operator entries in
+`llm.maxOutputTokensByModel` and the default for unknown models are not known to the web. The model maximum is
+matched the same way as in the worker (`resolveModelMaxOutputTokens` in `packages/llm/src/output-budget.ts`).
+For Claude models the thinking size is chosen by the model, so this check is an approximation.
 
 #### Run classification: `classifyTickRun()`
 

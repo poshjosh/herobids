@@ -10,7 +10,7 @@ import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from './ModelSelectionFields.js';
 import { NotificationsBlock } from '../notifications/NotificationsBlock.js';
 import { EmailFallbackToggle } from '../notifications/EmailFallbackToggle.js';
-import { EMPTY_AI_MODEL_SELECTION, createClearedAiModelSettings, normalizeAiModelSelection, shouldDisableAiModelSave, type AiModelSelectionState } from './ai-model-settings.js';
+import { EMPTY_AI_MODEL_SELECTION, createClearedAiModelSettings, normalizeAiModelSelection, shouldDisableAiModelSave, toAiModelSettingsUpdate, type AiModelSelectionState } from './ai-model-settings.js';
 
 const LOCALE_DISPLAY_NAMES: Record<SupportedLocale, string> = {
   en: 'English',
@@ -192,15 +192,7 @@ export function SettingsPage() {
             onSubmit={(e) => {
               e.preventDefault();
               setModelTouched(true);
-              modelMutation.mutate({
-                provider: modelSettings.provider,
-                lightModel: modelSettings.lightModel,
-                heavyModel: modelSettings.heavyModel,
-                scoutReasoning: modelSettings.scoutReasoning ?? null,
-                judgeReasoning: modelSettings.judgeReasoning ?? null,
-                adaptScoutReasoning: modelSettings.adaptScoutReasoning,
-                adaptJudgeReasoning: modelSettings.adaptJudgeReasoning,
-              });
+              modelMutation.mutate(toAiModelSettingsUpdate(modelSettings));
             }}
             style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}
           >
@@ -235,6 +227,7 @@ export function SettingsPage() {
                   }}
                   style={{ ...inputStyle, cursor: 'pointer' }}
                 >
+                  <option value="">{intl.formatMessage({ id: 'aiModels.reasoning.styleDefault' })}</option>
                   {getAllowedReasoningLevels(RUNTIME_POLICY_CEILINGS.scoutReasoningMax).map((level) => (
                     <option key={level} value={level}>{intl.formatMessage({ id: `aiModels.reasoning.${level}` })}</option>
                   ))}
@@ -254,6 +247,7 @@ export function SettingsPage() {
                   }}
                   style={{ ...inputStyle, cursor: 'pointer' }}
                 >
+                  <option value="">{intl.formatMessage({ id: 'aiModels.reasoning.styleDefault' })}</option>
                   <option value="none">{intl.formatMessage({ id: 'aiModels.reasoning.none' })}</option>
                   <option value="low">{intl.formatMessage({ id: 'aiModels.reasoning.low' })}</option>
                   <option value="medium">{intl.formatMessage({ id: 'aiModels.reasoning.medium' })}</option>

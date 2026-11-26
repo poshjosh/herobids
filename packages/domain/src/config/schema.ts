@@ -207,10 +207,46 @@ export const DEFAULT_MAX_OUTPUT_TOKENS_BY_MODEL: Readonly<Record<string, number>
   'claude-opus-4-8': 128_000,
   'claude-opus-5': 128_000,
   'claude-fable-5': 128_000,
+  'mimo-v2-6-flash': 131_072,
 };
 
 function normalizeModelKey(key: string): string {
   return key.toLowerCase().replace(/\./g, '-');
+}
+
+const MODEL_KEY_BOUNDARIES = new Set(['-', ':', '@', '/']);
+
+function modelContainsKey(model: string, key: string): boolean {
+  for (let index = model.indexOf(key); index !== -1; index = model.indexOf(key, index + 1)) {
+    const previous = index === 0 ? undefined : model[index - 1];
+    const next = model[index + key.length];
+    const startsAtBoundary = previous === undefined || MODEL_KEY_BOUNDARIES.has(previous);
+    const endsAtBoundary = next === undefined || MODEL_KEY_BOUNDARIES.has(next);
+    if (startsAtBoundary && endsAtBoundary) return true;
+  }
+  return false;
+}
+
+/**
+ * Most output tokens of a model in the table (longest matching key wins), or undefined for a model not in it.
+ * Same matching rule as resolveModelMaxOutputTokens in packages/llm/src/output-budget.ts (llm does not depend on
+ * domain); the web uses this to warn when a model cannot fit a style's output limit.
+ */
+export function findModelMaxOutputTokens(
+  model: string,
+  maxOutputTokensByModel: Readonly<Record<string, number>> = DEFAULT_MAX_OUTPUT_TOKENS_BY_MODEL,
+): number | undefined {
+  const normalizedModel = normalizeModelKey(model);
+  let matchedKeyLength = 0;
+  let maxOutputTokens: number | undefined;
+  for (const [key, tokens] of Object.entries(maxOutputTokensByModel)) {
+    const normalizedKey = normalizeModelKey(key);
+    if (normalizedKey.length > matchedKeyLength && modelContainsKey(normalizedModel, normalizedKey)) {
+      matchedKeyLength = normalizedKey.length;
+      maxOutputTokens = tokens;
+    }
+  }
+  return maxOutputTokens;
 }
 
 /** Output-token limits and timeout scaling for judge and scout calls. */
@@ -417,8 +453,8 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     deepThinkingTokens: 10_240,
     scoutOutputReserveTokens: 4_096,
     judgeOutputReserveTokens: 16_384,
-    scoutReasoning: 'medium',
-    judgeReasoning: 'medium',
+    scoutReasoning: 'none',
+    judgeReasoning: 'low',
     adaptScoutReasoning: true,
     adaptJudgeReasoning: true,
     allowedHoursUtc: [],
@@ -448,8 +484,8 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     deepThinkingTokens: 20_480,
     scoutOutputReserveTokens: 4_096,
     judgeOutputReserveTokens: 16_384,
-    scoutReasoning: 'medium',
-    judgeReasoning: 'high',
+    scoutReasoning: 'low',
+    judgeReasoning: 'medium',
     adaptScoutReasoning: true,
     adaptJudgeReasoning: true,
     allowedHoursUtc: [],
