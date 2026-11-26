@@ -2720,6 +2720,7 @@ export function buildSystemPrompt(state: RuntimeCompositionState, timing: Prompt
     `Check if ${reader} has sent a message, to which you have not yet responded.`,
     'Reply to such message(s) using `send_message`. Respond even if it is unrelated to your job.',
     `Text you write outside a tool call isn't shown to ${reader}. Use \`send_message\` for any text ${reader} should read. If you reply in plain text instead, wrap only the text ${reader} should read in <reply>…</reply> tags.`,
+    `An acknowledgement is not an outcome. When ${reader} asks for work that takes more than a moment, say so in one \`send_message\` (what you will do, and when you will next update them), and send another when you finish or when you cannot finish this run. Do not end a run while you owe ${reader} an outcome for a request. If you cannot finish, say what is done, what remains and when you will continue.`,
     'After responding, continue your job, if any. If there is nothing to answer and nothing to do, respond with a short status update.',
     CHECK_IN_AND_QUESTION_GUIDANCE,
   ]

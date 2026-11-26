@@ -161,6 +161,9 @@ describe('runtime composition helpers', () => {
     expect(childPrompt).not.toContain('Check if the user has sent a message');
     expect(topLevelPrompt).toContain('Check if the user has sent a message');
     expect(topLevelPrompt).not.toContain('your creator or user');
+    expect(childPrompt).toContain('When your creator or user asks for work that takes more than a moment');
+    expect(childPrompt).toContain('Do not end a run while you owe your creator or user an outcome for a request.');
+    expect(topLevelPrompt).toContain('Do not end a run while you owe the user an outcome for a request.');
   });
 
   it('renders the runtime prompt from typed descriptor state', () => {
@@ -192,6 +195,10 @@ describe('runtime composition helpers', () => {
     expect(prompt).toContain('Reply to such message(s) using `send_message`. Respond even if it is unrelated to your job.');
     expect(prompt).toContain('Text you write outside a tool call isn\'t shown to the user.');
     expect(prompt).toContain('wrap only the text the user should read in <reply>…</reply> tags.');
+    expect(prompt).toContain('An acknowledgement is not an outcome. When the user asks for work that takes more than a moment, say so in one `send_message` (what you will do, and when you will next update them), and send another when you finish or when you cannot finish this run.');
+    expect(prompt).toContain('If you cannot finish, say what is done, what remains and when you will continue.');
+    expect(prompt).toContain('After responding, continue your job, if any. If there is nothing to answer and nothing to do, respond with a short status update.');
+    expect(prompt).not.toContain('When you start work');
     expect(prompt).toContain('## Daily Check-in');
     expect(prompt).toContain('by 09:00 in the user\'s local timezone');
     expect(prompt).toContain('Send only one check-in per day.');

@@ -464,6 +464,22 @@ describe('LONG_RUNNING_TASK_SKILL', () => {
     expect(longRunningStep(6)).toContain('If units are still pending, go back to step 5, unless a stop condition is met: then go to step 7.');
     expect(longRunningStep(6)).toContain('if you created some and no stop condition is met, go back to step 5, otherwise go on to step 7.');
   });
+  it('turns a user request that woke the run into units, ending with telling the user the outcome', () => {
+    expect(longRunningStep(1)).toContain(
+      'If a user message woke you and asks for work the goal\'s units do not already cover, add it as units titled `[<campaign>] <request>` (after step 2 if there is no index yet), the last one `[<campaign>] tell the user the outcome of <request>`, and do them before the other pending units. A stop request is handled in step 4. Once the phase is `ending` or `ended`, create no units: do the request now if it is quick, otherwise tell the user the goal is ending.',
+    );
+  });
+
+  it('does units for a user request before the other pending units', () => {
+    expect(longRunningStep(5)).toContain('Start with the first pending one, but do units for a user request (step 1) before the others.');
+  });
+
+  it('checks before finish_run that nothing promised to the user is left undone and untracked', () => {
+    const lastStep = longRunningStep(7);
+    expect(lastStep).toContain('Before `finish_run`, check that nothing you told the user you would do for a request is still undone. If something is, it must be a pending unit, and you must have told the user when they will hear next.');
+    expect(lastStep.indexOf('nothing you told the user')).toBeLessThan(lastStep.indexOf('then call `finish_run`.'));
+  });
+
   it('calls finish_run only when a stop condition is met or the goal has ended', () => {
     expect(longRunningStep(7)).toContain('Call it only when a stop condition is met or the goal has ended: do not use `waiting` while units are pending and none is met.');
   });
@@ -513,6 +529,23 @@ describe('BASE_SKILL — long-running task pointer', () => {
 
   it('does not bake the long-running protocol into the base prompt', () => {
     expect(BASE_SKILL.instructions).not.toContain('ltt/<campaign>');
+  });
+});
+
+describe('BASE_SKILL — follow-through', () => {
+  it('says that an acknowledgement is not an outcome, so the user hears how the work ended', () => {
+    const sentence =
+      'When you take on a request, saying you have started is not an outcome: when you finish it, or cannot finish it in this run, tell whoever asked (with `send_message`, or `message_peer_agent` for a peer agent).';
+    expect(BASE_SKILL.instructions).toContain(sentence);
+    // Its own line between the tool list and the general messaging rule, not a bullet of "You can also:".
+    expect(BASE_SKILL.instructions).toContain(`\n\n${sentence}\n\nAlways send the user a message`);
+  });
+
+  it('does not reference follow-through features that do not exist yet', () => {
+    for (const instructions of [BASE_SKILL.instructions, LONG_RUNNING_TASK_SKILL.instructions]) {
+      expect(instructions).not.toContain('owed outcome');
+      expect(instructions).not.toContain('nextUpdateInMinutes');
+    }
   });
 });
 

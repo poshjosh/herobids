@@ -130,15 +130,15 @@ For every message a user (or a child's creator) sends, the agent reports an outc
 - Log each recovery with the old and new reasoning level.
 - Find the exact retry site before implementing (the "Retrying judge LLM call after backoff" path in `structured-tool-loop.ts` or `packages/llm`).
 
-**A3. Instructions block** (`runtime-composition.ts`, about line 2723). Replace "After responding, continue your job, if any." with:
+**A3. Instructions block** (`runtime-composition.ts`, about line 2723). Add this before "After responding, continue your job, if any.", which is kept. As shipped, it is scoped to requests so routine wakes send nothing extra; "the user" is `${reader}` ("your creator or user" for a child):
 
-> An acknowledgement is not an outcome. When you start work that takes more than a moment, use `send_message` to inform the user what you will do, and when you will next update them, and send another when you finish or when you cannot finish this run. Do not end a run while you owe the user an outcome. If you cannot finish, say what is done, what remains and when you will continue.
+> An acknowledgement is not an outcome. When the user asks for work that takes more than a moment, say so in one `send_message` (what you will do, and when you will next update them), and send another when you finish or when you cannot finish this run. Do not end a run while you owe the user an outcome for a request. If you cannot finish, say what is done, what remains and when you will continue.
 
 Update the test that pins this text (`runtime-composition.test.ts`, about line 192).
 
 **A4. Base skill** (`BASE_SKILL.instructions`, near the `send_message` line). Phase 1 adds the principle in one sentence. Phase 2 adds one short block on `status` and `nextUpdateInMinutes`. Re-measure the base-skill size and record it.
 
-**A5. `long-running-task`** (`skills.ts`), additive only, in EACH RUN:
+**A5. `long-running-task`** (`skills.ts`), additive only, in EACH RUN. Shipped in Phase 1 without the Phase 2 "owed outcome" clause. Step 1 as shipped: "If a user message woke you and asks for work the goal's units do not already cover, add it as units titled `[<campaign>] <request>` (after step 2 if there is no index yet), the last one `[<campaign>] tell the user the outcome of <request>`, and do them before the other pending units. A stop request is handled in step 4. Once the phase is `ending` or `ended`, create no units: do the request now if it is quick, otherwise tell the user the goal is ending." Step 5 does request units first. Step 7's check says "for a request". Original proposal:
 - Step 1: "If a user message woke you, or the Conversation section shows an owed outcome, add that request as a unit (a task) before other work, including a final unit 'tell the user the outcome'."
 - Step 7, before `finish_run`: "Check that nothing you told the user you would do is still undone. If something is, it must be a pending unit, and you must have told the user when they will hear next."
 
@@ -513,7 +513,7 @@ Phase 1:
 - [x] WP0 Evidence note for the 2026-11-25 run (`evidence.md`)
 - [x] DONE WP1 Output budget (A1)
 - [x] DONE WP2 Length recovery (A2) and `lengthRecoveries`
-- [ ] PENDING WP3 Instructions block, base-skill sentence and `long-running-task` text
+- [x] DONE WP3 Instructions block, base-skill sentence and `long-running-task` text
 - [ ] PENDING WP4 Measurement in the `evaluate-*` skills
 - [ ] PENDING WP5 Phase 1 docs and CHANGELOG; full test, lint and build
 - [ ] NOT STARTED (needs a staging deploy and a week of traffic; owner-run) WP6 Staging week, `results.md` and gate decision
@@ -552,4 +552,10 @@ Phase 3 (if the gate calls for it):
 - LOW: no test that `llm.lengthRecovery` reaches the agent through `agentRuntimeConfigJson` (and defaults when an older worker omits it).
 - LOW: `buildLengthRecovery` in `agent.ts` is not covered by a test; an integration test with a fake provider (cut-off, then recovery) checking `lengthRecoveries: 1` and single billing per call would cover it.
 - LOW (Phase 3): `lengthRecoveries` is not shown in the API activity view.
+
+### WP3 Text (from the last code review, no critical or high)
+
+- Measured sizes: `BASE_SKILL.instructions` 8,493 → 8,702 characters (+209); `LONG_RUNNING_TASK_SKILL` 6,465 → 7,186 (+721, only for agents with that skill); the Instructions block grows by about 330 characters on every judge prompt.
+- LOW: "Do not end a run while you owe the user an outcome" sits beside "send another … when you cannot finish this run"; consistent together, but could read "Do not end a run without telling the user the outcome, or what remains."
+- LOW: the runtime paragraph and the base-skill sentence state the same principle twice; revisit if prompt size matters.
 
