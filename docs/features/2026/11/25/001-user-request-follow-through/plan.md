@@ -1,6 +1,6 @@
 # User request follow-through: an agent always reports an outcome, without being told to
 
-Status: Revised 2026-11-26 after Phase 0 (`evidence.md`). Owner decisions D9 to D12 (2026-11-25) and D13 to D17 (2026-11-26) recorded. Phase 1 is built first; Phases 2 and 3 wait for the decision gate (D17). The token values in D13 were confirmed by the owner (O10, D18). O4, O7, O8 and O9 remain open. Phase 1 is being implemented.
+Status: Revised 2026-11-26 after Phase 0 (`evidence.md`). Owner decisions D9 to D12 (2026-11-25) and D13 to D17 (2026-11-26) recorded. Phase 1 is built first; Phases 2 and 3 wait for the decision gate (D17). The token values in D13 were confirmed by the owner (O10, D18). O4, O7, O8 and O9 remain open. Phase 1 (WP1 to WP5) is implemented; WP6, the staging week, is next.
 Date: 2026-11-25, revised 2026-11-26
 Follows: `docs/features/2026/11/17/001-continuation-guard/plan.md` (the `finish_run` tool, stop hook and nudge). This plan builds on that mechanism and does not replace it.
 
@@ -569,4 +569,10 @@ Phase 3 (if the gate calls for it):
 ### WP5 Docs (from the code review; its HIGH and MEDIUM findings were fixed)
 
 - None outstanding beyond the items above.
+
+### Phase 1 final review (no critical or high; owner decisions needed)
+
+- MEDIUM (owner decision): for token-budget (non-Claude) models, every scout call at `medium` steps down to `low` in every style, because the D13 scout rule covers light thinking only (`medium` = (light + deep) / 2 plus the reserve exceeds `scoutMaxTokens`). Options: size `scoutMaxTokens` for the scout's highest allowed level, or accept it.
+- MEDIUM (owner decision): for effort-based Claude models the reserve is not guaranteed after a clamp (e.g. `claude-opus-4`, 32,000 max, on the bold judge keeps `high` effort). Only length recovery covers it. Options: step effort down when a Claude request is clamped, or reword edge case 19. Watch FT2 cut-off counts for Claude agents in the staging week.
+- LOW: when the level is already `low`, a recovery retry differs only by the hint; the recovery log could say `levelUnchanged: true`.
 

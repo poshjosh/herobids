@@ -156,6 +156,11 @@ run. For cut-off tool arguments, length recovery uses at most `llm.lengthRecover
 of the retry policy's identical retries (default 1 instead of 2). An empty cut-off reply adds up to
 `maxRetries` calls per turn, where the run used to end silently.
 
+Rollback: release the previous worker and agent image together. Before that, clear any per-agent
+`judgeMaxTokens` override above 16,384 or `scoutMaxTokens` above 4,096 (the previous schema rejects them).
+Reverted token values in overrides take effect only once the previous worker runs, because this worker raises
+an override below thinking + reserve.
+
 Cost Review Checklist outcome (2026-11-26, Phase 1):
 - New `requestWakeDrivenTick()` path: no.
 - Conditional `instance.context.snapshot` emission: none added.
