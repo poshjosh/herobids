@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+
+## v0.11.5 - 2026-11-26
 ### Added
 - Length recovery for judge and scout calls. A call cut off at the output limit (finish reason `length` or `max_tokens`) is retried at the same reasoning level with a hint to think briefly: cut-off tool arguments no longer resend the same request, and an empty cut-off reply no longer ends the run silently. `agent.llm.completed` (judge) gains optional `lengthRecoveries`. See `docs/best-practices/agent-runtime.md` (Output Budget And Length Recovery); plan: `docs/features/2026/11/25/001-user-request-follow-through/plan.md`.
 - Runtime policy fields `judgeOutputReserveTokens` (default 16,384, ceiling 32,768) and `scoutOutputReserveTokens` (default 4,096, ceiling 8,192): the output tokens a call keeps free after thinking.
