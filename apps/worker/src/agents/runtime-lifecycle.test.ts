@@ -77,6 +77,29 @@ describe('buildAgentEnv', () => {
     expect(env['LLM_TIMEOUT_MS']).toBe('30000');
   });
 
+  it('raises LLM_TIMEOUT_MS to fit the largest resolved output limit, capped at the maximum call timeout', () => {
+    const config: AgentEnvConfig = { ...BASE_ENV_CONFIG, llmTimeoutMsPerOutputToken: 6, llmMaxCallTimeoutMs: 600_000 };
+    const agentConfigJson = JSON.stringify({ resolvedRuntimePolicy: { judgeMaxTokens: 49_152, scoutMaxTokens: 12_288 } });
+
+    const env = buildAgentEnv('agent-1', 'sess-1', agentConfigJson, '{}', config);
+    expect(env['LLM_TIMEOUT_MS']).toBe(String(49_152 * 6));
+    // The agent scales each call from the unscaled configured timeout.
+    expect(env['LLM_BASE_TIMEOUT_MS']).toBe('30000');
+    expect(buildAgentEnv('agent-1', 'sess-1', agentConfigJson, '{}', { ...config, llmMaxCallTimeoutMs: 120_000 })['LLM_TIMEOUT_MS'])
+      .toBe('120000');
+    // Without a resolved policy the configured timeout is kept.
+    expect(buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config)['LLM_TIMEOUT_MS']).toBe('30000');
+  });
+
+  it('keeps the configured LLM timeout when AGENT_CONFIG is not valid JSON', () => {
+    const config: AgentEnvConfig = { ...BASE_ENV_CONFIG, llmTimeoutMsPerOutputToken: 6, llmMaxCallTimeoutMs: 600_000 };
+
+    const env = buildAgentEnv('agent-1', 'sess-1', '{not json', '{}', config);
+
+    expect(env['LLM_TIMEOUT_MS']).toBe('30000');
+    expect(env['LLM_BASE_TIMEOUT_MS']).toBe('30000');
+  });
+
   it('omits optional LLM fields when absent', () => {
     const config: AgentEnvConfig = {
       redisUrl: 'redis://localhost:6379',

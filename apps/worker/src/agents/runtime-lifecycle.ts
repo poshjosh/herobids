@@ -1,4 +1,6 @@
 import type { RuntimeResourceProfile, RuntimeLaunchConfig, SharedServicesConfig } from '@herobids/domain';
+import { scaleTimeoutForOutput } from '@herobids/llm';
+import { z } from 'zod';
 
 // ── Agent Env Config ────────────────────────────────────────────────────────
 
@@ -16,6 +18,9 @@ export interface AgentEnvConfig {
   llmModel?: string;
   llmMaxTokens?: number;
   llmTimeoutMs?: number;
+  /** llm.timeoutMsPerOutputToken and llm.maxCallTimeoutMs: scale LLM_TIMEOUT_MS to the agent's largest output limit. */
+  llmTimeoutMsPerOutputToken?: number;
+  llmMaxCallTimeoutMs?: number;
   llmTickIntervalMs?: number;
   llmHeartbeatIntervalMs?: number;
   llmServerCostUsdPerHour?: number;
@@ -65,6 +70,40 @@ export interface AgentEnvConfig {
 }
 
 // ── Env Building ────────────────────────────────────────────────────────────
+
+/**
+ * LLM_TIMEOUT_MS for an agent container: the configured timeout, raised to fit the agent's largest output limit.
+ * An older agent image uses this value unscaled for every call, so it must already cover the raised limits.
+ * Returns the configured timeout when the scaling config or the agent's resolved policy is missing.
+ */
+export function resolveAgentLlmTimeoutMs(
+  config: Pick<AgentEnvConfig, 'llmTimeoutMs' | 'llmTimeoutMsPerOutputToken' | 'llmMaxCallTimeoutMs'>,
+  agentConfig: unknown,
+): number | undefined {
+  const { llmTimeoutMs, llmTimeoutMsPerOutputToken, llmMaxCallTimeoutMs } = config;
+  if (llmTimeoutMs == null || llmTimeoutMsPerOutputToken == null || llmMaxCallTimeoutMs == null) return llmTimeoutMs;
+  const parsed = AgentOutputLimitsSchema.safeParse(agentConfig);
+  if (!parsed.success) return llmTimeoutMs;
+  const { judgeMaxTokens, scoutMaxTokens } = parsed.data.resolvedRuntimePolicy;
+  return scaleTimeoutForOutput(
+    llmTimeoutMs,
+    Math.max(judgeMaxTokens, scoutMaxTokens),
+    llmTimeoutMsPerOutputToken,
+    llmMaxCallTimeoutMs,
+  );
+}
+
+const AgentOutputLimitsSchema = z.object({
+  resolvedRuntimePolicy: z.object({ judgeMaxTokens: z.number(), scoutMaxTokens: z.number() }),
+});
+
+function parseAgentConfigJson(agentConfigJson: string): unknown {
+  try {
+    return JSON.parse(agentConfigJson);
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Build agent runtime environment variables from OpenAIdom config.
@@ -127,7 +166,10 @@ export function buildAgentEnv(
   if (config.llmBaseUrl) envOut['LLM_BASE_URL'] = config.llmBaseUrl;
   if (config.llmModel) envOut['LLM_MODEL'] = config.llmModel;
   if (config.llmMaxTokens != null) envOut['LLM_MAX_TOKENS'] = String(config.llmMaxTokens);
-  if (config.llmTimeoutMs != null) envOut['LLM_TIMEOUT_MS'] = String(config.llmTimeoutMs);
+  const llmTimeoutMs = resolveAgentLlmTimeoutMs(config, parseAgentConfigJson(agentConfigJson));
+  if (llmTimeoutMs != null) envOut['LLM_TIMEOUT_MS'] = String(llmTimeoutMs);
+  // Unscaled base for per-call timeout scaling in the agent; LLM_TIMEOUT_MS stays scaled for older images.
+  if (config.llmTimeoutMs != null) envOut['LLM_BASE_TIMEOUT_MS'] = String(config.llmTimeoutMs);
   if (config.llmTickIntervalMs != null) envOut['TICK_INTERVAL_MS'] = String(config.llmTickIntervalMs);
   if (config.llmHeartbeatIntervalMs != null) envOut['HEARTBEAT_INTERVAL_MS'] = String(config.llmHeartbeatIntervalMs);
   if (config.llmServerCostUsdPerHour != null) envOut['LLM_SERVER_COST_USD_PER_HOUR'] = String(config.llmServerCostUsdPerHour);

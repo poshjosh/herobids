@@ -416,6 +416,24 @@ describe('DockerAgentManager — LLM env forwarding (bug #22)', () => {
     const env = getContainerEnv(fetchMock);
     expect(env).toContain('LLM_BASE_URL=https://openrouter.ai/api/v1');
   });
+
+  it('scales LLM_TIMEOUT_MS to the largest output limit and sends the configured timeout as LLM_BASE_TIMEOUT_MS', async () => {
+    const fetchMock = makeFetchForStart();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const manager = new DockerAgentManager(
+      { ...BASE_CONFIG, llmTimeoutMs: 60_000, llmTimeoutMsPerOutputToken: 6, llmMaxCallTimeoutMs: 600_000 },
+      makeAgentRepo() as any,
+    );
+    await manager.start({
+      ...SPEC,
+      agentConfig: { goal: 'test', resolvedRuntimePolicy: { judgeMaxTokens: 49_152, scoutMaxTokens: 12_288 } },
+    });
+
+    const env = getContainerEnv(fetchMock);
+    expect(env).toContain('LLM_TIMEOUT_MS=294912');
+    expect(env).toContain('LLM_BASE_TIMEOUT_MS=60000');
+  });
 });
 
 // ---------------------------------------------------------------------------

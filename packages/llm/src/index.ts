@@ -5,7 +5,14 @@ export {
   isAdaptiveThinkingOnlyModel,
   isClaudeModel,
   resolveReasoningParams,
+  resolveReasoningBudgetTokens,
 } from './llm-provider.js';
+export {
+  resolveModelMaxOutputTokens,
+  resolveLlmCallOutputBudget,
+  scaleTimeoutForOutput,
+} from './output-budget.js';
+export type { OutputBudgetConfig, LlmCallOutputBudget } from './output-budget.js';
 export type {
   LlmProviderConfig,
   LlmToolDefinition,

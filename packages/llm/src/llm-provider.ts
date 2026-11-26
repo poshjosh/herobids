@@ -193,15 +193,25 @@ export function resolveReasoningParams(
     return { effort: level };
   }
   // Truly unknown (non-Claude) — fall back to max_tokens
+  return { max_tokens: resolveReasoningBudgetTokens(level, thinkingConfig) };
+}
+
+/**
+ * Thinking tokens a token-budget model gets at a reasoning level (the `max_tokens` shape above).
+ * Effort-based models are not capped by it, only by the request's output limit.
+ */
+export function resolveReasoningBudgetTokens(
+  level: ReasoningLevel,
+  thinkingConfig: LlmProviderConfig['thinking'],
+): number {
+  if (level === 'none') return 0;
   const light = thinkingConfig?.lightBudgetTokens ?? 2048;
   const deep = thinkingConfig?.deepBudgetTokens ?? 10240;
-  const tokens =
-    level === 'low'
-      ? light
-      : level === 'medium'
-        ? Math.round((light + deep) / 2)
-        : deep;
-  return { max_tokens: tokens };
+  return level === 'low'
+    ? light
+    : level === 'medium'
+      ? Math.round((light + deep) / 2)
+      : deep;
 }
 
 /**

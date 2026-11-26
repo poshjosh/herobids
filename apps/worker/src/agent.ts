@@ -13,14 +13,14 @@ import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { scannerGatedKey } from './redis-keys.js';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp, DEFAULT_PERMISSION_LEVEL, DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, AGENT_STYLE_RUNTIME_DEFAULTS, AgentRuntimePolicySchema, BASE_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp, DEFAULT_PERMISSION_LEVEL, DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS } from '@herobids/domain';
 import { createDatabase, AgentRepository, ConversationRepository, skills, skillRevisions, agentSkills, agentConnections, connections, AgentDocumentsRepository, OutboundAttachmentAuditRepository } from '@herobids/db';
 import { LocalDocumentStore, OutboundAttachmentResolver, OutboundAttachmentService } from '@herobids/documents';
 import { ConversationService, MessagingConversationsSchema, isFullMessageId } from '@herobids/domain';
 import { and, eq, ne, ilike, or, sql } from 'drizzle-orm';
 import { createUsageBillingService } from './usage-billing-service.js';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml, PermissionLevel, RegimeParams } from '@herobids/domain';
-import { type LlmToolDefinition, type OpenRouterProviderControls, resolveReasoningParams } from '@herobids/llm';
+import { type LlmCallOutputBudget, type LlmToolDefinition, type OpenRouterProviderControls, resolveLlmCallOutputBudget, resolveReasoningParams } from '@herobids/llm';
 import { buildCapabilityGrants, buildCapabilityPolicyEngine } from './agents/capability-policy.js';
 import { SandboxEnforcer } from './agents/sandbox-enforcer.js';
 import { compareStreamIds, OUTBOUND_READ_BLOCK_MS, OUTBOUND_READ_TIMEOUT_MS, OutboundInbox, readGroupLastDeliveredId, settleTick, tickOutcome, type OutboundEntry, type TickOutcome } from './agents/outbound-inbox.js';
@@ -131,6 +131,9 @@ const LLM_MAX_TOKENS = parseInt(process.env['LLM_MAX_TOKENS'] ?? '4096', 10);
 // Output-token limit of each judge call. The agent's own `judgeMaxTokens` replaces the operator default once the policy is resolved (below).
 let judgeMaxTokens = LLM_MAX_TOKENS;
 const LLM_TIMEOUT_MS = parseInt(process.env['LLM_TIMEOUT_MS'] ?? '60000', 10);
+// Unscaled operator timeout. A newer worker raises LLM_TIMEOUT_MS to fit the agent's largest output limit
+// (for older images) and sends the configured value here, so per-call scaling starts from the real base.
+const LLM_BASE_TIMEOUT_MS = parseInt(process.env['LLM_BASE_TIMEOUT_MS'] ?? String(LLM_TIMEOUT_MS), 10);
 const OPENROUTER_PROVIDER_CONTROLS: OpenRouterProviderControls | undefined = (() => {
   const raw = process.env['OPENROUTER_PROVIDER_CONTROLS'];
   if (!raw) return undefined;
@@ -339,6 +342,9 @@ interface AgentConfig {
     judgeMaxTokens: number;
     lightThinkingTokens: number;
     deepThinkingTokens: number;
+    /** Absent when sent by an older worker. */
+    scoutOutputReserveTokens?: number;
+    judgeOutputReserveTokens?: number;
     allowedHoursUtc: number[];
     weekendPause: boolean;
     maxHistoryMessages: number;
@@ -952,6 +958,49 @@ let resumedPendingFullEvaluation = false;
 const scoutLoopConfig = agentRuntimePolicy.llm.scout;
 const judgeLoopConfig = agentRuntimePolicy.llm.judge;
 const marketIntelligencePolicy = agentRuntimePolicy.marketIntelligence;
+
+// One warning per distinct adjustment per process; the same call repeats every tick.
+const loggedOutputBudgetAdjustments = new Set<string>();
+
+// Output limit, timeout and reasoning level for one scout or judge call (clamped to the model's maximum output).
+function resolveCallOutputBudget(
+  phase: 'scout' | 'judge',
+  model: string,
+  maxTokens: number,
+  reasoningLevel: ReasoningLevel,
+): LlmCallOutputBudget {
+  const rp = agentConfig.resolvedRuntimePolicy;
+  const outputReserveTokens = phase === 'scout'
+    ? rp?.scoutOutputReserveTokens ?? AGENT_STYLE_RUNTIME_DEFAULTS.balanced.scoutOutputReserveTokens
+    : rp?.judgeOutputReserveTokens ?? AGENT_STYLE_RUNTIME_DEFAULTS.balanced.judgeOutputReserveTokens;
+  const budget = resolveLlmCallOutputBudget({
+    model,
+    maxTokens,
+    reasoningLevel,
+    outputReserveTokens,
+    thinking: agentRuntimePolicy.llm.thinking,
+    baseTimeoutMs: LLM_BASE_TIMEOUT_MS,
+    config: agentRuntimePolicy.llm,
+  });
+  const adjusted = budget.clampedFrom !== undefined || budget.reasoningLoweredFrom !== undefined || budget.reserveUnmet;
+  const logKey = `${phase}|${model}|${maxTokens}|${reasoningLevel}`;
+  if (adjusted && !loggedOutputBudgetAdjustments.has(logKey)) {
+    loggedOutputBudgetAdjustments.add(logKey);
+    logger.warn({
+      phase,
+      model,
+      requestedMaxTokens: maxTokens,
+      maxTokens: budget.maxTokens,
+      requestedReasoningLevel: reasoningLevel,
+      reasoningLevel: budget.reasoningLevel,
+      outputReserveTokens,
+      ...(budget.reserveUnmet ? { reserveUnmet: true } : {}),
+    }, budget.reserveUnmet
+      ? 'Output-token limit leaves less than the output reserve even without thinking'
+      : 'Adjusted output-token limit or reasoning level to fit the model maximum output and the output reserve');
+  }
+  return budget;
+}
 
 const DEFAULT_RATE_CARD_NAME = process.env['USAGE_BILLING_RATE_CARD'] ?? 'default';
 const RUNTIME_CHARGE_WINDOW_MS = parseInt(process.env['USAGE_BILLING_RUNTIME_WINDOW_MS'] ?? '60000', 10);
@@ -3635,7 +3684,7 @@ async function runActiveTick(): Promise<void> {
             provider: provider,
             model: costProfile.heavyModel,
             maxTokens: LLM_MAX_TOKENS,
-            timeoutMs: LLM_TIMEOUT_MS,
+            timeoutMs: LLM_BASE_TIMEOUT_MS,
             baseUrl: resolvedBaseUrl,
             providersBaseUrlMap,
             openRouterProviderControls: OPENROUTER_PROVIDER_CONTROLS,
@@ -4099,26 +4148,32 @@ async function runActiveTick(): Promise<void> {
         maxTurns: scoutLoopConfig.maxTurns,
       });
 
+      const scoutBudget = resolveCallOutputBudget(
+        'scout',
+        lightModel,
+        scoutLoopConfig.maxTokens,
+        resolveScoutReasoningLevel(
+          sharedThinkingDecision.thinking,
+          agentConfig.resolvedRuntimePolicy?.scoutReasoning ?? 'medium',
+          agentConfig.resolvedRuntimePolicy?.adaptScoutReasoning !== false,
+        ),
+      );
       const scoutLoopResult = await runStructuredToolLoop({
         providerConfig: {
           provider: provider,
           model: lightModel,
-          maxTokens: scoutLoopConfig.maxTokens,
-          timeoutMs: LLM_TIMEOUT_MS,
+          maxTokens: scoutBudget.maxTokens,
+          timeoutMs: scoutBudget.timeoutMs,
           baseUrl: resolvedBaseUrl,
           providersBaseUrlMap,
           thinking: agentRuntimePolicy.llm.thinking,
           openRouterProviderControls: OPENROUTER_PROVIDER_CONTROLS,
         },
         requestBase: {
-          maxTokens: scoutLoopConfig.maxTokens,
+          maxTokens: scoutBudget.maxTokens,
           temperature: scoutLoopConfig.temperature,
           reasoning: resolveReasoningParams(
-            resolveScoutReasoningLevel(
-              sharedThinkingDecision.thinking,
-              agentConfig.resolvedRuntimePolicy?.scoutReasoning ?? 'medium',
-              agentConfig.resolvedRuntimePolicy?.adaptScoutReasoning !== false,
-            ),
+            scoutBudget.reasoningLevel,
             lightModel,
             agentRuntimePolicy.llm.thinking,
           ),
@@ -4195,7 +4250,7 @@ async function runActiveTick(): Promise<void> {
             usageBillingService?.recordFailedLlmCall({
               provider,
               model: lightModel,
-              maxTokens: scoutLoopConfig.maxTokens,
+              maxTokens: scoutBudget.maxTokens,
               phase: 'scout',
               turnIndex,
               attemptIndex: attempt,
@@ -4337,8 +4392,15 @@ async function runActiveTick(): Promise<void> {
         : sharedThinkingDecision.reason;
     previousRegimePass = skipDecision.regime?.pass ?? previousRegimePass;
     const wasCapped = cappedThinking !== systemThinking;
+    const judgeBudget = resolveCallOutputBudget(
+      'judge',
+      costProfile.heavyModel,
+      judgeMaxTokens,
+      toReasoningLevel(cappedThinking),
+    );
     logger.info({
       thinking: cappedThinking,
+      reasoningLevel: judgeBudget.reasoningLevel,
       adaptJudge,
       userLevel: userJudgeLevel,
       reason: judgeThinkingReason,
@@ -4411,18 +4473,18 @@ async function runActiveTick(): Promise<void> {
       providerConfig: {
         provider: provider,
         model: costProfile.heavyModel,
-        maxTokens: judgeMaxTokens,
-        timeoutMs: LLM_TIMEOUT_MS,
+        maxTokens: judgeBudget.maxTokens,
+        timeoutMs: judgeBudget.timeoutMs,
         baseUrl: resolvedBaseUrl,
         providersBaseUrlMap,
         thinking: agentRuntimePolicy.llm.thinking,
         openRouterProviderControls: OPENROUTER_PROVIDER_CONTROLS,
       },
       requestBase: {
-        maxTokens: judgeMaxTokens,
+        maxTokens: judgeBudget.maxTokens,
         temperature: judgeLoopConfig.temperature,
         reasoning: resolveReasoningParams(
-          toReasoningLevel(cappedThinking),
+          judgeBudget.reasoningLevel,
           costProfile.heavyModel,
           agentRuntimePolicy.llm.thinking,
         ),
@@ -4575,7 +4637,7 @@ async function runActiveTick(): Promise<void> {
           usageBillingService?.recordFailedLlmCall({
             provider,
             model: costProfile.heavyModel,
-            maxTokens: judgeMaxTokens,
+            maxTokens: judgeBudget.maxTokens,
             phase: 'judge',
             turnIndex,
             attemptIndex: attempt,

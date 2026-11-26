@@ -177,7 +177,7 @@ Careful:
   - dailySpendBudget: $1/day
   - openPositionEscalationToJudgePolicy: uncovered_or_triggered
   - scoutMaxTurns: 50, judgeMaxTurns: 500
-  - scoutMaxTokens: 1,024, judgeMaxTokens: 4,096
+  - scoutMaxTokens: 6,144, judgeMaxTokens: 26,624
   - allowedHoursUtc: all (24/7)
   - weekendPause: false
   - maxHoldDuration: 450 minutes (7.5 hours)
@@ -188,7 +188,7 @@ Balanced:
   - dailySpendBudget: $5/day
   - openPositionEscalationToJudgePolicy: always
   - scoutMaxTurns: 50, judgeMaxTurns: 500
-  - scoutMaxTokens: 2,048, judgeMaxTokens: 8,192
+  - scoutMaxTokens: 8,192, judgeMaxTokens: 36,864
   - allowedHoursUtc: all (24/7)
   - weekendPause: false
   - maxHoldDuration: 90 minutes (1.5 hours)
@@ -199,7 +199,7 @@ Bold:
   - dailySpendBudget: $30/day
   - openPositionEscalationToJudgePolicy: always
   - scoutMaxTurns: 50, judgeMaxTurns: 500
-  - scoutMaxTokens: 4,096, judgeMaxTokens: 16,384
+  - scoutMaxTokens: 12,288, judgeMaxTokens: 49,152
   - allowedHoursUtc: all (24/7)
   - weekendPause: false
   - maxHoldDuration: 10 minutes
@@ -474,10 +474,12 @@ At 20 seconds per turn, 50 scout turns is about 17 minutes and 500 judge turns i
 
 | | **Careful** | **Balanced** | **Bold** |
 |---|---|---|---|
-| **Scout max tokens** | 1,024 | 2,048 | 4,096 |
-| **Judge max tokens** | 4,096 | 8,192 | 16,384 |
+| **Scout max tokens** | 6,144 | 8,192 | 12,288 |
+| **Judge max tokens** | 26,624 | 36,864 | 49,152 |
 | **Light thinking tokens** | 2,048 | 4,096 | 8,192 |
 | **Deep thinking tokens** | 10,240 | 20,480 | 32,768 ¹ |
+| **Scout output reserve tokens** | 4,096 | 4,096 | 4,096 |
+| **Judge output reserve tokens** | 16,384 | 16,384 | 16,384 |
 
 ¹ Bold's deep thinking budget is clamped to the operator ceiling of 32,768 (the unclamped value would be 40,960).
 
@@ -524,7 +526,7 @@ See [FAQs](/help/faqs#when-does-escalation-happen) for more on the scout-judge m
 
 **Scout max turns / Judge max turns** — The maximum number of tool-call rounds the scout (cheaper model) or judge (more capable model) may perform in a single tick. Higher values allow deeper research but increase cost and latency.
 
-**Scout/Judge max tokens** — The maximum number of output tokens the model may generate per turn. Keeps individual responses concise.
+**Scout/Judge max tokens** — The maximum number of output tokens the model may generate per turn, thinking included. It is never below the thinking budget plus the output reserve (scout: light thinking + scout reserve; judge: deep thinking + judge reserve), so thinking cannot use the whole limit and leave no answer. A lower value is raised to that minimum. Each call is also capped at the model's maximum output.
 
 **Light / Deep thinking tokens** — How many tokens the model may use for internal chain-of-thought reasoning before producing a response. \`lightThinkingTokens\` applies when brief reasoning is sufficient; \`deepThinkingTokens\` applies when extended analysis is requested.
 

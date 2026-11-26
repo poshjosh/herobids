@@ -434,7 +434,7 @@ After Phase 3:
 
 ## Rollout
 
-- Phase 1 ships on staging with the agent image pin and runs there for about a week (D17). It moves to production when the staging numbers show no cost problem; it does not wait for the gate's decision on Phases 2 and 3. Roll back by releasing the previous image, or set `lengthRecovery.maxRetries: 0`; token values can be overridden per agent.
+- Phase 1 ships on staging with the agent image pin and runs there for about a week (D17). It moves to production when the staging numbers show no cost problem; it does not wait for the gate's decision on Phases 2 and 3. Roll back by releasing the previous worker and agent image together, or first revert the token values with per-agent overrides and then release the previous image. Before releasing the previous worker, clear any per-agent `judgeMaxTokens` override above 16,384 and any `scoutMaxTokens` override above 4,096. Reverted token values in per-agent overrides take effect only after the previous worker is released, because the new worker raises an override that is below the thinking budget plus the output reserve. `lengthRecovery.maxRetries: 0` turns off only the cut-off recovery.
 - Phase 2 is built only if the decision gate calls for it. It has no flag (D10), so it ships on staging first and moves to production only after its staging checks (7 to 10) pass. `reportBack.maxNudges: 0` turns off its run-end check. Leftover Redis keys expire by TTL; the previous image ignores them.
 - Phase 3 needs the API and web release as well as the agent image; the status line tolerates a missing record.
 - Each phase gets a CHANGELOG entry and a `results.md` in this folder.
@@ -511,7 +511,7 @@ Phase 3:
 
 Phase 1:
 - [x] WP0 Evidence note for the 2026-11-25 run (`evidence.md`)
-- [ ] PENDING WP1 Output budget (A1)
+- [x] DONE WP1 Output budget (A1)
 - [ ] PENDING WP2 Length recovery (A2) and `lengthRecoveries`
 - [ ] PENDING WP3 Instructions block, base-skill sentence and `long-running-task` text
 - [ ] PENDING WP4 Measurement in the `evaluate-*` skills
@@ -535,3 +535,13 @@ Phase 3 (if the gate calls for it):
 
 - Not checked while drafting (verify before implementing): the retry site for `llm.invalid_tool_args`; whether any LLM call is streamed; where a per-model output maximum should live; where user messages are captured (`agent.ts` about lines 3056 to 3190); the tick-failure path for marking a failed run; where per-agent Redis keys are cleaned up on delete; the web chat component and how it receives activity updates; whether the tick gate lets a `reminder` wake through while a run is active.
 - Unrelated defects from Phase 0, to file separately: trading reads on a non-trading agent's ticks; Conversation section ordering (`#26c7f840` before `#cf8ca737`).
+
+### WP1 Output budget (from the last code review, no critical or high)
+
+- MEDIUM (owner decision): for token-budget (non-Claude) models not in the output table, the 32,000 default makes bold step down to `low` while balanced steps to `medium`, so bold thinks less than balanced. Option: keep the level and cap the thinking budget at `maxTokens − reserve` instead (changes edge case 19 wording).
+- LOW: `AgentOutputLimitsSchema` is declared below `resolveAgentLlmTimeoutMs` in `runtime-lifecycle.ts`.
+- LOW: the hybrid evaluator passes `LLM_BASE_TIMEOUT_MS` through unvalidated (NaN if the env value is malformed; pre-existing for `LLM_TIMEOUT_MS`).
+- LOW: the container timeout for older images is scaled from the unclamped limit (overestimates; safe direction). Worth a comment.
+- LOW: a future model id such as `claude-opus-4-9` matches `claude-opus-4` (32,000, safe but low); add new models to the table when they ship.
+- Not done: the web overrides form does not expose the two reserve fields; a user's low override is silently raised (the API returns the effective value).
+

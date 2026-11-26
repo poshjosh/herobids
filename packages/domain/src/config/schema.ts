@@ -181,6 +181,56 @@ export const LlmThinkingConfigSchema = z.object({
   deepBudgetTokens: z.number().int().min(0).default(10_240),
 });
 
+/**
+ * Most output tokens each model accepts per request (synchronous Messages API values published by the provider).
+ * A key matches when it is part of the model ID, starts at its start or after `/`, `:`, `@` or `-`, and ends at its
+ * end or at `-`, `:`, `@` or `/`, after lower-casing and replacing `.` with `-`; the longest key wins.
+ */
+export const DEFAULT_MAX_OUTPUT_TOKENS_BY_MODEL: Readonly<Record<string, number>> = {
+  'claude-3-haiku': 4_096,
+  'claude-3-opus': 4_096,
+  'claude-3-5-haiku': 8_192,
+  'claude-3-5-sonnet': 8_192,
+  'claude-3-7-sonnet': 64_000,
+  'claude-haiku-3-5': 8_192,
+  'claude-haiku-4-5': 64_000,
+  'claude-haiku-5': 128_000,
+  'claude-sonnet-4': 64_000,
+  'claude-sonnet-4-5': 64_000,
+  'claude-sonnet-4-6': 128_000,
+  'claude-sonnet-5': 128_000,
+  'claude-opus-4': 32_000,
+  'claude-opus-4-1': 32_000,
+  'claude-opus-4-5': 64_000,
+  'claude-opus-4-6': 128_000,
+  'claude-opus-4-7': 128_000,
+  'claude-opus-4-8': 128_000,
+  'claude-opus-5': 128_000,
+  'claude-fable-5': 128_000,
+};
+
+function normalizeModelKey(key: string): string {
+  return key.toLowerCase().replace(/\./g, '-');
+}
+
+/** Output-token limits and timeout scaling for judge and scout calls. */
+export const LlmOutputBudgetConfigSchema = z.object({
+  /** Each call's timeout is max(llm.timeoutMs, min(output limit × this, maxCallTimeoutMs)), because calls are not streamed. 0 = no scaling. */
+  timeoutMsPerOutputToken: z.number().int().min(0).max(60).default(6),
+  /** Upper bound on the scaled part of a call timeout. */
+  maxCallTimeoutMs: z.number().int().min(1).max(1_800_000).default(600_000),
+  /** Most output tokens for a model not in maxOutputTokensByModel. */
+  defaultMaxOutputTokens: z.number().int().min(1).default(32_000),
+  /**
+   * Model-ID fragment → most output tokens the provider accepts. Merged over the built-in table: an operator key
+   * adds a model or replaces the built-in value for the same key (compared after lower-casing and `.` → `-`).
+   */
+  maxOutputTokensByModel: z.record(z.string(), z.number().int().min(1)).default({}).transform((byModel) => ({
+    ...DEFAULT_MAX_OUTPUT_TOKENS_BY_MODEL,
+    ...Object.fromEntries(Object.entries(byModel).map(([key, tokens]) => [normalizeModelKey(key), tokens])),
+  })),
+});
+
 // ── Per-agent runtime policy ────────────────────────────────────────────────
 
 // Trading session windows relocated to a trading-owned module (source-fix request 002).
@@ -198,10 +248,13 @@ export { TradingSessionNameSchema };
 export const RUNTIME_POLICY_CEILINGS = {
   scoutMaxTurns: 500,
   judgeMaxTurns: 10_000,
-  scoutMaxTokens: 4_096,
-  judgeMaxTokens: 16_384,
+  scoutMaxTokens: 16_384,
+  judgeMaxTokens: 65_536,
   lightThinkingTokens: 8_192,
   deepThinkingTokens: 32_768,
+  // At most the token ceiling minus the thinking ceiling, so the ceilings always satisfy the output reserve rule.
+  scoutOutputReserveTokens: 8_192,
+  judgeOutputReserveTokens: 32_768,
   scoutReasoningMax: 'medium' as const,
   judgeReasoningMax: 'high' as const,
   maxHistoryMessages: 80,
@@ -242,6 +295,8 @@ export const AgentRuntimePolicyOverridesSchema = z.object({
   judgeMaxTokens: z.number().int().min(1).max(RUNTIME_POLICY_CEILINGS.judgeMaxTokens).nullable().optional(),
   lightThinkingTokens: z.number().int().min(0).max(RUNTIME_POLICY_CEILINGS.lightThinkingTokens).nullable().optional(),
   deepThinkingTokens: z.number().int().min(0).max(RUNTIME_POLICY_CEILINGS.deepThinkingTokens).nullable().optional(),
+  scoutOutputReserveTokens: z.number().int().min(1).max(RUNTIME_POLICY_CEILINGS.scoutOutputReserveTokens).nullable().optional(),
+  judgeOutputReserveTokens: z.number().int().min(1).max(RUNTIME_POLICY_CEILINGS.judgeOutputReserveTokens).nullable().optional(),
   allowedHoursUtc: z.array(z.number().int().min(0).max(23)).nullable().optional(),
   weekendPause: z.boolean().nullable().optional(),
   maxHistoryMessages: z.number().int().min(1).max(RUNTIME_POLICY_CEILINGS.maxHistoryMessages).nullable().optional(),
@@ -296,6 +351,10 @@ export interface ResolvedAgentRuntimePolicy {
   judgeMaxTokens: number;
   lightThinkingTokens: number;
   deepThinkingTokens: number;
+  /** Output tokens the scout limit keeps free after light thinking: scoutMaxTokens >= lightThinkingTokens + this. */
+  scoutOutputReserveTokens: number;
+  /** Output tokens the judge limit keeps free after deep thinking: judgeMaxTokens >= deepThinkingTokens + this. */
+  judgeOutputReserveTokens: number;
   allowedHoursUtc: number[];
   weekendPause: boolean;
   maxHistoryMessages: number;
@@ -345,10 +404,12 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     openPositionEscalationToJudgePolicy: 'uncovered_or_triggered',
     scoutMaxTurns: DEFAULT_SCOUT_MAX_TURNS,
     judgeMaxTurns: DEFAULT_JUDGE_MAX_TURNS,
-    scoutMaxTokens: 1_024,
-    judgeMaxTokens: 4_096,
+    scoutMaxTokens: 6_144,
+    judgeMaxTokens: 26_624,
     lightThinkingTokens: 2_048,
     deepThinkingTokens: 10_240,
+    scoutOutputReserveTokens: 4_096,
+    judgeOutputReserveTokens: 16_384,
     scoutReasoning: 'medium',
     judgeReasoning: 'medium',
     adaptScoutReasoning: true,
@@ -374,10 +435,12 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     openPositionEscalationToJudgePolicy: 'always',
     scoutMaxTurns: DEFAULT_SCOUT_MAX_TURNS,
     judgeMaxTurns: DEFAULT_JUDGE_MAX_TURNS,
-    scoutMaxTokens: 2_048,
-    judgeMaxTokens: 8_192,
+    scoutMaxTokens: 8_192,
+    judgeMaxTokens: 36_864,
     lightThinkingTokens: 4_096,
     deepThinkingTokens: 20_480,
+    scoutOutputReserveTokens: 4_096,
+    judgeOutputReserveTokens: 16_384,
     scoutReasoning: 'medium',
     judgeReasoning: 'high',
     adaptScoutReasoning: true,
@@ -405,10 +468,12 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     openPositionEscalationToJudgePolicy: 'always',
     scoutMaxTurns: DEFAULT_SCOUT_MAX_TURNS,
     judgeMaxTurns: DEFAULT_JUDGE_MAX_TURNS,
-    scoutMaxTokens: 4_096,
-    judgeMaxTokens: 16_384,
+    scoutMaxTokens: 12_288,
+    judgeMaxTokens: 49_152,
     lightThinkingTokens: 8_192,
     deepThinkingTokens: 32_768, // 20_480 × 2 = 40_960 exceeds ceiling 32_768 → clamped to ceiling
+    scoutOutputReserveTokens: 4_096,
+    judgeOutputReserveTokens: 16_384,
     scoutReasoning: 'medium',
     judgeReasoning: 'high',
     adaptScoutReasoning: true,
@@ -429,15 +494,47 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
   },
 };
 
+/** A resolved output-token limit that was raised so it leaves room for an answer after thinking. */
+export interface OutputBudgetAdjustment {
+  field: 'scoutMaxTokens' | 'judgeMaxTokens';
+  from: number;
+  to: number;
+  /** thinking tokens + output reserve; `to` is lower only when the ceiling caps it. */
+  required: number;
+}
+
+/**
+ * Raise a limit to `thinkingTokens + reserveTokens` when it is below it, never above the ceiling.
+ * Thinking shares the output limit, so a smaller limit lets thinking use all of it and leaves no answer.
+ */
+function enforceOutputReserve(
+  field: OutputBudgetAdjustment['field'],
+  limit: number,
+  thinkingTokens: number,
+  reserveTokens: number,
+  onRaised: ((adjustment: OutputBudgetAdjustment) => void) | undefined,
+): number {
+  const required = thinkingTokens + reserveTokens;
+  if (limit >= required) return limit;
+  const raised = Math.max(limit, Math.min(required, RUNTIME_POLICY_CEILINGS[field]));
+  if (raised !== limit) onRaised?.({ field, from: limit, to: raised, required });
+  return raised;
+}
+
 /**
  * Resolve the effective runtime policy for an agent.
  * Style defaults form the base; runtime_policy_overrides win on a per-field basis.
  * Falls back to 'balanced' style when the style is invalid or missing.
+ * The output-token limits are then raised, if needed, to keep the output reserve after thinking;
+ * `onOutputBudgetRaised` is called once per raised limit so the caller can log it.
  */
 export function resolveAgentRuntimePolicy(
   style: string | undefined | null,
   overrides: AgentRuntimePolicyOverrides | undefined | null,
-  options?: { hasTradingCapability?: boolean },
+  options?: {
+    hasTradingCapability?: boolean;
+    onOutputBudgetRaised?: (adjustment: OutputBudgetAdjustment) => void;
+  },
 ): ResolvedAgentRuntimePolicy {
   const effectiveStyle: AgentStyleValue = (
     style === 'careful' || style === 'balanced' || style === 'bold'
@@ -457,13 +554,25 @@ export function resolveAgentRuntimePolicy(
   const weekendPause = o.weekendPause ?? (styleHoursApply ? defaults.weekendPause : false);
   const tradingSessions = o.tradingSessions ?? (styleHoursApply ? defaults.tradingSessions : null);
 
+  const lightThinkingTokens = o.lightThinkingTokens ?? defaults.lightThinkingTokens;
+  const deepThinkingTokens = o.deepThinkingTokens ?? defaults.deepThinkingTokens;
+  const scoutOutputReserveTokens = o.scoutOutputReserveTokens ?? defaults.scoutOutputReserveTokens;
+  const judgeOutputReserveTokens = o.judgeOutputReserveTokens ?? defaults.judgeOutputReserveTokens;
+  const onRaised = options?.onOutputBudgetRaised;
+
   return {
     scoutMaxTurns: o.scoutMaxTurns ?? defaults.scoutMaxTurns,
     judgeMaxTurns: o.judgeMaxTurns ?? defaults.judgeMaxTurns,
-    scoutMaxTokens: o.scoutMaxTokens ?? defaults.scoutMaxTokens,
-    judgeMaxTokens: o.judgeMaxTokens ?? defaults.judgeMaxTokens,
-    lightThinkingTokens: o.lightThinkingTokens ?? defaults.lightThinkingTokens,
-    deepThinkingTokens: o.deepThinkingTokens ?? defaults.deepThinkingTokens,
+    scoutMaxTokens: enforceOutputReserve(
+      'scoutMaxTokens', o.scoutMaxTokens ?? defaults.scoutMaxTokens, lightThinkingTokens, scoutOutputReserveTokens, onRaised,
+    ),
+    judgeMaxTokens: enforceOutputReserve(
+      'judgeMaxTokens', o.judgeMaxTokens ?? defaults.judgeMaxTokens, deepThinkingTokens, judgeOutputReserveTokens, onRaised,
+    ),
+    lightThinkingTokens,
+    deepThinkingTokens,
+    scoutOutputReserveTokens,
+    judgeOutputReserveTokens,
     allowedHoursUtc,
     weekendPause,
     maxHistoryMessages: o.maxHistoryMessages ?? defaults.maxHistoryMessages,
@@ -528,6 +637,7 @@ export const LlmRuntimeConfigSchema = z.object({
   retry: LlmRetryConfigSchema.default({}),
   scout: LlmScoutConfigSchema.default({}),
   thinking: LlmThinkingConfigSchema.default({}),
+  ...LlmOutputBudgetConfigSchema.shape,
 });
 
 export const ApiConfigSchema = z.object({
@@ -1691,6 +1801,7 @@ export const AgentRuntimePolicySchema = AgentRuntimeConfigSchema.extend({
     scout: LlmScoutConfigSchema.merge(AgentRuntimeLlmScoutControlsSchema).default({}),
     judge: LlmJudgeConfigSchema.default({}),
     thinking: LlmThinkingConfigSchema.default({}),
+    ...LlmOutputBudgetConfigSchema.shape,
   }).default({}),
 });
 

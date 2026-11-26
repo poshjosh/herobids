@@ -2,6 +2,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AgentSessionManager } from './agent-session-manager.js';
 import { hashAgentApiKey } from '@herobids/db';
 
+const { mockLoggerWarn } = vi.hoisted(() => ({ mockLoggerWarn: vi.fn() }));
+vi.mock('../logger.js', () => ({
+  createLogger: () => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: mockLoggerWarn,
+    error: vi.fn(),
+    child: vi.fn(() => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })),
+  }),
+}));
+
 const TEST_RUNTIME_BUDGETS = {
   maxHistoryMessages: 20,
   maxHistoryTokens: 40000,
@@ -193,6 +204,39 @@ describe('AgentSessionManager', () => {
     const resolvedRuntimePolicy = launchedConfig['resolvedRuntimePolicy'] as { allowedHoursUtc: number[] };
     // careful's style-default hours are now [] (no restriction) after the ladder rescale.
     expect(resolvedRuntimePolicy.allowedHoursUtc).toEqual([]);
+  });
+
+  it('raises an override output limit below the output reserve rule and logs it', async () => {
+    const { manager, agentRepo, runtimeLauncher } = buildManager();
+    mockLoggerWarn.mockClear();
+    (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'sess-1', agentId: 'agent-1', botId: 'inst-1' },
+    ]);
+    (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'agent-1',
+      userId: 'user-1',
+      prompt: 'Do routine work',
+      style: 'balanced',
+      runtimePolicyOverrides: { judgeMaxTokens: 8_192 },
+      skillIds: [],
+      toolPolicy: null,
+      modelPolicy: { provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5' },
+      executionDefaults: null,
+      dailyTokenBudget: null,
+      dailyLossLimit: null,
+      maxBots: null,
+      maxSlippageBps: null,
+    });
+
+    await manager.reconcileStartingSessions();
+
+    const launchedConfig = (runtimeLauncher.launch as ReturnType<typeof vi.fn>).mock.calls[0]![0].agentConfig as Record<string, unknown>;
+    // balanced: deep thinking 20,480 + judge reserve 16,384
+    expect((launchedConfig['resolvedRuntimePolicy'] as { judgeMaxTokens: number }).judgeMaxTokens).toBe(36_864);
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      { agentId: 'agent-1', field: 'judgeMaxTokens', from: 8_192, to: 36_864, required: 36_864 },
+      'Raised output-token limit so it leaves the output reserve after thinking',
+    );
   });
 
   it('drops the style-default active hours for a non-trading agent', async () => {

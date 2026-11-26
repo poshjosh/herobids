@@ -585,8 +585,16 @@ export class AgentSessionManager {
           resolvedRuntimePolicy: resolveAgentRuntimePolicy(
             agent.style ?? null,
             agent.runtimePolicyOverrides ?? null,
-            // D6: style-default active hours apply only to trading agents.
-            { hasTradingCapability },
+            {
+              // D6: style-default active hours apply only to trading agents.
+              hasTradingCapability,
+              onOutputBudgetRaised: (adjustment) => {
+                logger.warn(
+                  { agentId: session.agentId, ...adjustment },
+                  'Raised output-token limit so it leaves the output reserve after thinking',
+                );
+              },
+            },
           ),
         };
         const { rawKey: agentApiKey, keyHash: apiKeyHash } = generateAgentApiKey();

@@ -198,6 +198,10 @@ const agentRuntimeConfigJson = JSON.stringify({
     },
     judge: appConfig.agentRuntime.llm.judge,
     thinking: appConfig.llm.thinking,
+    timeoutMsPerOutputToken: appConfig.llm.timeoutMsPerOutputToken,
+    maxCallTimeoutMs: appConfig.llm.maxCallTimeoutMs,
+    defaultMaxOutputTokens: appConfig.llm.defaultMaxOutputTokens,
+    maxOutputTokensByModel: appConfig.llm.maxOutputTokensByModel,
   },
 });
 
@@ -311,6 +315,8 @@ const agentRuntimeLauncher = await (async () => {
     llmModel: appConfig.llm.model,
     llmMaxTokens: appConfig.llm.maxTokens,
     llmTimeoutMs: appConfig.llm.timeoutMs,
+    llmTimeoutMsPerOutputToken: appConfig.llm.timeoutMsPerOutputToken,
+    llmMaxCallTimeoutMs: appConfig.llm.maxCallTimeoutMs,
     llmTickIntervalMs: appConfig.llm.tickIntervalMs,
     llmHeartbeatIntervalMs: appConfig.llm.heartbeatIntervalMs,
     llmServerCostUsdPerHour: appConfig.llm.serverCostUsdPerHour,
@@ -374,6 +380,8 @@ const agentRuntimeLauncher = await (async () => {
         llmBaseUrl: appConfig.llm.baseUrl,
         llmMaxTokens: appConfig.llm.maxTokens,
         llmTimeoutMs: appConfig.llm.timeoutMs,
+        llmTimeoutMsPerOutputToken: appConfig.llm.timeoutMsPerOutputToken,
+        llmMaxCallTimeoutMs: appConfig.llm.maxCallTimeoutMs,
         llmTickIntervalMs: appConfig.llm.tickIntervalMs,
         llmHeartbeatIntervalMs: appConfig.llm.heartbeatIntervalMs,
         llmServerCostUsdPerHour: appConfig.llm.serverCostUsdPerHour,

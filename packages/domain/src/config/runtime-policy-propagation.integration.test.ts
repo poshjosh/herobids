@@ -25,8 +25,8 @@ describe('resolveAgentRuntimePolicy', () => {
     const policy = resolveAgentRuntimePolicy('bold', null);
     expect(policy.scoutMaxTurns).toBe(50);
     expect(policy.judgeMaxTurns).toBe(500);
-    expect(policy.scoutMaxTokens).toBe(4096);
-    expect(policy.judgeMaxTokens).toBe(16384);
+    expect(policy.scoutMaxTokens).toBe(12288);
+    expect(policy.judgeMaxTokens).toBe(49152);
     expect(policy.lightThinkingTokens).toBe(8192);
     expect(policy.deepThinkingTokens).toBe(32768);
     expect(policy.maxHistoryTokens).toBe(160000);
@@ -46,8 +46,8 @@ describe('resolveAgentRuntimePolicy', () => {
     const policy = resolveAgentRuntimePolicy('careful', null);
     expect(policy.scoutMaxTurns).toBe(50);
     expect(policy.judgeMaxTurns).toBe(500);
-    expect(policy.scoutMaxTokens).toBe(1024);
-    expect(policy.judgeMaxTokens).toBe(4096);
+    expect(policy.scoutMaxTokens).toBe(6144);
+    expect(policy.judgeMaxTokens).toBe(26624);
     expect(policy.lightThinkingTokens).toBe(2048);
     expect(policy.deepThinkingTokens).toBe(10240);
     expect(policy.maxHistoryTokens).toBe(40000);
@@ -61,8 +61,8 @@ describe('resolveAgentRuntimePolicy', () => {
     const policy = resolveAgentRuntimePolicy('balanced', null);
     expect(policy.scoutMaxTurns).toBe(50);
     expect(policy.judgeMaxTurns).toBe(500);
-    expect(policy.scoutMaxTokens).toBe(2048);
-    expect(policy.judgeMaxTokens).toBe(8192);
+    expect(policy.scoutMaxTokens).toBe(8192);
+    expect(policy.judgeMaxTokens).toBe(36864);
     expect(policy.lightThinkingTokens).toBe(4096);
     expect(policy.deepThinkingTokens).toBe(20480);
     expect(policy.maxHistoryTokens).toBe(80000);
@@ -214,6 +214,84 @@ describe('resolveAgentRuntimePolicy — skip-unchanged (D9)', () => {
   });
 });
 
+// ── Output budget (D13) ─────────────────────────────────────────────────────
+
+describe('output budget leaves room for an answer after thinking', () => {
+  const styles: AgentStyleValue[] = ['careful', 'balanced', 'bold'];
+
+  it.each(styles)('%s style defaults keep the output reserve after thinking', (style) => {
+    const d = AGENT_STYLE_RUNTIME_DEFAULTS[style];
+    expect(d.judgeMaxTokens).toBeGreaterThanOrEqual(d.deepThinkingTokens + d.judgeOutputReserveTokens);
+    expect(d.scoutMaxTokens).toBeGreaterThanOrEqual(d.lightThinkingTokens + d.scoutOutputReserveTokens);
+  });
+
+  it('the ceilings keep the output reserve after the most thinking allowed', () => {
+    const c = RUNTIME_POLICY_CEILINGS;
+    expect(c.judgeMaxTokens).toBeGreaterThanOrEqual(c.deepThinkingTokens + c.judgeOutputReserveTokens);
+    expect(c.scoutMaxTokens).toBeGreaterThanOrEqual(c.lightThinkingTokens + c.scoutOutputReserveTokens);
+  });
+
+  it.each(styles)('%s style defaults resolve without being raised', (style) => {
+    const raised: unknown[] = [];
+    resolveAgentRuntimePolicy(style, null, { onOutputBudgetRaised: (a) => raised.push(a) });
+    expect(raised).toEqual([]);
+  });
+
+  it('raises an override below the rule to thinking plus reserve and reports each raise once', () => {
+    const raised: unknown[] = [];
+    const policy = resolveAgentRuntimePolicy(
+      'balanced',
+      { judgeMaxTokens: 8192, scoutMaxTokens: 2048 },
+      { onOutputBudgetRaised: (a) => raised.push(a) },
+    );
+    expect(policy.judgeMaxTokens).toBe(20480 + 16384);
+    expect(policy.scoutMaxTokens).toBe(4096 + 4096);
+    expect(raised).toEqual([
+      { field: 'scoutMaxTokens', from: 2048, to: 8192, required: 8192 },
+      { field: 'judgeMaxTokens', from: 8192, to: 36864, required: 36864 },
+    ]);
+  });
+
+  it('raises the limit when a larger thinking override breaks the rule', () => {
+    const policy = resolveAgentRuntimePolicy('careful', { deepThinkingTokens: 30000 });
+    expect(policy.judgeMaxTokens).toBe(30000 + 16384);
+  });
+
+  it('uses the reserve override in the rule', () => {
+    const policy = resolveAgentRuntimePolicy('careful', { judgeOutputReserveTokens: 20000 });
+    expect(policy.judgeOutputReserveTokens).toBe(20000);
+    expect(policy.judgeMaxTokens).toBe(10240 + 20000);
+  });
+
+  it('keeps an override that already meets the rule', () => {
+    const policy = resolveAgentRuntimePolicy('careful', { judgeMaxTokens: 60000 });
+    expect(policy.judgeMaxTokens).toBe(60000);
+  });
+
+  it('never raises a limit above its ceiling', () => {
+    const raised: unknown[] = [];
+    // An older stored override can sit outside today's schema; the resolver must still stay within the ceiling.
+    const policy = resolveAgentRuntimePolicy(
+      'bold',
+      { judgeMaxTokens: 1024, judgeOutputReserveTokens: 40000 },
+      { onOutputBudgetRaised: (a) => raised.push(a) },
+    );
+    expect(policy.judgeMaxTokens).toBe(RUNTIME_POLICY_CEILINGS.judgeMaxTokens);
+    expect(raised).toEqual([
+      { field: 'judgeMaxTokens', from: 1024, to: RUNTIME_POLICY_CEILINGS.judgeMaxTokens, required: 32768 + 40000 },
+    ]);
+  });
+
+  it('rejects an output reserve override above its ceiling', () => {
+    expect(AgentRuntimePolicyOverridesSchema.safeParse({
+      judgeOutputReserveTokens: RUNTIME_POLICY_CEILINGS.judgeOutputReserveTokens + 1,
+    }).success).toBe(false);
+    expect(AgentRuntimePolicyOverridesSchema.safeParse({
+      scoutOutputReserveTokens: RUNTIME_POLICY_CEILINGS.scoutOutputReserveTokens,
+    }).success).toBe(true);
+  });
+});
+
 // ── Operator ceilings ───────────────────────────────────────────────────────
 
 describe('operator ceilings', () => {
@@ -227,6 +305,8 @@ describe('operator ceilings', () => {
       expect(d.judgeMaxTokens).toBeLessThanOrEqual(RUNTIME_POLICY_CEILINGS.judgeMaxTokens);
       expect(d.lightThinkingTokens).toBeLessThanOrEqual(RUNTIME_POLICY_CEILINGS.lightThinkingTokens);
       expect(d.deepThinkingTokens).toBeLessThanOrEqual(RUNTIME_POLICY_CEILINGS.deepThinkingTokens);
+      expect(d.scoutOutputReserveTokens).toBeLessThanOrEqual(RUNTIME_POLICY_CEILINGS.scoutOutputReserveTokens);
+      expect(d.judgeOutputReserveTokens).toBeLessThanOrEqual(RUNTIME_POLICY_CEILINGS.judgeOutputReserveTokens);
       expect(d.maxHistoryMessages).toBeLessThanOrEqual(RUNTIME_POLICY_CEILINGS.maxHistoryMessages);
       expect(d.maxHistoryTokens).toBeLessThanOrEqual(RUNTIME_POLICY_CEILINGS.maxHistoryTokens);
       expect(d.maxRecentToolMessages).toBeLessThanOrEqual(RUNTIME_POLICY_CEILINGS.maxRecentToolMessages);

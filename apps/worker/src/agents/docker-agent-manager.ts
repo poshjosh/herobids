@@ -3,6 +3,7 @@ import type { RuntimeDescriptor, RuntimeReconcileResult, PermissionLevel } from 
 import type { AgentRepository } from '@herobids/db';
 import type { PlatformAlertService } from '../alerting/platform-alert-service.js';
 import { PLATFORM_ALERT_EVENTS } from '../alerting/platform-alert-service.js';
+import { resolveAgentLlmTimeoutMs } from './runtime-lifecycle.js';
 
 /** Listener invoked when a container termination is detected. */
 export type DockerTerminationListener = (
@@ -32,6 +33,9 @@ export interface DockerAgentManagerConfig {
   llmMaxTokens?: number;
   /** LLM call timeout in ms injected into agent container env */
   llmTimeoutMs?: number;
+  /** llm.timeoutMsPerOutputToken and llm.maxCallTimeoutMs: scale LLM_TIMEOUT_MS to the agent's largest output limit */
+  llmTimeoutMsPerOutputToken?: number;
+  llmMaxCallTimeoutMs?: number;
   /** Agent reasoning loop interval in ms injected into agent container env */
   llmTickIntervalMs?: number;
   /** Agent heartbeat cadence in ms injected into agent container env */
@@ -135,6 +139,8 @@ export class DockerAgentManager {
   private readonly llmModel: string | undefined;
   private readonly llmMaxTokens: number | undefined;
   private readonly llmTimeoutMs: number | undefined;
+  private readonly llmTimeoutMsPerOutputToken: number | undefined;
+  private readonly llmMaxCallTimeoutMs: number | undefined;
   private readonly llmTickIntervalMs: number | undefined;
   private readonly llmHeartbeatIntervalMs: number | undefined;
   private readonly llmServerCostUsdPerHour: number | undefined;
@@ -181,6 +187,8 @@ export class DockerAgentManager {
     this.llmModel = _config.llmModel;
     this.llmMaxTokens = _config.llmMaxTokens;
     this.llmTimeoutMs = _config.llmTimeoutMs;
+    this.llmTimeoutMsPerOutputToken = _config.llmTimeoutMsPerOutputToken;
+    this.llmMaxCallTimeoutMs = _config.llmMaxCallTimeoutMs;
     this.llmTickIntervalMs = _config.llmTickIntervalMs;
     this.llmHeartbeatIntervalMs = _config.llmHeartbeatIntervalMs;
     this.llmServerCostUsdPerHour = _config.llmServerCostUsdPerHour;
@@ -241,6 +249,11 @@ export class DockerAgentManager {
         ...(spec.runtimeDescriptor ? { runtimeDescriptor: spec.runtimeDescriptor } : {}),
       });
       const toolPolicyJson = JSON.stringify(spec.toolPolicy);
+      const llmTimeoutMs = resolveAgentLlmTimeoutMs({
+        llmTimeoutMs: this.llmTimeoutMs,
+        llmTimeoutMsPerOutputToken: this.llmTimeoutMsPerOutputToken,
+        llmMaxCallTimeoutMs: this.llmMaxCallTimeoutMs,
+      }, spec.agentConfig);
 
       return [
         `REDIS_URL=${this.redisUrl}`,
@@ -252,7 +265,8 @@ export class DockerAgentManager {
         ...(this.llmBaseUrl ? [`LLM_BASE_URL=${this.llmBaseUrl}`] : []),
         ...(this.llmModel ? [`LLM_MODEL=${this.llmModel}`] : []),
         ...(this.llmMaxTokens != null ? [`LLM_MAX_TOKENS=${this.llmMaxTokens}`] : []),
-        ...(this.llmTimeoutMs != null ? [`LLM_TIMEOUT_MS=${this.llmTimeoutMs}`] : []),
+        ...(llmTimeoutMs != null ? [`LLM_TIMEOUT_MS=${llmTimeoutMs}`] : []),
+        ...(this.llmTimeoutMs != null ? [`LLM_BASE_TIMEOUT_MS=${this.llmTimeoutMs}`] : []),
         ...(this.llmTickIntervalMs != null ? [`TICK_INTERVAL_MS=${this.llmTickIntervalMs}`] : []),
         ...(this.llmHeartbeatIntervalMs != null ? [`HEARTBEAT_INTERVAL_MS=${this.llmHeartbeatIntervalMs}`] : []),
         ...(this.llmServerCostUsdPerHour != null ? [`LLM_SERVER_COST_USD_PER_HOUR=${this.llmServerCostUsdPerHour}`] : []),

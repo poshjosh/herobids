@@ -340,6 +340,11 @@ llm:
   thinking:
     lightBudgetTokens: 2048    # token budget for light thinking mode
     deepBudgetTokens: 10240    # token budget for deep thinking mode
+  timeoutMsPerOutputToken: 6   # judge/scout call timeout = max(timeoutMs, min(output limit x this, maxCallTimeoutMs)); calls are not streamed (0 = no scaling, max 60)
+  maxCallTimeoutMs: 600000     # upper bound on the scaled call timeout (max 1800000)
+  defaultMaxOutputTokens: 32000  # most output tokens per call for a model not in maxOutputTokensByModel; judge/scout limits are clamped to the model maximum
+  # maxOutputTokensByModel:    # model-ID fragment -> most output tokens; MERGED over the built-in table (DEFAULT_MAX_OUTPUT_TOKENS_BY_MODEL in packages/domain), same key replaces
+  #   claude-sonnet-4-5: 64000
 
 # Worker process — scan loop and concurrency settings.
 worker:
@@ -440,8 +445,11 @@ externalBackendObservability:
 # maximum value for every field — neither user nor agent can exceed them.
 #
 # Fields controllable per-agent: scoutMaxTurns, judgeMaxTurns, scoutMaxTokens,
-# judgeMaxTokens, lightThinkingTokens, deepThinkingTokens, allowedHoursUtc,
-# weekendPause, all context budgets, and maxHoldDurationMs.
+# judgeMaxTokens, lightThinkingTokens, deepThinkingTokens, scoutOutputReserveTokens,
+# judgeOutputReserveTokens, allowedHoursUtc, weekendPause, all context budgets,
+# and maxHoldDurationMs. A resolved judgeMaxTokens below deepThinkingTokens +
+# judgeOutputReserveTokens (scout: lightThinkingTokens + scoutOutputReserveTokens)
+# is raised to that sum, capped at the ceiling.
 #
 # See docs/features/2026/06/27/007-per-agent-runtime-controls/ for details.
 agentRuntime:

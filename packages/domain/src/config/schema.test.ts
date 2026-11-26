@@ -13,6 +13,7 @@ import {
   PermissionLevelSchema,
   RUNTIME_POLICY_CEILINGS,
   AGENT_STYLE_RUNTIME_DEFAULTS,
+  DEFAULT_MAX_OUTPUT_TOKENS_BY_MODEL,
   DEFAULT_SCOUT_MAX_TURNS,
   DEFAULT_JUDGE_MAX_TURNS,
   resolveAgentRuntimePolicy,
@@ -201,6 +202,9 @@ describe('AgentRuntimePolicySchema', () => {
       expect(result.data.llm.judge.maxTurns).toBe(500);
       expect(result.data.llm.judge.temperature).toBe(0.3);
       expect(result.data.llm.thinking.deepBudgetTokens).toBe(10_240);
+      expect(result.data.llm.timeoutMsPerOutputToken).toBe(6);
+      expect(result.data.llm.defaultMaxOutputTokens).toBe(32_000);
+      expect(result.data.llm.maxOutputTokensByModel['claude-sonnet-4-5']).toBe(64_000);
       expect(result.data.wake.minIntervalMs).toBe(15_000);
       expect(result.data.wake.pollMs).toBe(1_000);
       expect(result.data.marketIntelligence.maxTrackedPerps).toBe(3);
@@ -597,6 +601,61 @@ describe('AgentRuntimePolicySchema', () => {
     const result = AgentRuntimePolicySchema.safeParse({
       defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
       promptEnrichment: { activityTimeline: { maxEvents: 31 } },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('merges the operator model output table over the built-in one', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      llm: {
+        maxOutputTokensByModel: { 'my-model': 16_000, 'Claude-Sonnet-4.5': 32_000 },
+        timeoutMsPerOutputToken: 0,
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.llm.maxOutputTokensByModel).toEqual({
+        ...DEFAULT_MAX_OUTPUT_TOKENS_BY_MODEL,
+        'my-model': 16_000,
+        'claude-sonnet-4-5': 32_000,
+      });
+      expect(result.data.llm.timeoutMsPerOutputToken).toBe(0);
+    }
+  });
+
+  it('rejects a maximum call timeout above 30 minutes', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      llm: { maxCallTimeoutMs: 1_800_001 },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('includes the Claude 3 output maximums in the default model table', () => {
+    expect(DEFAULT_MAX_OUTPUT_TOKENS_BY_MODEL).toMatchObject({
+      'claude-3-5-sonnet': 8_192,
+      'claude-3-7-sonnet': 64_000,
+      'claude-3-opus': 4_096,
+      'claude-3-haiku': 4_096,
+      'claude-3-5-haiku': 8_192,
+    });
+  });
+
+  it('defaults the maximum call timeout and rejects a per-token timeout above 60 ms', () => {
+    const defaults = AgentRuntimePolicySchema.safeParse({ defaultBudgets: REQUIRED_RUNTIME_BUDGETS });
+    expect(defaults.success && defaults.data.llm.maxCallTimeoutMs).toBe(600_000);
+    const tooSlow = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      llm: { timeoutMsPerOutputToken: 61 },
+    });
+    expect(tooSlow.success).toBe(false);
+  });
+
+  it('rejects a model output maximum below 1', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      llm: { maxOutputTokensByModel: { 'my-model': 0 } },
     });
     expect(result.success).toBe(false);
   });
