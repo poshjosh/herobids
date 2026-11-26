@@ -226,6 +226,10 @@ A run is a fresh model context. Whatever the agent knows at run N+1 about run N 
 | CO9 | Timing continuity: each run starts close to the time the previous run scheduled, and a late or missed trigger leads to one catch-up run, not several | `triggerAt` vs `agent.tick.started` |
 | CO10 | If a restart happened in the period (more than one runtime session, or a second `External skills installed at agent start` line), the agent rebuilt itself from saved state: same campaign reused, skills reinstalled, the CV re-read only if the profile record was missing, no second index. Otherwise N/A. This skill does not cause restarts; the owner may restart the agent between evaluations | `agent_runtime_sessions`, agent log, memory |
 
+### Step 7b — Follow-through checks (FT)
+
+Run FT1 to FT3 of [evaluate-agent Step 6b](../evaluate-agent/SKILL.md#step-6b--follow-through-on-user-requests-ft): FT1 and FT3 against the database, FT2 on `logs/agent.log` and `logs/worker.log` from Step 2; save the output under `<output-folder>/follow-through/`. Run FT4 and FT5 only when asked. Compare with the 2026-11-25 incident in `docs/features/2026/11/25/001-user-request-follow-through/evidence.md`: one "No feedback?" event, five same-request retries of cut-off tool calls (FT2 (d)), a sixth cut-off that failed the tick (FT2 (c)) and one cut-off empty reply (FT2 (b)), all silent to the user.
+
 ### Step 8 — Outcome metrics
 
 Compute and compare with the baseline (Step 9 table). Compute per run and overall:
@@ -260,6 +264,7 @@ Write `<output-folder>/REPORT.md`:
    | Continuation guard and `finish_run` | C1 to C8 |
    | Continuity across runs | CO1 to CO10, L1, L6, L8 |
    | Clearer `provider.invalid_tool_args` message and related logging | E1 to E4 |
+   | User-request follow-through, Phase 1 (output budget, cut-off recovery, prompt text) | FT1 to FT3 (FT4 when run, otherwise N/A), E1, E2 |
 3. **Run table** (Step 4) and **baseline comparison**:
 
    | Metric | Baseline | This run |
@@ -285,10 +290,10 @@ Write `<output-folder>/REPORT.md`:
 
 ## Constraints
 
-- **DO NOT fix anything and do not change the agent.** Do not message the agent, change its memory, tasks or reminders, or restart it. Analyse, explain and report. Fixes are a separate workflow.
+- **DO NOT fix anything and do not change the agent.** Do not message the agent, change its memory, tasks or reminders, or restart it. Analyse, explain and report. Fixes are a separate workflow. Only exception: the FT4 scenario when the user asks for it (it messages and stops the agent; remote stops need the user's approval).
 - **Remote targets are read-only.** All rules in [access-remote-targets](../access-remote-targets/SKILL.md) apply: only the read-only Nomad token, only read commands, no writes, Terraform or deploy scripts.
 - **Credentials:** never read, print or use `NOMAD_TOKEN` or any other secret, and keep the whole `AGENT_CONFIG` and job specs out of the output and the output folder.
-- Write only inside `<output-folder>`.
+- Write only inside `<output-folder>`, and the FT5 numbers in the feature folder's `results.md`.
 - **Privacy:** the agent holds a real CV. Do not copy CV text, contact details or the `openaidom/job-search/candidate-profile` value into the report or the chat; refer to them by key and say what was checked. Do not print the full `AGENT_CONFIG` or any environment variable that may hold a key.
 - **Memory hygiene:** persist artifacts to the folder and read back only the lines or rows each check needs.
 - Mark a check UNVERIFIED rather than guessing when the evidence is absent (for example the activity timeline is not reachable, or the premature reply is not recorded anywhere).

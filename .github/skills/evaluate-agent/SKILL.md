@@ -1,6 +1,6 @@
 ---
 name: evaluate-agent
-description: 'Analyse agent(s) behaviour after a trading session — logs, database, Redis, journals, costs, memory, wake signals, session daa, market data, analytics, rate limits. Use when asked to evaluate an agent, analyse trading behaviour, audit a session, review agent performance, or run the evaluation prompt.'
+description: 'Analyse agent(s) behaviour after a trading session — logs, database, Redis, journals, costs, memory, wake signals, session daa, market data, analytics, rate limits. Use when asked to evaluate an agent, analyse trading behaviour, audit a session, review agent performance, run the evaluation prompt, or measure follow-through on user requests ("No feedback?" events, cut-off LLM calls).'
 argument-hint: 'agent-id/s (required), evaluation-period, deployment-target and expected-llm-cost (e.g. "agent-id=abc123 period=13:00-now Berlin")'
 ---
 
@@ -161,6 +161,102 @@ These map to degraded-but-expected behaviour.
 #### Improvement opportunities
 - What could be improved in agent behaviour, tooling, or infrastructure?
 
+### Step 6b — Follow-through on user requests (FT)
+
+Did the agent tell the user the outcome of what they asked, without being told to? Applies to any agent with chat traffic. Background: `docs/features/2026/11/25/001-user-request-follow-through/` (`plan.md` D3, Verification and Decision gate; `evidence.md` shows the 2026-11-25 incident in the logs). Save outputs under `<output-folder>/follow-through/`. Remote: replace `docker exec -i herobids-postgres-1 psql ...` with `psql_ro` (SQL on stdin) from [access-remote-targets](../access-remote-targets/SKILL.md); the `\pset` line keeps column names under its `-At`.
+
+**FT1 "No feedback?" events.** A user message within 15 minutes of the agent's last delivered message, with no delivered agent message in between. Source: `conversation_messages`, conversation `user_agent:<agent-id>`; `platform` rows are ignored. Delivered means `delivery_status` `sent` or `not_applicable` (no external channel; the thread is the delivery); `queued`, `failed` and `refused` agent rows are not counted, so read any of them in the window. A user row that answers a question the agent's last message asked is a normal reply: report the raw count and the count without such replies. The 2026-11-25 incident gives one row ("No feedback?" 12 minutes after "Rebuild started").
+
+```sh
+AGENT=<agent-id>; FROM='2026-11-25 00:00Z'; TO='2026-11-26 00:00Z'   # UTC; FT3 uses the same variables
+docker exec -i herobids-postgres-1 psql -U herobids -d herobids <<SQL
+\pset tuples_only off
+WITH m AS (
+  SELECT id, sender_type, created_at, replace(left(body, 80), E'\n', ' ') AS body,
+         max(created_at) FILTER (WHERE sender_type = 'agent' AND delivery_status IN ('sent', 'not_applicable'))
+           OVER (ORDER BY created_at, id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS last_agent_at
+  FROM conversation_messages
+  WHERE conversation_id = 'user_agent:$AGENT' AND created_at < '$TO'
+)
+SELECT created_at, id, created_at - last_agent_at AS after_agent, body
+FROM m
+WHERE sender_type = 'user' AND created_at >= '$FROM'
+  AND created_at - last_agent_at <= interval '15 minutes'
+ORDER BY created_at;
+SQL
+```
+
+**FT2 Cut-off and failure log check.** Agent log: stdout and stderr of every allocation in the period (remote: `nomad job allocs`; a replaced allocation's logs are lost once Nomad garbage-collects it, so collect daily). Worker log for the WP1 line. Strings are verbatim from `apps/worker/src/agent.ts`, `apps/worker/src/agents/outbound-inbox.ts`, `apps/worker/src/agents/agent-session-manager.ts` and `packages/llm/src/llm-provider.ts`. A cut-off has finish reason `length` (OpenAI-compatible) or `max_tokens` (Anthropic), as in `isOutputLimitFinishReason`. The filters assume JSON logs (staging, production); with `LOG_FORMAT=pretty` (`docker-compose.dev.yaml`) fields follow on the next lines, so read them with `grep -A12`. The filters work on logs from before and after Phase 1 (on the 2026-11-25 log: R=0, E=1, F=1, B=5). Error messages are capped at 600 characters, so a cut-off reason can be missing from (d); the invalid_tool_args count still includes those lines. A cut-off reply with visible text is not logged with its finish reason, so FT2 does not see it.
+
+```sh
+L=logs/agent.log; W=logs/worker.log; CUT='(length|max_tokens)'
+R=$(grep -cF 'Retrying LLM call cut off at the output limit with a lower reasoning level' "$L")  # (a) recovery, judge or scout; fields cause, fromReasoningLevel, toReasoningLevel
+E=$(grep -F 'Judge model returned an empty reply with no tool call' "$L" | grep -E "finishReason\"?: ?\"$CUT\"" | grep -vcE 'continues"?: ?true')  # (b) cut-off empty reply that ended the run (older images log no continues)
+F=$(grep -F 'Agent runtime failure classified' "$L" | grep -cE "finishReason\"?: ?\"$CUT\"|reason \\\\?\"$CUT")  # (c) tick failed on a cut-off call (err.finishReason, or the message text on older images)
+B=$(grep -E 'Retrying (judge LLM call|scout tool turn) after backoff' "$L" | grep -cE "reason \\\\?\"$CUT")  # (d) same-request retry of a cut-off call (maxRetries 0 or old image)
+echo "cut-off calls: $((R + E + F + B))"
+grep -E 'Retrying (judge LLM call|scout tool turn) after backoff|Agent runtime failure classified' "$L" | grep -c 'invalid_tool_args'  # invalid_tool_args events, any cause
+grep -cF 'Judge model returned an empty reply with no tool call' "$L"                     # all empty replies; list finishReason and continues
+grep -cF 'Agent runtime failure classified' "$L"                                          # failed ticks
+grep -cF 'Tick failed; outbound entries stay pending for the next read' "$L"              # failed ticks holding unread inbound messages
+grep -F 'Raised output-token limit so it leaves the output reserve after thinking' "$W"   # WP1: field, from, to, required per agent start
+```
+
+(d) reads the finish reason from the error text, which only the OpenAI-compatible path writes; an Anthropic cut-off retry shows only in the invalid_tool_args count, so read those lines. Recoveries with cause `invalid_tool_args` are in (a), not in that count. `lengthRecoveries` is on the judge `agent.llm.completed` payload in `agent_messages` (present only when above 0). After Phase 1, (a) to (d) should all be 0; any of them, a recovery included, is a cut-off call for the gate.
+
+**FT3 Daily numbers** (run against the database; `$AGENT`, `$FROM`, `$TO` as in FT1). Ticks from `agent.tick.started`; judge runs, failed judge runs and `lengthRecoveries` from judge `agent.llm.completed`; judge output and reasoning tokens from `billing_usage_events` (idempotency keys `llm_out_<session>_judge_t<turn>_...` and `llm_think_...`, see `apps/worker/src/usage-billing-service.ts`); LLM cost from `usage_charge` rows in `billing_ledger_entries` (all LLM calls of the agent, including estimates for failed calls).
+
+```sh
+docker exec -i herobids-postgres-1 psql -U herobids -d herobids <<SQL
+\pset tuples_only off
+WITH ticks AS (
+  SELECT (created_at AT TIME ZONE 'UTC')::date AS day, count(*) AS ticks
+  FROM agent_messages
+  WHERE agent_id = '$AGENT' AND type = 'agent.tick.started' AND created_at >= '$FROM' AND created_at < '$TO'
+  GROUP BY 1
+), judge AS (
+  SELECT (created_at AT TIME ZONE 'UTC')::date AS day, count(*) AS judge_runs,
+         count(*) FILTER (WHERE payload->>'finishReason' = 'error') AS failed_judge_runs,
+         coalesce(sum((payload->>'lengthRecoveries')::int), 0) AS length_recoveries
+  FROM agent_messages
+  WHERE agent_id = '$AGENT' AND type = 'agent.llm.completed' AND payload->>'phase' = 'judge'
+    AND created_at >= '$FROM' AND created_at < '$TO'
+  GROUP BY 1
+), usage AS (
+  SELECT (e.occurred_at AT TIME ZONE 'UTC')::date AS day,
+         sum(e.quantity) FILTER (WHERE e.idempotency_key LIKE 'llm\_out\_%\_judge\_t%') AS judge_output_tokens,
+         sum(e.quantity) FILTER (WHERE e.idempotency_key LIKE 'llm\_think\_%\_judge\_t%') AS judge_reasoning_tokens,
+         sum(l.amount_microusd) / 1e6 AS llm_cost_usd
+  FROM billing_usage_events e
+  LEFT JOIN billing_ledger_entries l
+    ON l.source_type = 'usage_event' AND l.source_id = e.id AND l.entry_type = 'usage_charge'
+  WHERE e.agent_id = '$AGENT' AND e.source_type = 'llm_call' AND e.occurred_at >= '$FROM' AND e.occurred_at < '$TO'
+  GROUP BY 1
+)
+SELECT day, t.ticks, j.judge_runs, j.failed_judge_runs, j.length_recoveries,
+       round(u.judge_output_tokens / nullif(j.judge_runs, 0)) AS judge_output_tokens_per_run,
+       round(u.judge_reasoning_tokens / nullif(j.judge_runs, 0)) AS judge_reasoning_tokens_per_run,
+       round(u.llm_cost_usd / nullif(t.ticks, 0), 4) AS llm_cost_usd_per_tick
+FROM ticks t FULL JOIN judge j USING (day) FULL JOIN usage u USING (day)
+ORDER BY day;
+SQL
+```
+
+**FT4 Scenario (only when the user asks for it; it messages and stops the agent).**
+
+1. Plain request: as the owner, send in the web chat a multi-step request that takes several minutes, in plain wording with no mention of reporting (job-search: "Rebuild the job list from the saved sources and re-check every open listing"). Pass (Phase 1): a start message, then an outcome or a progress message; FT2 cut-off calls 0 and invalid_tool_args events 0 for the window.
+2. Forced stop (the plan's "stop the worker" means the agent runtime: agent containers keep running when the worker stops, see `agent-session-manager.ts` `stop()`): send a similar request; after the start message, while `Executing tool` lines still appear, stop the agent. Locally: `docker kill herobids-agent-<agent-id>` (or `docker stop`). Staging or production: a restart or stop of the agent's allocation, a write the user must approve and run (the read-only token cannot). Record the result for the gate; it need not pass (only Phase 2 adds the recovery wake).
+3. A plain question: one reply message, no extra judge call. A trading agent sent a chat message: no change in trading behaviour.
+
+For each run, record the request time and every agent message with its time and `delivery_status` (`conversation_messages`) for at least 30 minutes or until the next continuation reminder, plus the FT1 rows and FT2 counts for that window. When Phase 2 or 3 ships, add: a message within `recoveryWakeMinutes` plus one poll after the forced stop, and the chat status line showing each state.
+
+**FT5 Staging week.** For `job-searcher` and at least one other agent with chat traffic, record per day (collect each day's logs separately: `nomad alloc logs` has no date filter and JSON `time` is epoch milliseconds, so split with `jq -c 'select(.time >= <ms> and .time < <ms>)'`) FT3 plus the FT2 cut-off calls, failed ticks and FT1 count in `docs/features/2026/11/25/001-user-request-follow-through/results.md`, with the week before as the baseline. Baseline log counts whose allocation logs Nomad has already garbage-collected are UNVERIFIED, not 0.
+
+| Date | Agent | Cut-off calls | `lengthRecoveries` | Failed ticks | "No feedback?" | Judge output / reasoning tokens per run | LLM cost per tick (USD) |
+|------|-------|---------------|--------------------|--------------|----------------|-----------------------------------------|-------------------------|
+
+Then add the FT4 results and map the numbers to the plan's "Decision gate after Phase 1": any cut-off call (recoveries included) → revisit A1 and A2 first; cost per tick noticeably above the week before → lower the output reserves; "No feedback?" events or silences after an acknowledgement → Phase 2 in full; users still asking what the agent is doing → Phase 3; none of these but the forced stop leaves the user waiting → the failed-run part of Phase 2, or accept the risk. The owner decides.
+
 ### Step 7 — Write the report
 
 Save `<output-folder>/REPORT.md` containing:
@@ -173,13 +269,14 @@ Save `<output-folder>/REPORT.md` containing:
 7. **Persistence** — DB write health
 8. **Errors** — list with severity
 9. **Cost** — actual vs expected
-10. **Improvement Suggestions**
-11. **Data References** — links to all files saved in `<output-folder>`
+10. **Follow-through** — FT1 to FT4 results (Step 6b)
+11. **Improvement Suggestions**
+12. **Data References** — links to all files saved in `<output-folder>`
 
 ## Constraints
 
 - **DO NOT fix anything.** Analyse, explain, report, and advise only.
-- All output files must be written inside `<output-folder>`. Do not modify any source files.
+- All output files must be written inside `<output-folder>`. Do not modify any source files. Exception: the FT5 staging-week numbers go in the feature folder's `results.md`.
 - If asked to also fix problems after the eval, that is a separate workflow — complete the report first, then proceed with fixes.
 - **Memory hygiene (this skill is the heaviest collector).** Persist bundle,
   logs, DB rows, and Redis snapshots to `<output-folder>`, then analyse them on

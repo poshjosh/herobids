@@ -514,7 +514,7 @@ Phase 1:
 - [x] DONE WP1 Output budget (A1)
 - [x] DONE WP2 Length recovery (A2) and `lengthRecoveries`
 - [x] DONE WP3 Instructions block, base-skill sentence and `long-running-task` text
-- [ ] PENDING WP4 Measurement in the `evaluate-*` skills
+- [x] DONE WP4 Measurement in the `evaluate-*` skills
 - [ ] PENDING WP5 Phase 1 docs and CHANGELOG; full test, lint and build
 - [ ] NOT STARTED (needs a staging deploy and a week of traffic; owner-run) WP6 Staging week, `results.md` and gate decision
 
@@ -558,4 +558,11 @@ Phase 3 (if the gate calls for it):
 - Measured sizes: `BASE_SKILL.instructions` 8,493 → 8,702 characters (+209); `LONG_RUNNING_TASK_SKILL` 6,465 → 7,186 (+721, only for agents with that skill); the Instructions block grows by about 330 characters on every judge prompt.
 - LOW: "Do not end a run while you owe the user an outcome" sits beside "send another … when you cannot finish this run"; consistent together, but could read "Do not end a run without telling the user the outcome, or what remains."
 - LOW: the runtime paragraph and the base-skill sentence state the same principle twice; revisit if prompt size matters.
+
+### WP4 Measurement (from the last code review; its HIGH finding and the per-day split were fixed)
+
+- LOW: a cut-off reply with visible text is not logged with its finish reason, so FT2 cannot count it (noted in the skill).
+- LOW: error messages are capped at 600 characters, so FT2 (d) can miss a cut-off reason; the invalid_tool_args count still includes those lines (noted in the skill).
+- LOW: the FT1 and FT3 SQL was checked on a throwaway Postgres with the same columns, not on a migrated herobids database.
+- LOW (pre-existing): typo "session daa" in the evaluate-agent frontmatter.
 
