@@ -39,6 +39,10 @@ The platform never writes chat messages to the user. Only the agent does. All li
 | D15 | **Decided 2026-11-26.** The MCP Tasks and A2A status names in D6 replace the earlier `done` and `question`. |
 | D16 | **Decided 2026-11-26.** "No UI change" is dropped. Phase 3 adds a status line to the chat that is not a chat message. |
 | D18 | **Decided 2026-11-26.** The token values in A1 are accepted (was O10): reserves 16,384 judge and 4,096 scout; ceilings 65,536 and 16,384 (scout ceiling raised to 28,672 by D19); 32,000 for an unknown model. |
+| D20 | **Decided 2026-11-26.** The user's reasoning level is a promise: what runs equals what is shown. With adaptive on, the level is a maximum ("up to"): an important run (user message, a reminder or continuation that carries work, a child or peer report, the trading triggers) uses the user's level; a lighter run one step lower; a routine run none. The platform never goes above the user's level (today `medium` becomes `high`), and with adaptive off the level is used exactly. `none` sends an explicit "reasoning off". |
+| D21 | **Decided 2026-11-26.** The platform never lowers the user's level for other reasons. The WP1 budget step-down and the WP2 recovery step-down are removed. Instead (B) a cut-off is retried at the same level with the hint, and (C) settings warn when the chosen model's maximum output cannot fit the chosen style's limit. Edge case 19 is reworded accordingly. |
+| D22 | **Decided 2026-11-26.** Style reasoning defaults, the single source the create screen also shows: careful scout `none`, judge `low`; balanced scout `low`, judge `medium`; bold scout `medium`, judge `high`. Token limits stay sized for the highest level a user may choose. Agents with no explicit level follow the new defaults; an explicit level is kept and honoured exactly. |
+| D23 | **Decided 2026-11-26.** The effective level, its reason and the user's ceiling are recorded on `agent.llm.completed` (stored) and on the existing per-tick "Resolved tick thinking level" line. No new log lines (the agent logger ignores log levels, so debug lines never print). |
 | D17 | **Decided 2026-11-26.** Phase 1 ships alone first and runs on staging for about a week. Phases 2 and 3 are built only as the decision gate (section "Decision gate after Phase 1") requires. |
 | D19 | **Decided 2026-11-26: scout limits sized for medium reasoning.** The scout runs at up to `medium` (`scoutReasoningMax`), so its limit is sized for medium thinking, not light: `scoutMaxTokens ≥ round((lightThinkingTokens + deepThinkingTokens) / 2) + scoutOutputReserveTokens`, the same midpoint `resolveReasoningBudgetTokens` in `packages/llm` uses for `medium`. Scout defaults careful 10,240, balanced 16,384, bold 24,576; scout ceiling 28,672 ((8,192 + 32,768) / 2 + 8,192). A token-budget scout at `medium` is no longer stepped down to `low` unless the model's maximum output is lower. The judge rule is unchanged. |
 
@@ -519,6 +523,8 @@ Phase 1:
 - [x] DONE WP3 Instructions block, base-skill sentence and `long-running-task` text
 - [x] DONE WP4 Measurement in the `evaluate-*` skills
 - [x] DONE WP5 Phase 1 docs and CHANGELOG; full test, lint and build
+- [ ] PENDING WP7 Reasoning follows the user's choice (D20, D21, D23): adaptive mapping, generic triggers, no step-downs, explicit off, event fields
+- [ ] PENDING WP8 Style reasoning defaults and settings (D21 C, D22): defaults, create screen, settings warning
 - [ ] NOT STARTED (needs a staging deploy and a week of traffic; owner-run) WP6 Staging week, `results.md` and gate decision
 
 Phase 2 (if the gate calls for it):
