@@ -346,7 +346,7 @@ llm:
   # maxOutputTokensByModel:    # model-ID fragment -> most output tokens; MERGED over the built-in table (DEFAULT_MAX_OUTPUT_TOKENS_BY_MODEL in packages/domain), same key replaces
   #   claude-sonnet-4-5: 64000
   lengthRecovery:
-    maxRetries: 1              # per turn: a call cut off at the output limit is retried with one reasoning level lower and a hint to think briefly (0 = resend the same request; max 3; the level never goes below low)
+    maxRetries: 1              # per turn: a call cut off at the output limit is retried at the same reasoning level with a hint to think briefly (0 = resend the same request; max 3)
 
 # Worker process — scan loop and concurrency settings.
 worker:

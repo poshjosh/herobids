@@ -3,6 +3,7 @@ export {
   stripReasoningContent,
   isEffortBasedModel,
   isAdaptiveThinkingOnlyModel,
+  isReasoningMandatoryModel,
   isClaudeModel,
   resolveReasoningParams,
   resolveReasoningBudgetTokens,

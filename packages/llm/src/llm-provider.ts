@@ -113,6 +113,11 @@ export interface LlmResponse {
   finishReason?: string;
   /** Length of the text content before thinking blocks were stripped. Zero with `content` empty means the model sent nothing. For diagnostics only. */
   contentCharsBeforeStrip?: number;
+  /**
+   * The reasoning actually sent (D23): an effort (`low`, `minimal`, ...), `off`, `max_tokens:<n>`, `enabled`, or
+   * `omitted` when no reasoning parameter was sent (including after a provider rejected the one asked for).
+   */
+  reasoningSent?: string;
 }
 
 export interface LlmProviderError {
@@ -161,6 +166,24 @@ export function isAdaptiveThinkingOnlyModel(model: string): boolean {
 }
 
 /**
+ * Returns true for models whose reasoning cannot be turned off (OpenRouter `reasoning.mandatory`), so an explicit off
+ * may be rejected. For these, `none` sends `{ effort: "low" }`, the lowest effort all of them accept (`minimal` is not
+ * valid for the o-series). Kept conservative: OpenAI o1/o3/o4 and the original GPT-5 family (base, mini, nano, codex;
+ * GPT-5.1 and later accept `none`, gpt-5-pro only `high`), DeepSeek R1 and Gemini 2.5 Pro. A model missing here that
+ * rejects the off is handled by the one-time retry in callOpenAiCompatibleProvider.
+ */
+export function isReasoningMandatoryModel(model: string): boolean {
+  const mandatoryPatterns = [
+    /(?:^|\/)o[134](?:-|:|$)/,
+    // An optional OpenRouter variant suffix (`:nitro`, `:free`, ...) may follow.
+    /(?:^|\/)gpt-5(?:-(?:mini|nano|codex))?(?:-\d{4}-\d{2}-\d{2})?(?::[\w-]+)?$/,
+    /deepseek-r1/,
+    /gemini-2\.5-pro/,
+  ];
+  return mandatoryPatterns.some((p) => p.test(model));
+}
+
+/**
  * Returns true if the model is a Claude-family model (Anthropic).
  * Detects any model ID containing 'claude'.
  */
@@ -171,8 +194,10 @@ export function isClaudeModel(model: string): boolean {
 /**
  * Resolve the correct `reasoning` parameter shape for a given reasoning level and model.
  *
+ * - `none` is an explicit "reasoning off": `{ enabled: false }` (see callOpenAiCompatibleProvider for how each provider
+ *   receives it), except adaptive-thinking-only models (Fable 5), which cannot turn thinking off and get
+ *   `{ effort: "minimal" }`, and mandatory-reasoning models (isReasoningMandatoryModel), which get `{ effort: "low" }`.
  * - Effort-based models (Fable 5, Sonnet 5, Opus 4.7+) use `{ effort: level }`.
- * - Adaptive-thinking-only models (Fable 5) get `{ effort: "minimal" }` when `none` is requested.
  * - Unrecognised Claude models fall back to effort-based (forward-looking API).
  * - Truly unknown (non-Claude) models fall back to `max_tokens`.
  */
@@ -185,7 +210,10 @@ export function resolveReasoningParams(
     if (isAdaptiveThinkingOnlyModel(model)) {
       return { effort: 'minimal' };
     }
-    return { max_tokens: 0 };
+    if (isReasoningMandatoryModel(model)) {
+      return { effort: 'low' };
+    }
+    return { enabled: false };
   }
   if (isEffortBasedModel(model)) {
     return { effort: level };
@@ -218,8 +246,8 @@ export function resolveReasoningBudgetTokens(
 }
 
 /**
- * Returns true when the reasoning shape should be sent in the request body.
- * Skips `{ max_tokens: 0 }` with no effort (equivalent to "no reasoning").
+ * Returns true when the reasoning shape turns reasoning on.
+ * `{ enabled: false }` and `{ max_tokens: 0 }` with no effort mean "reasoning off" (see isReasoningOff).
  */
 function shouldSendReasoning(reasoning: LlmRequest['reasoning']): boolean {
   if (!reasoning) return false;
@@ -227,6 +255,37 @@ function shouldSendReasoning(reasoning: LlmRequest['reasoning']): boolean {
   if (reasoning.enabled === true) return true;
   if (reasoning.max_tokens !== undefined && reasoning.max_tokens > 0) return true;
   return false;
+}
+
+/** True when a reasoning shape was given and it turns reasoning off. */
+function isReasoningOff(reasoning: LlmRequest['reasoning']): boolean {
+  return reasoning !== undefined && !shouldSendReasoning(reasoning);
+}
+
+/**
+ * True when a provider error body says reasoning cannot be turned off for the model ("Reasoning is mandatory for this
+ * endpoint and cannot be disabled", "reasoning is required", ...). The phrase must be about reasoning itself, so an
+ * unrelated error that only mentions a reasoning field (`reasoning_content is required ...`) does not match.
+ */
+export function isReasoningMandatoryRejection(body: string): boolean {
+  return /\breasoning\b(?!_)[^.]{0,60}(?:mandatory|can(?:no|')t be (?:disabled|turned off)|must be enabled)|reasoning is required/i.test(body);
+}
+
+// `model|reasoning` pairs OpenRouter rejected. Later calls with the same pair omit `reasoning` straight away instead of
+// paying a 400 round trip each time. Process-wide; also makes the fallback warning print once per pair.
+const rejectedReasoningByModel = new Set<string>();
+
+function reasoningRejectionKey(model: string, reasoning: unknown): string {
+  return `${model}|${JSON.stringify(reasoning)}`;
+}
+
+/** The `reasoningSent` value for a reasoning shape as put on the wire (undefined = not sent). */
+function describeReasoningSent(reasoning: LlmRequest['reasoning']): string {
+  if (!reasoning) return 'omitted';
+  if (reasoning.effort) return reasoning.effort;
+  if (reasoning.max_tokens !== undefined && reasoning.max_tokens > 0) return `max_tokens:${reasoning.max_tokens}`;
+  if (reasoning.enabled === true) return 'enabled';
+  return 'off';
 }
 
 /**
@@ -307,7 +366,20 @@ async function callOpenAiCompatibleProvider(
   const reasoning = resolveEffectiveReasoning(request, config.model, config.thinking);
   if (reasoning && shouldSendReasoning(reasoning)) {
     requestBody['reasoning'] = reasoning;
+  } else if (config.provider === 'openrouter' && isReasoningOff(reasoning)) {
+    // Omitting `reasoning` lets OpenRouter apply the model's default, which is on for many reasoning models.
+    // `enabled: false` is OpenRouter's explicit off (D20). Other OpenAI-compatible APIs have no shared off switch
+    // that a non-reasoning model accepts, so they keep the parameter omitted.
+    requestBody['reasoning'] = { enabled: false };
   }
+  if (
+    config.provider === 'openrouter'
+    && requestBody['reasoning'] !== undefined
+    && rejectedReasoningByModel.has(reasoningRejectionKey(config.model, requestBody['reasoning']))
+  ) {
+    delete requestBody['reasoning'];
+  }
+  let sentReasoning = requestBody['reasoning'] as LlmRequest['reasoning'];
 
   // Enable provider-side prompt caching for OpenRouter → Anthropic models.
   // Top-level cache_control triggers automatic caching: system prompt + conversation
@@ -333,28 +405,48 @@ async function callOpenAiCompatibleProvider(
     }
   }
 
+  const post = (body: Record<string, unknown>): Promise<Response> => fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
+    },
+    body: JSON.stringify(body),
+    signal: controller.signal,
+  });
+
   try {
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
-      },
-      body: JSON.stringify(requestBody),
-      signal: controller.signal,
-    });
+    let response = await post(requestBody);
 
     if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      return {
-        ok: false,
-        error: {
-          code: `provider.http_${response.status}`,
-          message: `Provider returned ${response.status}: ${body.slice(0, 200)}`,
-          retryable: response.status >= 500 || response.status === 429,
-          retryAfterMs: parseRetryAfterMs(response.headers.get('retry-after')),
-        },
-      };
+      let body = await response.text().catch(() => '');
+      // A model whose reasoning is mandatory may reject the explicit off (or an effort it does not take). Retry once
+      // without `reasoning` so the model's default applies, rather than failing the call.
+      if (
+        response.status === 400
+        && config.provider === 'openrouter'
+        && requestBody['reasoning'] !== undefined
+        && isReasoningMandatoryRejection(body)
+      ) {
+        rejectedReasoningByModel.add(reasoningRejectionKey(config.model, requestBody['reasoning']));
+        console.warn(`[llm-provider] ${config.model} rejected reasoning ${JSON.stringify(requestBody['reasoning'])}; retrying without the reasoning parameter (model default applies), and omitting it for this model from now on`);
+        const retryBody = { ...requestBody };
+        delete retryBody['reasoning'];
+        sentReasoning = undefined;
+        response = await post(retryBody);
+        if (!response.ok) body = await response.text().catch(() => '');
+      }
+      if (!response.ok) {
+        return {
+          ok: false,
+          error: {
+            code: `provider.http_${response.status}`,
+            message: `Provider returned ${response.status}: ${body.slice(0, 200)}`,
+            retryable: response.status >= 500 || response.status === 429,
+            retryAfterMs: parseRetryAfterMs(response.headers.get('retry-after')),
+          },
+        };
+      }
     }
 
     const data = await response.json() as {
@@ -418,6 +510,7 @@ async function callOpenAiCompatibleProvider(
         cachedInputTokens: data.usage?.prompt_tokens_details?.cached_tokens,
         finishReason,
         contentCharsBeforeStrip: rawContent.length,
+        reasoningSent: describeReasoningSent(sentReasoning),
       },
     };
   } catch (err) {
@@ -491,10 +584,13 @@ async function callAnthropicProvider(
       : { type: 'auto' };
   }
 
+  // Reasoning off: no `thinking` field, which is Anthropic's off (the Messages API thinks only when asked).
+  let anthropicReasoningSent = isReasoningOff(reasoning) ? 'off' : 'omitted';
   if (isReasoningActive) {
     if ((reasoning!.max_tokens ?? 0) > 0) {
       // Legacy token-budget models (Opus 4.5, Haiku 4.5, earlier Claude 4)
       requestBody['thinking'] = { type: 'enabled', budget_tokens: reasoning!.max_tokens };
+      anthropicReasoningSent = `max_tokens:${reasoning!.max_tokens}`;
     } else if (reasoning!.effort != null) {
       // Adaptive effort-based models (Fable 5, Mythos 5, Sonnet 5, Opus 4.7+, Opus 4.6, Sonnet 4.6).
       // On Anthropic native API, effort lives in a separate top-level output_config field,
@@ -503,9 +599,11 @@ async function callAnthropicProvider(
       const effortLevel = reasoning!.effort === 'minimal' ? 'low' : reasoning!.effort;
       requestBody['thinking'] = { type: 'adaptive' };
       requestBody['output_config'] = { effort: effortLevel };
+      anthropicReasoningSent = effortLevel;
     } else {
       // enabled: true without budget or effort — default to adaptive (thinking on, model chooses depth)
       requestBody['thinking'] = { type: 'adaptive' };
+      anthropicReasoningSent = 'enabled';
     }
   }
 
@@ -574,6 +672,7 @@ async function callAnthropicProvider(
         cachedInputTokens: data.usage?.cache_read_input_tokens,
         finishReason: typeof data.stop_reason === 'string' ? data.stop_reason : undefined,
         contentCharsBeforeStrip: rawContent.length,
+        reasoningSent: anthropicReasoningSent,
       },
     };
   } catch (err) {

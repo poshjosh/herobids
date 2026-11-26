@@ -1,138 +1,107 @@
 import { describe, expect, it } from 'vitest';
-import { classifyTickThinking, extractDrawdownPct, applyReasoningCeiling, toReasoningLevel, resolveScoutReasoningLevel, resolveJudgeThinkingLevel } from './tick-thinking.js';
+import type { ReasoningLevel } from '@herobids/domain';
+import {
+  buildTickRunInput,
+  classifyIncomingUserMessages,
+  classifyTickRun,
+  extractDrawdownPct,
+  hasMarketWake,
+  resolveJudgeRunClassification,
+  resolveRunReasoning,
+  toReasoningEventFields,
+  type RunImportance,
+} from './tick-thinking.js';
 
-describe('classifyTickThinking', () => {
-  it('uses deep thinking for a regime flip', () => {
-    expect(classifyTickThinking({
-      hasOpenPositions: false,
-      previousRegimePass: false,
-      regimePass: true,
-      incomingMessagesCount: 0,
-      drawdownThresholdPct: -2,
-    })).toEqual({ thinking: 'deep', reason: 'regime_flip' });
+const flat = { hasOpenPositions: false, drawdownThresholdPct: -2 };
+
+describe('classifyTickRun', () => {
+  it('treats a regime flip as important', () => {
+    expect(classifyTickRun({ ...flat, previousRegimePass: false, regimePass: true }))
+      .toEqual({ importance: 'important', reason: 'regime_flip' });
   });
 
-  it('uses deep thinking for large drawdown', () => {
-    expect(classifyTickThinking({
-      hasOpenPositions: true,
-      incomingMessagesCount: 0,
-      drawdownPct: -2.5,
-      drawdownThresholdPct: -2,
-    })).toEqual({ thinking: 'deep', reason: 'drawdown_threshold' });
+  it('treats a drawdown at or past the threshold as important (inclusive)', () => {
+    expect(classifyTickRun({ ...flat, hasOpenPositions: true, drawdownPct: -2 }))
+      .toEqual({ importance: 'important', reason: 'drawdown_threshold' });
+    expect(classifyTickRun({ ...flat, hasOpenPositions: true, drawdownPct: -5.1, drawdownThresholdPct: -5 }))
+      .toEqual({ importance: 'important', reason: 'drawdown_threshold' });
   });
 
-  it('uses light thinking when managing open positions without major events', () => {
-    expect(classifyTickThinking({
-      hasOpenPositions: true,
-      incomingMessagesCount: 0,
-      drawdownThresholdPct: -2,
-    })).toEqual({ thinking: 'light', reason: 'open_positions' });
+  it('does not treat a drawdown above the threshold as important', () => {
+    expect(classifyTickRun({ ...flat, hasOpenPositions: true, drawdownPct: -1.9 }))
+      .toEqual({ importance: 'lighter', reason: 'open_positions' });
   });
 
-  it('uses deep thinking when a user message was received', () => {
-    expect(classifyTickThinking({
-      hasOpenPositions: false,
-      incomingMessagesCount: 1,
-      userMessageReceived: true,
-      drawdownThresholdPct: -2,
-    })).toEqual({ thinking: 'deep', reason: 'user_message' });
+  it('treats a user message as important', () => {
+    expect(classifyTickRun({ ...flat, userMessageReceived: true }))
+      .toEqual({ importance: 'important', reason: 'user_message' });
   });
 
-  it('prefers user_message over the generic new_runtime_event reason', () => {
-    // With incoming messages present but userMessageReceived set, the reason
-    // must be user_message (more specific), not new_runtime_event.
-    expect(classifyTickThinking({
-      hasOpenPositions: true,
-      incomingMessagesCount: 3,
-      userMessageReceived: true,
-      drawdownThresholdPct: -2,
-    })).toEqual({ thinking: 'deep', reason: 'user_message' });
+  it('treats a reminder wake that carries work as important', () => {
+    expect(classifyTickRun({ ...flat, workWakeReceived: true }))
+      .toEqual({ importance: 'important', reason: 'work_wake' });
   });
 
-  it('regime flip outranks a user message (precedence)', () => {
-    expect(classifyTickThinking({
-      hasOpenPositions: false,
-      previousRegimePass: false,
-      regimePass: true,
-      incomingMessagesCount: 1,
-      userMessageReceived: true,
-      drawdownThresholdPct: -2,
-    })).toEqual({ thinking: 'deep', reason: 'regime_flip' });
+  it('treats a peer message or child report as important', () => {
+    expect(classifyTickRun({ ...flat, agentMessageReceived: true }))
+      .toEqual({ importance: 'important', reason: 'agent_message' });
   });
 
-  it('drawdown threshold outranks a user message (precedence)', () => {
-    expect(classifyTickThinking({
-      hasOpenPositions: true,
-      incomingMessagesCount: 1,
-      userMessageReceived: true,
-      drawdownPct: -2.5,
-      drawdownThresholdPct: -2,
-    })).toEqual({ thinking: 'deep', reason: 'drawdown_threshold' });
+  it('treats a work wake as important even with open positions', () => {
+    expect(classifyTickRun({ ...flat, hasOpenPositions: true, workWakeReceived: true }))
+      .toEqual({ importance: 'important', reason: 'work_wake' });
   });
 
-  it('uses none for routine flat ticks', () => {
-    expect(classifyTickThinking({
-      hasOpenPositions: false,
-      incomingMessagesCount: 0,
-      drawdownThresholdPct: -2,
-    })).toEqual({ thinking: 'none', reason: 'routine_tick' });
+  it('names the trading trigger first, then the user message, when several apply', () => {
+    expect(classifyTickRun({ ...flat, previousRegimePass: false, regimePass: true, userMessageReceived: true }).reason)
+      .toBe('regime_flip');
+    expect(classifyTickRun({ ...flat, userMessageReceived: true, workWakeReceived: true, agentMessageReceived: true }).reason)
+      .toBe('user_message');
   });
 
-  describe('drawdownThresholdPct parameter', () => {
-    it('triggers deep thinking at the custom threshold', () => {
-      expect(classifyTickThinking({
-        hasOpenPositions: true,
-        incomingMessagesCount: 0,
-        drawdownPct: -5.1,
-        drawdownThresholdPct: -5,
-      })).toEqual({ thinking: 'deep', reason: 'drawdown_threshold' });
-    });
+  it('treats a protection gap as important, ahead of a user message', () => {
+    expect(classifyTickRun({ ...flat, hasOpenPositions: true, protectionGap: true, userMessageReceived: true }))
+      .toEqual({ importance: 'important', reason: 'protection_gap' });
+  });
 
-    it('does not trigger deep thinking when drawdown is above the custom threshold', () => {
-      expect(classifyTickThinking({
-        hasOpenPositions: true,
-        incomingMessagesCount: 0,
-        drawdownPct: -3,
-        drawdownThresholdPct: -5,
-      })).toEqual({ thinking: 'light', reason: 'open_positions' });
-    });
+  it('treats a market wake as important, but names a user message first', () => {
+    expect(classifyTickRun({ ...flat, marketWakeReceived: true }))
+      .toEqual({ importance: 'important', reason: 'market_wake' });
+    expect(classifyTickRun({ ...flat, marketWakeReceived: true, userMessageReceived: true }).reason).toBe('user_message');
+  });
 
-    it('triggers at exactly the threshold value (inclusive)', () => {
-      expect(classifyTickThinking({
-        hasOpenPositions: true,
-        incomingMessagesCount: 0,
-        drawdownPct: -5,
-        drawdownThresholdPct: -5,
-      })).toEqual({ thinking: 'deep', reason: 'drawdown_threshold' });
-    });
+  it('treats the first run as important', () => {
+    expect(classifyTickRun({ ...flat, firstRun: true })).toEqual({ importance: 'important', reason: 'first_run' });
+  });
 
-    it('uses configured threshold of -2', () => {
-      // -1.9 is above -2, so should not trigger
-      expect(classifyTickThinking({
-        hasOpenPositions: true,
-        incomingMessagesCount: 0,
-        drawdownPct: -1.9,
-        drawdownThresholdPct: -2,
-      })).toEqual({ thinking: 'light', reason: 'open_positions' });
+  it('treats a tick with open positions and no event as lighter', () => {
+    expect(classifyTickRun({ ...flat, hasOpenPositions: true }))
+      .toEqual({ importance: 'lighter', reason: 'open_positions' });
+  });
 
-      // -2.0 is at -2, so should trigger
-      expect(classifyTickThinking({
-        hasOpenPositions: true,
-        incomingMessagesCount: 0,
-        drawdownPct: -2.0,
-        drawdownThresholdPct: -2,
-      })).toEqual({ thinking: 'deep', reason: 'drawdown_threshold' });
-    });
+  it('treats a tick with nothing to act on as routine', () => {
+    expect(classifyTickRun(flat)).toEqual({ importance: 'routine', reason: 'routine_tick' });
+  });
+});
 
-    it('uses a tighter threshold (closer to 0) to require more extreme drawdown', () => {
-      // drawdownPct = -2 would trigger at default -2 but not at -0.5
-      expect(classifyTickThinking({
-        hasOpenPositions: true,
-        incomingMessagesCount: 0,
-        drawdownPct: -2,
-        drawdownThresholdPct: -0.5,
-      })).toEqual({ thinking: 'deep', reason: 'drawdown_threshold' });
-    });
+describe('classifyIncomingUserMessages', () => {
+  it('tells the owner\'s message from an agent\'s', () => {
+    expect(classifyIncomingUserMessages([{ type: 'user.message', initiatorType: 'user' }], false))
+      .toEqual({ userMessageReceived: true, agentMessageReceived: false });
+    expect(classifyIncomingUserMessages([
+      { type: 'agent.user.message', initiatorType: 'agent', payload: { message: 'done', childReport: { childAgentId: 'c', childName: 'C' } } },
+    ], false)).toEqual({ userMessageReceived: false, agentMessageReceived: true });
+  });
+
+  it('ignores runtime events that are not user messages', () => {
+    expect(classifyIncomingUserMessages([{ type: 'instance.execution.result' }, { type: 'agent.wake' }], false))
+      .toEqual({ userMessageReceived: false, agentMessageReceived: false });
+  });
+
+  it('counts a user message flagged by the wake poll but not read this tick as the owner\'s', () => {
+    expect(classifyIncomingUserMessages([], true)).toEqual({ userMessageReceived: true, agentMessageReceived: false });
+    expect(classifyIncomingUserMessages([{ type: 'agent.user.message', initiatorType: 'agent' }], true))
+      .toEqual({ userMessageReceived: false, agentMessageReceived: true });
   });
 });
 
@@ -143,149 +112,165 @@ describe('extractDrawdownPct', () => {
   });
 });
 
-describe('toReasoningLevel', () => {
-  it('maps none → none', () => expect(toReasoningLevel('none')).toBe('none'));
-  it('maps light → low', () => expect(toReasoningLevel('light')).toBe('low'));
-  it('maps deep → high', () => expect(toReasoningLevel('deep')).toBe('high'));
-});
+const LEVELS: ReasoningLevel[] = ['none', 'low', 'medium', 'high'];
+const ORDER: Record<ReasoningLevel, number> = { none: 0, low: 1, medium: 2, high: 3 };
 
-describe('applyReasoningCeiling', () => {
-  // System level is at or under the user ceiling → pass through unchanged
-  it('passes none through when user ceiling is none', () =>
-    expect(applyReasoningCeiling('none', 'none')).toBe('none'));
+describe('resolveRunReasoning', () => {
+  const run = (importance: RunImportance) => ({ importance, reason: `${importance}_reason` });
 
-  it('passes none through when user ceiling is high (none < high)', () =>
-    expect(applyReasoningCeiling('none', 'high')).toBe('none'));
+  // D20 mapping table: [user level, important, lighter, routine] with adaptive on.
+  const adaptiveTable: Array<[ReasoningLevel, ReasoningLevel, ReasoningLevel, ReasoningLevel]> = [
+    ['high', 'high', 'medium', 'none'],
+    ['medium', 'medium', 'low', 'none'],
+    ['low', 'low', 'none', 'none'],
+    ['none', 'none', 'none', 'none'],
+  ];
 
-  it('passes light through when user ceiling is low (equal order)', () =>
-    expect(applyReasoningCeiling('light', 'low')).toBe('light'));
+  it.each(adaptiveTable)('with adaptive on and user level %s: important %s, lighter %s, routine %s', (userLevel, important, lighter, routine) => {
+    expect(resolveRunReasoning(run('important'), userLevel, true).level).toBe(important);
+    expect(resolveRunReasoning(run('lighter'), userLevel, true).level).toBe(lighter);
+    expect(resolveRunReasoning(run('routine'), userLevel, true).level).toBe(routine);
+  });
 
-  it('passes light through when user ceiling is medium (light < medium)', () =>
-    expect(applyReasoningCeiling('light', 'medium')).toBe('light'));
+  it.each(LEVELS)('with adaptive off uses user level %s exactly for every run', (userLevel) => {
+    for (const importance of ['important', 'lighter', 'routine'] as const) {
+      expect(resolveRunReasoning(run(importance), userLevel, false)).toEqual({
+        level: userLevel,
+        reason: 'adaptive_off',
+        ceiling: userLevel,
+        adaptive: false,
+      });
+    }
+  });
 
-  it('passes deep through when user ceiling is high (equal order)', () =>
-    expect(applyReasoningCeiling('deep', 'high')).toBe('deep'));
+  it('never runs above the user level', () => {
+    for (const userLevel of LEVELS) {
+      for (const importance of ['important', 'lighter', 'routine'] as const) {
+        for (const adaptive of [true, false]) {
+          expect(ORDER[resolveRunReasoning(run(importance), userLevel, adaptive).level]).toBeLessThanOrEqual(ORDER[userLevel]);
+        }
+      }
+    }
+  });
 
-  // System level exceeds the user ceiling → cap downward
-  it('caps deep to none when user ceiling is none', () =>
-    expect(applyReasoningCeiling('deep', 'none')).toBe('none'));
+  it('keeps medium at medium for an important run instead of raising it to high', () => {
+    expect(resolveRunReasoning({ importance: 'important', reason: 'user_message' }, 'medium', true).level).toBe('medium');
+  });
 
-  it('caps light to none when user ceiling is none', () =>
-    expect(applyReasoningCeiling('light', 'none')).toBe('none'));
-
-  it('caps deep to light when user ceiling is low', () =>
-    expect(applyReasoningCeiling('deep', 'low')).toBe('light'));
-
-  it('caps deep to deep when user ceiling is medium (medium maps to deep)', () =>
-    expect(applyReasoningCeiling('deep', 'medium')).toBe('deep'));
-});
-
-// ── Adaptive reasoning toggle: resolveScoutReasoningLevel ──────────────────
-
-describe('resolveScoutReasoningLevel', () => {
-  describe('adaptive ON (default) — ceiling applied', () => {
-    it('passes system level through when under user ceiling', () => {
-      expect(resolveScoutReasoningLevel('none', 'high', true)).toBe('none');
-      expect(resolveScoutReasoningLevel('light', 'high', true)).toBe('low');
-      expect(resolveScoutReasoningLevel('light', 'medium', true)).toBe('low');
-    });
-
-    it('caps system level when it exceeds user ceiling', () => {
-      expect(resolveScoutReasoningLevel('deep', 'none', true)).toBe('none');
-      expect(resolveScoutReasoningLevel('deep', 'low', true)).toBe('low');
-      expect(resolveScoutReasoningLevel('light', 'none', true)).toBe('none');
-    });
-
-    it('regime flip (deep → high) passes through when user ceiling is high', () => {
-      expect(resolveScoutReasoningLevel('deep', 'high', true)).toBe('high');
-    });
-
-    it('regime flip (deep) capped to low when user ceiling is low', () => {
-      expect(resolveScoutReasoningLevel('deep', 'low', true)).toBe('low');
+  it('reports the run reason and the user ceiling with adaptive on', () => {
+    expect(resolveRunReasoning({ importance: 'lighter', reason: 'open_positions' }, 'high', true)).toEqual({
+      level: 'medium',
+      reason: 'open_positions',
+      ceiling: 'high',
+      adaptive: true,
     });
   });
 
-  describe('adaptive OFF — direct level, no ceiling', () => {
-    it('returns user level directly for all system levels', () => {
-      // Adaptive off: ceiling is never applied — user level is used as-is
-      expect(resolveScoutReasoningLevel('deep', 'none', false)).toBe('none');
-      expect(resolveScoutReasoningLevel('deep', 'low', false)).toBe('low');
-      expect(resolveScoutReasoningLevel('deep', 'medium', false)).toBe('medium');
-      expect(resolveScoutReasoningLevel('deep', 'high', false)).toBe('high');
+  it('runs a routine tick with reasoning off', () => {
+    expect(resolveRunReasoning(classifyTickRun(flat), 'high', true)).toMatchObject({ level: 'none', reason: 'routine_tick' });
+  });
 
-      // Same user level returned regardless of system thinking
-      expect(resolveScoutReasoningLevel('none', 'medium', false)).toBe('medium');
-      expect(resolveScoutReasoningLevel('light', 'medium', false)).toBe('medium');
-      expect(resolveScoutReasoningLevel('deep', 'medium', false)).toBe('medium');
-    });
-
-    it('regime flip does NOT escalate when adaptive is off', () => {
-      // With adaptive off, system should NOT escalate — user's level is used directly
-      expect(resolveScoutReasoningLevel('deep', 'none', false)).toBe('none');
-      expect(resolveScoutReasoningLevel('deep', 'low', false)).toBe('low');
-    });
+  it('runs a reminder wake at the user level', () => {
+    expect(resolveRunReasoning(classifyTickRun({ ...flat, workWakeReceived: true }), 'medium', true))
+      .toMatchObject({ level: 'medium', reason: 'work_wake' });
   });
 });
 
-// ── Adaptive reasoning toggle: resolveJudgeThinkingLevel ────────────────────
-
-describe('resolveJudgeThinkingLevel', () => {
-  describe('adaptive ON (default) — ceiling applied', () => {
-    it('passes system level through when under user ceiling', () => {
-      expect(resolveJudgeThinkingLevel('none', 'high', true)).toBe('none');
-      expect(resolveJudgeThinkingLevel('light', 'medium', true)).toBe('light');
-      expect(resolveJudgeThinkingLevel('light', 'high', true)).toBe('light');
-    });
-
-    it('caps system level when it exceeds user ceiling', () => {
-      expect(resolveJudgeThinkingLevel('deep', 'none', true)).toBe('none');
-      expect(resolveJudgeThinkingLevel('deep', 'low', true)).toBe('light');
-      expect(resolveJudgeThinkingLevel('light', 'none', true)).toBe('none');
-    });
-
-    it('preserves existing applyReasoningCeiling behavior', () => {
-      // These should match what applyReasoningCeiling returns directly
-      expect(resolveJudgeThinkingLevel('deep', 'high', true)).toBe('deep');
-      expect(resolveJudgeThinkingLevel('deep', 'medium', true)).toBe('deep');
-      expect(resolveJudgeThinkingLevel('none', 'none', true)).toBe('none');
-      expect(resolveJudgeThinkingLevel('light', 'low', true)).toBe('light');
+describe('toReasoningEventFields', () => {
+  it('names the fields of the agent.llm.completed event', () => {
+    expect(toReasoningEventFields({ level: 'low', reason: 'open_positions', ceiling: 'medium', adaptive: true })).toEqual({
+      reasoningLevel: 'low',
+      reasoningReason: 'open_positions',
+      reasoningCeiling: 'medium',
+      adaptiveReasoning: true,
     });
   });
 
-  describe('adaptive OFF — direct mapping, no ceiling', () => {
-    it('maps user level directly: none → none', () => {
-      expect(resolveJudgeThinkingLevel('deep', 'none', false)).toBe('none');
-      expect(resolveJudgeThinkingLevel('light', 'none', false)).toBe('none');
-      expect(resolveJudgeThinkingLevel('none', 'none', false)).toBe('none');
-    });
+  it('adds the reasoning the provider was sent when known', () => {
+    expect(toReasoningEventFields({ level: 'none', reason: 'routine_tick', ceiling: 'medium', adaptive: true }, 'omitted'))
+      .toMatchObject({ reasoningLevel: 'none', reasoningSent: 'omitted' });
+  });
+});
 
-    it('maps user level directly: low → light', () => {
-      expect(resolveJudgeThinkingLevel('deep', 'low', false)).toBe('light');
-      expect(resolveJudgeThinkingLevel('light', 'low', false)).toBe('light');
-      expect(resolveJudgeThinkingLevel('none', 'low', false)).toBe('light');
-    });
+describe('hasMarketWake', () => {
+  const scannerWake = (scannerKind: string) => ({ source: 'scanner', reason: 'review', context: { scannerKind } });
 
-    it('maps user level directly: medium → deep', () => {
-      expect(resolveJudgeThinkingLevel('deep', 'medium', false)).toBe('deep');
-      expect(resolveJudgeThinkingLevel('light', 'medium', false)).toBe('deep');
-      expect(resolveJudgeThinkingLevel('none', 'medium', false)).toBe('deep');
-    });
+  it('counts a scanner review wake, which review routing consumes before the context build', () => {
+    for (const kind of ['preset_review', 'assessment_review']) {
+      const marketWakeReceived = hasMarketWake({ currentMarketWake: scannerWake(kind) });
+      expect(marketWakeReceived, kind).toBe(true);
+      expect(classifyTickRun({ ...flat, marketWakeReceived })).toEqual({ importance: 'important', reason: 'market_wake' });
+    }
+  });
 
-    it('maps user level directly: high → deep', () => {
-      expect(resolveJudgeThinkingLevel('deep', 'high', false)).toBe('deep');
-      expect(resolveJudgeThinkingLevel('light', 'high', false)).toBe('deep');
-      expect(resolveJudgeThinkingLevel('none', 'high', false)).toBe('deep');
-    });
+  it('is false without a wake', () => {
+    expect(hasMarketWake({ currentMarketWake: null })).toBe(false);
+  });
+});
 
-    it('system thinking (regime flip, drawdown) is ignored when adaptive is off', () => {
-      // Regardless of what the system thinks, the user's level maps directly
-      expect(resolveJudgeThinkingLevel('deep', 'low', false)).toBe('light');
-      expect(resolveJudgeThinkingLevel('deep', 'none', false)).toBe('none');
-    });
+describe('buildTickRunInput', () => {
+  const quiet: Parameters<typeof buildTickRunInput>[0] = {
+    hasOpenPositions: false,
+    previousRegimePass: null,
+    regimePass: null,
+    incomingMessages: [],
+    hasPendingUserMessage: false,
+    reminderScheduledBy: null,
+    marketWakeReceived: false,
+    firstModelRun: false,
+    isResumedFullEvaluation: false,
+    hasTriggeredWatch: false,
+    hasUncoveredPosition: false,
+    hasUnprotectedPosition: false,
+    drawdownPct: null,
+    drawdownThresholdPct: -2,
+  };
+  const classify = (overrides: Partial<typeof quiet>) => classifyTickRun(buildTickRunInput({ ...quiet, ...overrides }));
 
-    it('medium and high both map to deep (existing behavior preserved)', () => {
-      expect(resolveJudgeThinkingLevel('none', 'medium', false)).toBe('deep');
-      expect(resolveJudgeThinkingLevel('none', 'high', false)).toBe('deep');
-    });
+  it('classifies a quiet later tick as routine', () => {
+    expect(classify({})).toEqual({ importance: 'routine', reason: 'routine_tick' });
+  });
+
+  it('classifies a reminder wake as work, so a continued job search runs at the user level', () => {
+    expect(classify({ reminderScheduledBy: 'judge' })).toEqual({ importance: 'important', reason: 'work_wake' });
+    expect(resolveRunReasoning(classify({ reminderScheduledBy: 'scout' }), 'medium', true).level).toBe('medium');
+  });
+
+  it('classifies the first run and a resumed full evaluation as first_run', () => {
+    expect(classify({ firstModelRun: true })).toEqual({ importance: 'important', reason: 'first_run' });
+    expect(classify({ isResumedFullEvaluation: true })).toEqual({ importance: 'important', reason: 'first_run' });
+  });
+
+  it('classifies a market wake as important', () => {
+    expect(classify({ marketWakeReceived: true })).toEqual({ importance: 'important', reason: 'market_wake' });
+  });
+
+  it('classifies each protection gap as important, even with open positions', () => {
+    for (const gap of ['hasTriggeredWatch', 'hasUncoveredPosition', 'hasUnprotectedPosition'] as const) {
+      expect(classify({ hasOpenPositions: true, [gap]: true }), gap).toEqual({ importance: 'important', reason: 'protection_gap' });
+    }
+  });
+
+  it('keeps a fill or open position alone at lighter', () => {
+    expect(classify({ hasOpenPositions: true })).toEqual({ importance: 'lighter', reason: 'open_positions' });
+  });
+
+  it('tells the owner\'s message from a peer\'s', () => {
+    expect(classify({ incomingMessages: [{ type: 'agent.user.message', initiatorType: 'agent' }] }).reason).toBe('agent_message');
+    expect(classify({ incomingMessages: [{ type: 'user.message', initiatorType: 'user' }] }).reason).toBe('user_message');
+  });
+});
+
+describe('resolveJudgeRunClassification', () => {
+  const routine = { importance: 'routine' as const, reason: 'routine_tick' as const };
+
+  it('makes every run important for a premium judge, still capped at the user level', () => {
+    const judge = resolveJudgeRunClassification(routine, true);
+    expect(judge).toEqual({ importance: 'important', reason: 'cost_profile_premium' });
+    expect(resolveRunReasoning(judge, 'low', true)).toEqual({ level: 'low', reason: 'cost_profile_premium', ceiling: 'low', adaptive: true });
+  });
+
+  it('uses the shared classification otherwise', () => {
+    expect(resolveJudgeRunClassification(routine, false)).toBe(routine);
   });
 });

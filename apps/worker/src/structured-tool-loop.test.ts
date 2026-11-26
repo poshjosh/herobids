@@ -1077,7 +1077,6 @@ describe('runStructuredToolLoop', () => {
       return { requests, retryOptions };
     }
 
-    const resolveReasoning = (level: string) => ({ effort: level });
     const baseOptions = {
       providerConfig: { provider: 'openai', model: 'test-model', maxTokens: 128, timeoutMs: 1_000 },
       requestBase: { maxTokens: 128, temperature: 0, reasoning: { effort: 'high' } },
@@ -1086,14 +1085,9 @@ describe('runStructuredToolLoop', () => {
       maxTurns: 5,
       executeTool: async () => '{"ok":true}',
     };
-    const recoveryOptions = (maxRetries: number, onRecovery = vi.fn()) => ({
-      maxRetries,
-      reasoningLevel: 'high' as const,
-      resolveReasoning,
-      onRecovery,
-    });
+    const recoveryOptions = (maxRetries: number, onRecovery = vi.fn()) => ({ maxRetries, onRecovery });
 
-    it('retries a cut-off tool call once with a lower reasoning level and the hint', async () => {
+    it('retries a cut-off tool call once at the same reasoning level with the hint', async () => {
       const { requests } = scriptModel([cutOffToolCall(), okReply('done')]);
       const onRecovery = vi.fn();
 
@@ -1103,13 +1097,11 @@ describe('runStructuredToolLoop', () => {
       expect(requests).toHaveLength(2);
       expect(requests[0]?.reasoning).toEqual({ effort: 'high' });
       expect(requests[0]?.messages.at(-1)).toEqual({ role: 'user', content: 'hello' });
-      expect(requests[1]?.reasoning).toEqual({ effort: 'medium' });
+      expect(requests[1]?.reasoning).toEqual({ effort: 'high' });
       expect(requests[1]?.messages.at(-1)).toEqual({ role: 'user', content: LENGTH_RECOVERY_HINT, volatile: true });
       expect(onRecovery).toHaveBeenCalledExactlyOnceWith({
         turnIndex: 0,
         cause: 'invalid_tool_args',
-        fromLevel: 'high',
-        toLevel: 'medium',
         recovery: 1,
       });
     });
@@ -1141,14 +1133,14 @@ describe('runStructuredToolLoop', () => {
 
       expect(result).toMatchObject({ ok: true, assistantResponse: 'done', turnsUsed: 1 });
       expect(requests).toHaveLength(2);
-      expect(requests[1]?.reasoning).toEqual({ effort: 'medium' });
+      expect(requests[1]?.reasoning).toEqual({ effort: 'high' });
       expect(requests[1]?.messages.at(-1)?.content).toBe(LENGTH_RECOVERY_HINT);
       // The cut-off call is still reported, so its usage is recorded.
       expect(turns).toEqual([
         { assistantResponse: '', continues: true },
         { assistantResponse: 'done', continues: false },
       ]);
-      expect(onRecovery).toHaveBeenCalledWith(expect.objectContaining({ cause: 'empty_reply', fromLevel: 'high', toLevel: 'medium' }));
+      expect(onRecovery).toHaveBeenCalledWith({ turnIndex: 0, cause: 'empty_reply', recovery: 1 });
     });
 
     it('handles an empty cut-off reply like any other stop once the recovery retries are used', async () => {
@@ -1172,26 +1164,26 @@ describe('runStructuredToolLoop', () => {
       expect(retryOptions[1]?.skipRetry).toBeDefined();
     });
 
-    it('steps the reasoning level down once per recovery retry, up to maxRetries', async () => {
+    it('keeps the reasoning level on every recovery retry, up to maxRetries', async () => {
       const { requests } = scriptModel([cutOffToolCall(), cutOffToolCall(), cutOffToolCall(), okReply('done')]);
       const onRecovery = vi.fn();
 
       const result = await runStructuredToolLoop({ ...baseOptions, lengthRecovery: recoveryOptions(3, onRecovery) });
 
       expect(result.ok).toBe(true);
+      // The user's level is never lowered (D21); only the hint changes the retry.
       expect(requests.map((request) => request.reasoning)).toEqual([
         { effort: 'high' },
-        { effort: 'medium' },
-        { effort: 'low' },
-        { effort: 'low' },
+        { effort: 'high' },
+        { effort: 'high' },
+        { effort: 'high' },
       ]);
       expect(onRecovery).toHaveBeenCalledTimes(3);
-      // `none` would drop the reasoning parameter, and some providers then reason more, not less.
-      expect(onRecovery).toHaveBeenLastCalledWith(expect.objectContaining({ fromLevel: 'low', toLevel: 'low' }));
+      expect(onRecovery).toHaveBeenLastCalledWith({ turnIndex: 0, cause: 'invalid_tool_args', recovery: 3 });
       expect(requests[3]?.messages.at(-1)?.content).toBe(LENGTH_RECOVERY_HINT);
     });
 
-    it('sends the next turn at the normal reasoning level and without the hint', async () => {
+    it('sends the next turn without the hint', async () => {
       const { requests } = scriptModel([cutOffToolCall(), okReply('', ['write_file']), okReply('done')]);
 
       await runStructuredToolLoop({ ...baseOptions, lengthRecovery: recoveryOptions(1) });

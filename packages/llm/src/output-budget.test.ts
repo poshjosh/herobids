@@ -109,28 +109,15 @@ describe('resolveLlmCallOutputBudget', () => {
 
   it('keeps a limit within the model maximum and scales the timeout with it', () => {
     const budget = resolveLlmCallOutputBudget({ ...base, model: 'anthropic/claude-sonnet-4-5', maxTokens: 36_864, reasoningLevel: 'high' });
-    expect(budget).toEqual({ maxTokens: 36_864, timeoutMs: 36_864 * 6, reasoningLevel: 'high' });
+    expect(budget).toEqual({ maxTokens: 36_864, timeoutMs: 36_864 * 6 });
   });
 
   it('clamps a limit above the model maximum and scales the timeout with the clamped limit', () => {
     const budget = resolveLlmCallOutputBudget({ ...base, model: 'acme-reasoner', maxTokens: 49_152, reasoningLevel: 'low' });
-    expect(budget.maxTokens).toBe(32_000);
-    expect(budget.clampedFrom).toBe(49_152);
-    expect(budget.timeoutMs).toBe(32_000 * 6);
-    expect(budget.reasoningLevel).toBe('low');
-    expect(budget.reasoningLoweredFrom).toBeUndefined();
+    expect(budget).toEqual({ maxTokens: 32_000, timeoutMs: 32_000 * 6, clampedFrom: 49_152 });
   });
 
-  it('lowers the reasoning level one step when that is enough to leave the reserve after thinking', () => {
-    const budget = resolveLlmCallOutputBudget({ ...base, model: 'acme-reasoner', maxTokens: 49_152, reasoningLevel: 'high' });
-    // high: 20,480 + 16,384 > 32,000; medium: 12,288 + 16,384 <= 32,000
-    expect(budget.maxTokens).toBe(32_000);
-    expect(budget.reasoningLevel).toBe('medium');
-    expect(budget.reasoningLoweredFrom).toBe('high');
-    expect(budget.reserveUnmet).toBeUndefined();
-  });
-
-  it('keeps lowering the reasoning level until the clamped limit leaves the reserve (bold judge)', () => {
+  it('keeps the level and reports the unmet reserve when the clamped limit no longer leaves the reserve (D21)', () => {
     const budget = resolveLlmCallOutputBudget({
       ...base,
       thinking: boldThinking,
@@ -138,25 +125,17 @@ describe('resolveLlmCallOutputBudget', () => {
       maxTokens: 49_152,
       reasoningLevel: 'high',
     });
-    // high: 32,768 + 16,384 > 32,000; medium: 20,480 + 16,384 > 32,000; low: 8,192 + 16,384 <= 32,000
-    expect(budget.maxTokens).toBe(32_000);
-    expect(budget.clampedFrom).toBe(49_152);
-    expect(budget.reasoningLevel).toBe('low');
-    expect(budget.reasoningLoweredFrom).toBe('high');
-    expect(budget.reserveUnmet).toBeUndefined();
+    // high: 32,768 + 16,384 > 32,000. The budget has no level of its own: the caller's level is sent unchanged.
+    expect(budget).toEqual({ maxTokens: 32_000, timeoutMs: 32_000 * 6, clampedFrom: 49_152, reserveUnmet: true });
   });
 
-  it('stops at none and reports the unmet reserve when even no thinking leaves too little room', () => {
-    const budget = resolveLlmCallOutputBudget({ ...base, model: 'acme-mini', maxTokens: 36_864, reasoningLevel: 'high' });
-    // 8,192 < reserve 16,384 at every level
+  it('reports the unmet reserve when even no thinking leaves too little room', () => {
+    const budget = resolveLlmCallOutputBudget({ ...base, model: 'acme-mini', maxTokens: 36_864, reasoningLevel: 'none' });
     expect(budget.maxTokens).toBe(8_192);
-    expect(budget.reasoningLevel).toBe('none');
-    expect(budget.reasoningLoweredFrom).toBe('high');
     expect(budget.reserveUnmet).toBe(true);
   });
 
-  it('lowers the reasoning level of an unclamped call whose level needs more thinking than the limit leaves room for', () => {
-    // A limit sized for light thinking only: high 20,480 + 4,096 > 8,192; medium 12,288 + 4,096 > 8,192
+  it('reports the unmet reserve of an unclamped call whose level needs more thinking than the limit leaves room for', () => {
     const budget = resolveLlmCallOutputBudget({
       ...base,
       outputReserveTokens: 4_096,
@@ -164,10 +143,7 @@ describe('resolveLlmCallOutputBudget', () => {
       maxTokens: 8_192,
       reasoningLevel: 'high',
     });
-    expect(budget.clampedFrom).toBeUndefined();
-    expect(budget.maxTokens).toBe(8_192);
-    expect(budget.reasoningLevel).toBe('low');
-    expect(budget.reasoningLoweredFrom).toBe('high');
+    expect(budget).toEqual({ maxTokens: 8_192, timeoutMs: 60_000, reserveUnmet: true });
   });
 
   it('keeps a balanced token-budget scout at medium on a model with the default maximum output', () => {
@@ -179,10 +155,10 @@ describe('resolveLlmCallOutputBudget', () => {
       maxTokens: 16_384,
       reasoningLevel: 'medium',
     });
-    expect(budget).toEqual({ maxTokens: 16_384, timeoutMs: 16_384 * 6, reasoningLevel: 'medium' });
+    expect(budget).toEqual({ maxTokens: 16_384, timeoutMs: 16_384 * 6 });
   });
 
-  it('keeps the level of an effort-based model, which is not bound by the thinking budget', () => {
+  it('does not check the reserve of an effort-based model, which sizes its own thinking', () => {
     const clamped = resolveLlmCallOutputBudget({
       ...base,
       thinking: boldThinking,
@@ -190,19 +166,12 @@ describe('resolveLlmCallOutputBudget', () => {
       maxTokens: 49_152,
       reasoningLevel: 'high',
     });
-    expect(clamped.maxTokens).toBe(32_000);
-    expect(clamped.clampedFrom).toBe(49_152);
-    expect(clamped.reasoningLevel).toBe('high');
-    expect(clamped.reasoningLoweredFrom).toBeUndefined();
-
-    const unclamped = resolveLlmCallOutputBudget({ ...base, model: 'claude-opus-4-1', maxTokens: 8_192, reasoningLevel: 'high' });
-    expect(unclamped.reasoningLevel).toBe('high');
-    expect(unclamped.clampedFrom).toBeUndefined();
+    expect(clamped).toEqual({ maxTokens: 32_000, timeoutMs: 32_000 * 6, clampedFrom: 49_152 });
   });
 
-  it('keeps the level when the limit already leaves the reserve after thinking', () => {
+  it('meets the reserve when the limit leaves room after the level\'s thinking budget', () => {
     const budget = resolveLlmCallOutputBudget({ ...base, model: 'acme-reasoner', maxTokens: 32_000, reasoningLevel: 'medium' });
-    expect(budget).toEqual({ maxTokens: 32_000, timeoutMs: 32_000 * 6, reasoningLevel: 'medium' });
+    expect(budget).toEqual({ maxTokens: 32_000, timeoutMs: 32_000 * 6 });
   });
 });
 

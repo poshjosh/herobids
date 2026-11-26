@@ -85,7 +85,7 @@ import { mergeKnownEntry, sentMessageRefFromToolResult, trimConversationWindow, 
 import { createThreadReader } from './conversation-thread-reader.js';
 import { resolveReplyDelivery } from './fallback-reply.js';
 import { createPauseStateTracker, HeldMessageQueue, PAUSED_TICK_GATE, PAUSED_TICK_REASON, resolvePausedTickDelay, resolvePausedWakeAction, runPauseGatedTick } from './runtime-pause.js';
-import { classifyTickThinking, extractDrawdownPct, toReasoningLevel, resolveScoutReasoningLevel, resolveJudgeThinkingLevel } from './tick-thinking.js';
+import { buildTickRunInput, classifyTickRun, extractDrawdownPct, hasMarketWake, resolveJudgeRunClassification, resolveRunReasoning, toReasoningEventFields, type RunReasoning, type TickRunClassification } from './tick-thinking.js';
 import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget, parseRegimeBoundaryPayload, parseMarketOverviewPayload, parseDexTokensPayload, parseEconomicCalendarBoundaryPayload, type RegimeBoundaryFreshness } from './venue-intelligence.js';
 import { BrowserlessAdapter } from './tools/browserless-adapter.js';
 import { createToolRegistry } from './tools/index.js';
@@ -642,6 +642,8 @@ const toolVisibility = createRuntimeToolVisibilityController(() => runtimeState.
 // Declared here (before functions that reference it at module-init call sites)
 // even though the main loop increments it later.
 let tickCount = 0;
+// Set once a tick reaches the scout or judge. Gates can skip the first ticks, so tick 1 is not always the first run (D20).
+let modelRunReached = false;
 
 class TickGateUnexpectedError extends Error {
   constructor(public readonly cause: unknown) {
@@ -982,7 +984,7 @@ function resolveCallOutputBudget(
     baseTimeoutMs: LLM_BASE_TIMEOUT_MS,
     config: agentRuntimePolicy.llm,
   });
-  const adjusted = budget.clampedFrom !== undefined || budget.reasoningLoweredFrom !== undefined || budget.reserveUnmet;
+  const adjusted = budget.clampedFrom !== undefined || budget.reserveUnmet;
   const logKey = `${phase}|${model}|${maxTokens}|${reasoningLevel}`;
   if (adjusted && !loggedOutputBudgetAdjustments.has(logKey)) {
     loggedOutputBudgetAdjustments.add(logKey);
@@ -991,32 +993,28 @@ function resolveCallOutputBudget(
       model,
       requestedMaxTokens: maxTokens,
       maxTokens: budget.maxTokens,
-      requestedReasoningLevel: reasoningLevel,
-      reasoningLevel: budget.reasoningLevel,
+      reasoningLevel,
       outputReserveTokens,
       ...(budget.reserveUnmet ? { reserveUnmet: true } : {}),
     }, budget.reserveUnmet
-      ? 'Output-token limit leaves less than the output reserve even without thinking'
-      : 'Adjusted output-token limit or reasoning level to fit the model maximum output and the output reserve');
+      ? 'Output-token limit leaves less than the output reserve after the thinking budget; reasoning level kept'
+      : 'Clamped output-token limit to the model maximum output');
   }
   return budget;
 }
 
-// Retry of a call cut off at the output limit: one reasoning level lower per retry, mapped for the call's model.
+// Retry of a call cut off at the output limit: same reasoning level (D21), with a hint to think briefly.
 function buildLengthRecovery(
   phase: 'scout' | 'judge',
-  model: string,
   reasoningLevel: ReasoningLevel,
   onRecovered?: () => void,
 ): LengthRecoveryOptions {
   return {
     maxRetries: agentRuntimePolicy.llm.lengthRecovery.maxRetries,
-    reasoningLevel,
-    resolveReasoning: (level) => resolveReasoningParams(level, model, agentRuntimePolicy.llm.thinking),
-    onRecovery: ({ turnIndex, cause, fromLevel, toLevel, recovery }) => {
+    onRecovery: ({ turnIndex, cause, recovery }) => {
       logger.warn(
-        { phase, turnIndex, cause, fromReasoningLevel: fromLevel, toReasoningLevel: toLevel, recovery },
-        'Retrying LLM call cut off at the output limit with a lower reasoning level',
+        { phase, turnIndex, cause, reasoningLevel, recovery },
+        'Retrying LLM call cut off at the output limit with a hint to think briefly',
       );
       onRecovered?.();
     },
@@ -3535,6 +3533,9 @@ async function runActiveTick(): Promise<void> {
       return;
     }
 
+    // Snapshot here: review routing and the hybrid path below consume the wake, and the context build clears it.
+    const marketWakeReceived = hasMarketWake(runtimeState.metrics);
+
     // ── 002: Preset-review wake routing ─────────────────────────────────────
     // When a scanner wake carries scannerKind === 'preset_review', route to the
     // transition-review flow instead of the hybrid single-shot evaluator or the
@@ -4109,18 +4110,29 @@ async function runActiveTick(): Promise<void> {
     const needsAdaptiveThinking =
       agentConfig.resolvedRuntimePolicy?.adaptScoutReasoning !== false ||
       agentConfig.resolvedRuntimePolicy?.adaptJudgeReasoning !== false;
-    const sharedThinkingDecision = needsAdaptiveThinking
-      ? classifyTickThinking({
+    const sharedRunClassification: TickRunClassification = needsAdaptiveThinking
+      ? classifyTickRun(buildTickRunInput({
           hasOpenPositions,
           previousRegimePass,
           regimePass: skipDecision.regime?.pass ?? null,
-          incomingMessagesCount: incomingMessages.length,
-          userMessageReceived: incomingMessages.some((message) => isUserMessageType(message['type'])),
+          incomingMessages,
+          hasPendingUserMessage,
+          reminderScheduledBy,
+          marketWakeReceived,
+          firstModelRun: !modelRunReached,
+          isResumedFullEvaluation,
+          hasTriggeredWatch,
+          hasUncoveredPosition,
+          hasUnprotectedPosition: coverageResult.hasUnprotectedPosition,
           drawdownPct: sessionMetrics.performance.drawdownPct ?? extractDrawdownPct(sessionMetrics.lastPnlSummary),
           drawdownThresholdPct: agentRuntimePolicy.thinking.drawdownThresholdPct,
-        })
-      : { thinking: 'none' as const, reason: 'routine_tick' as const };
+        }))
+      : { importance: 'routine', reason: 'routine_tick' };
+    // Past the last gate: this tick runs the scout or the judge.
+    modelRunReached = true;
 
+    // Set when the scout runs; its reasoning fields go on the scout's held/escalated log line.
+    let scoutReasoning: RunReasoning | undefined;
     if (preScoutResolution.decision) {
       redis.del(scoutSystemPromptKey, scoutUserContextPromptKey).catch((err: unknown) => {
         logger.warn({ err }, 'Failed to clear skipped scout prompt surfaces from Redis');
@@ -4169,16 +4181,14 @@ async function runActiveTick(): Promise<void> {
         maxTurns: scoutLoopConfig.maxTurns,
       });
 
-      const scoutBudget = resolveCallOutputBudget(
-        'scout',
-        lightModel,
-        scoutLoopConfig.maxTokens,
-        resolveScoutReasoningLevel(
-          sharedThinkingDecision.thinking,
-          agentConfig.resolvedRuntimePolicy?.scoutReasoning ?? 'medium',
-          agentConfig.resolvedRuntimePolicy?.adaptScoutReasoning !== false,
-        ),
+      scoutReasoning = resolveRunReasoning(
+        sharedRunClassification,
+        agentConfig.resolvedRuntimePolicy?.scoutReasoning ?? 'medium',
+        agentConfig.resolvedRuntimePolicy?.adaptScoutReasoning !== false,
       );
+      // What the provider was last sent, which differs from the level after a provider fallback (D23).
+      let scoutReasoningSent: string | undefined;
+      const scoutBudget = resolveCallOutputBudget('scout', lightModel, scoutLoopConfig.maxTokens, scoutReasoning.level);
       const scoutLoopResult = await runStructuredToolLoop({
         providerConfig: {
           provider: provider,
@@ -4194,13 +4204,13 @@ async function runActiveTick(): Promise<void> {
           maxTokens: scoutBudget.maxTokens,
           temperature: scoutLoopConfig.temperature,
           reasoning: resolveReasoningParams(
-            scoutBudget.reasoningLevel,
+            scoutReasoning.level,
             lightModel,
             agentRuntimePolicy.llm.thinking,
           ),
         },
         maxTurns: scoutLoopConfig.maxTurns,
-        lengthRecovery: buildLengthRecovery('scout', lightModel, scoutBudget.reasoningLevel),
+        lengthRecovery: buildLengthRecovery('scout', scoutReasoning.level),
         toolResultFullRetentionTurns: runtimeState.runtimeDescriptor.budgets.toolResultFullRetentionTurns,
         toolResultMaxStaleChars: runtimeState.runtimeDescriptor.budgets.toolResultMaxStaleChars,
         describeCutResult,
@@ -4241,6 +4251,7 @@ async function runActiveTick(): Promise<void> {
           }
         },
         onAssistantTurn: ({ result, turnIndex }) => {
+          scoutReasoningSent = result.data.reasoningSent;
           recordSessionCost(runtimeState, {
             tokensUsed: result.data.tokensUsed,
             thinkingTokens: result.data.thinkingTokens,
@@ -4299,6 +4310,7 @@ async function runActiveTick(): Promise<void> {
         model: lightModel,
         turnsUsed: scoutLoopResult.ok ? scoutLoopResult.turnsUsed : 0,
         finishReason: !scoutLoopResult.ok ? 'error' : scoutLoopResult.terminatedByLimit ? 'turn_limit' : 'stop',
+        ...toReasoningEventFields(scoutReasoning, scoutReasoningSent),
         errorMessage: !scoutLoopResult.ok ? scoutLoopResult.error.message : undefined,
       });
 
@@ -4354,7 +4366,12 @@ async function runActiveTick(): Promise<void> {
           logger.warn({ err }, 'Failed to clear skipped judge prompt surfaces from Redis');
         });
         const escalationRate = scoutTickCount > 0 ? scoutEscalationCount / scoutTickCount : 0;
-        logger.info({ metric: 'agent.escalation_rate', escalationRate, reason: resolvedScoutDecision.reason }, 'Scout held the tick');
+        logger.info({
+          metric: 'agent.escalation_rate',
+          escalationRate,
+          reason: resolvedScoutDecision.reason,
+          ...(scoutReasoning ? toReasoningEventFields(scoutReasoning) : {}),
+        }, 'Scout held the tick');
         emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.SCOUT_HELD, {
           tickId,
           reason: resolvedScoutDecision.reason ?? 'unspecified',
@@ -4368,7 +4385,12 @@ async function runActiveTick(): Promise<void> {
     if (preScoutResolution.source === 'scout') {
       scoutEscalationCount++;
       const escalationRate = scoutTickCount > 0 ? scoutEscalationCount / scoutTickCount : 0;
-      logger.info({ metric: 'agent.escalation_rate', escalationRate, reason: resolvedScoutDecision.reason }, 'Scout escalated to judge');
+      logger.info({
+        metric: 'agent.escalation_rate',
+        escalationRate,
+        reason: resolvedScoutDecision.reason,
+        ...(scoutReasoning ? toReasoningEventFields(scoutReasoning) : {}),
+      }, 'Scout escalated to judge');
       emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.SCOUT_ESCALATED, {
         tickId,
         reason: resolvedScoutDecision.reason ?? 'unspecified',
@@ -4401,32 +4423,17 @@ async function runActiveTick(): Promise<void> {
       ...recentHistory,
     ];
 
-    const systemThinking = costProfile.defaultThinking === 'deep'
-      ? 'deep' as const
-      : sharedThinkingDecision.thinking;
-    const userJudgeLevel = agentConfig.resolvedRuntimePolicy?.judgeReasoning ?? 'medium';
-    const adaptJudge = agentConfig.resolvedRuntimePolicy?.adaptJudgeReasoning !== false;
-    const cappedThinking = resolveJudgeThinkingLevel(systemThinking, userJudgeLevel, adaptJudge);
-    const judgeThinkingReason = !adaptJudge
-      ? 'direct_mapping'
-      : costProfile.defaultThinking === 'deep'
-        ? 'cost_profile_premium'
-        : sharedThinkingDecision.reason;
-    previousRegimePass = skipDecision.regime?.pass ?? previousRegimePass;
-    const wasCapped = cappedThinking !== systemThinking;
-    const judgeBudget = resolveCallOutputBudget(
-      'judge',
-      costProfile.heavyModel,
-      judgeMaxTokens,
-      toReasoningLevel(cappedThinking),
+    const judgeRunClassification = resolveJudgeRunClassification(sharedRunClassification, costProfile.defaultThinking === 'deep');
+    const judgeReasoning = resolveRunReasoning(
+      judgeRunClassification,
+      agentConfig.resolvedRuntimePolicy?.judgeReasoning ?? 'medium',
+      agentConfig.resolvedRuntimePolicy?.adaptJudgeReasoning !== false,
     );
+    previousRegimePass = skipDecision.regime?.pass ?? previousRegimePass;
+    const judgeBudget = resolveCallOutputBudget('judge', costProfile.heavyModel, judgeMaxTokens, judgeReasoning.level);
     logger.info({
-      thinking: cappedThinking,
-      reasoningLevel: judgeBudget.reasoningLevel,
-      adaptJudge,
-      userLevel: userJudgeLevel,
-      reason: judgeThinkingReason,
-      ...(wasCapped ? { capped: { from: systemThinking, by: userJudgeLevel } } : {}),
+      phase: 'judge',
+      ...toReasoningEventFields(judgeReasoning),
     }, 'Resolved tick thinking level');
 
     emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.LLM_DISPATCH, {
@@ -4462,6 +4469,8 @@ async function runActiveTick(): Promise<void> {
     let judgeFinishRun: FinishRunRecord | undefined;
     let judgeNudgesSent = 0;
     let judgeLengthRecoveries = 0;
+    // What the provider was last sent, which differs from the level after a provider fallback (D23).
+    let judgeReasoningSent: string | undefined;
     const judgeToolFailures = new UnresolvedToolFailureTracker();
     // Text of the latest turn that called finish_run; stored after the loop if that turn ended the run.
     let judgeFinishTurnText: string | undefined;
@@ -4507,13 +4516,13 @@ async function runActiveTick(): Promise<void> {
         maxTokens: judgeBudget.maxTokens,
         temperature: judgeLoopConfig.temperature,
         reasoning: resolveReasoningParams(
-          judgeBudget.reasoningLevel,
+          judgeReasoning.level,
           costProfile.heavyModel,
           agentRuntimePolicy.llm.thinking,
         ),
       },
       maxTurns: judgeLoopConfig.maxTurns,
-      lengthRecovery: buildLengthRecovery('judge', costProfile.heavyModel, judgeBudget.reasoningLevel, () => {
+      lengthRecovery: buildLengthRecovery('judge', judgeReasoning.level, () => {
         judgeLengthRecoveries += 1;
       }),
       // Fresh clock for this run: the system prompt's time is fixed at tick start. Sent for the request only.
@@ -4554,6 +4563,7 @@ async function runActiveTick(): Promise<void> {
       },
       shouldStopAfterToolResults: () => judgeFinishRun !== undefined,
       onAssistantTurn: ({ result, assistantResponse, toolCalls, turnIndex, continues }) => {
+        judgeReasoningSent = result.data.reasoningSent;
         recordSessionCost(runtimeState, {
           tokensUsed: result.data.tokensUsed,
           thinkingTokens: result.data.thinkingTokens,
@@ -4731,6 +4741,7 @@ async function runActiveTick(): Promise<void> {
         lengthRecoveries: judgeLengthRecoveries,
       }),
       ...judgeToolFailures.summary(),
+      ...toReasoningEventFields(judgeReasoning, judgeReasoningSent),
       errorMessage: !judgeLoopResult.ok ? judgeLoopResult.error.message : undefined,
     });
 

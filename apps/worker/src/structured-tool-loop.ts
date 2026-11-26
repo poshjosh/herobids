@@ -1,5 +1,5 @@
-import type { LlmProviderConfig, LlmProviderError, LlmRequest, LlmResult, LlmToolCall, LlmToolDefinition, LlmMessage, LlmResponse, ReasoningLevel } from '@herobids/llm';
-import { isOutputLimitFinishReason, lowerReasoningLevel, stripReasoningContent } from '@herobids/llm';
+import type { LlmProviderConfig, LlmProviderError, LlmRequest, LlmResult, LlmToolCall, LlmToolDefinition, LlmMessage, LlmResponse } from '@herobids/llm';
+import { isOutputLimitFinishReason, stripReasoningContent } from '@herobids/llm';
 import { callLlmWithRetry } from './runtime-errors.js';
 import type { LlmRetryResult, RuntimeFailureClassification } from './runtime-errors.js';
 
@@ -13,15 +13,9 @@ export type LengthRecoveryCause = 'invalid_tool_args' | 'empty_reply';
 export interface LengthRecoveryOptions {
   /** Recovery retries per turn. 0 = off: a cut-off call gets the normal retry of the same request. */
   maxRetries: number;
-  /** Reasoning level of the normal request; each recovery retry steps one level lower. */
-  reasoningLevel: ReasoningLevel;
-  /** Request `reasoning` for a level, with the same mapping that built `requestBase.reasoning`. */
-  resolveReasoning: (level: ReasoningLevel) => LlmRequest['reasoning'];
   onRecovery?: (info: {
     turnIndex: number;
     cause: LengthRecoveryCause;
-    fromLevel: ReasoningLevel;
-    toLevel: ReasoningLevel;
     /** 1 for the first recovery retry of the turn. */
     recovery: number;
   }) => void;
@@ -134,8 +128,9 @@ export interface StructuredToolLoopOptions {
    */
   getTurnContext?: (info: { turnIndex: number }) => string | undefined;
   /**
-   * Retry a call cut off at the output limit (cut-off tool-call JSON, or an empty reply) with one reasoning level
-   * lower and LENGTH_RECOVERY_HINT, instead of resending the same request. Omit to keep the normal retry.
+   * Retry a call cut off at the output limit (cut-off tool-call JSON, or an empty reply) with LENGTH_RECOVERY_HINT at
+   * the same reasoning level (the user's level is never lowered, D21), instead of resending the same request. Omit to
+   * keep the normal retry.
    */
   lengthRecovery?: LengthRecoveryOptions;
   /** After this many retention turns, truncate older tool results to maxStaleChars. Omit to disable. */
@@ -267,15 +262,13 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
     const lengthRecovery = options.lengthRecovery !== undefined && options.lengthRecovery.maxRetries > 0
       ? options.lengthRecovery
       : undefined;
-    // Set once a recovery retry starts: the lowered level for this turn's next request.
-    let recoveryLevel: ReasoningLevel | undefined;
     let recoveries = 0;
     // Attempt numbers continue across recovery retries, so each failed attempt of the turn has its own number.
     let attemptOffset = 0;
     let turnResultWithRetry: LlmRetryResult;
     for (;;) {
       // One trailing volatile message: a second user message would split the prompt-cache boundary.
-      const requestContext = recoveryLevel !== undefined
+      const requestContext = recoveries > 0
         ? [turnContext, LENGTH_RECOVERY_HINT].filter((part) => part !== undefined && part !== '').join('\n\n')
         : turnContext;
       const requestMessages: LlmMessage[] = requestContext
@@ -286,7 +279,6 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
         options.providerConfig,
         {
           ...options.requestBase,
-          ...(lengthRecovery && recoveryLevel !== undefined ? { reasoning: lengthRecovery.resolveReasoning(recoveryLevel) } : {}),
           messages: requestMessages,
           tools: activeTools,
           toolChoice: turnToolChoice,
@@ -319,11 +311,8 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
           continues: true,
         });
       }
-      const fromLevel = recoveryLevel ?? lengthRecovery.reasoningLevel;
-      // Stop at `low`: `none` drops the reasoning parameter, and some providers then use their own, higher default.
-      recoveryLevel = fromLevel === 'low' || fromLevel === 'none' ? fromLevel : lowerReasoningLevel(fromLevel);
       recoveries++;
-      lengthRecovery.onRecovery?.({ turnIndex, cause, fromLevel, toLevel: recoveryLevel, recovery: recoveries });
+      lengthRecovery.onRecovery?.({ turnIndex, cause, recovery: recoveries });
     }
 
     if (!turnResultWithRetry.result.ok) {

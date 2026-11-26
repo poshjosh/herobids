@@ -6,6 +6,8 @@ import {
   isEffortBasedModel,
   isAdaptiveThinkingOnlyModel,
   isClaudeModel,
+  isReasoningMandatoryModel,
+  isReasoningMandatoryRejection,
   resolveReasoningParams,
 } from './llm-provider.js';
 import type { LlmMessage, LlmProviderConfig, LlmRequest, ReasoningLevel } from './llm-provider.js';
@@ -902,11 +904,245 @@ describe('callLlmProvider thinking budget config', () => {
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    // 'none' → { max_tokens: 0 } → shouldSendReasoning returns false → not sent
+    // 'none' → { enabled: false } → Anthropic's off is no `thinking` field
     expect(body).not.toHaveProperty('reasoning');
     expect(body).not.toHaveProperty('thinking');
     expect(body).not.toHaveProperty('output_config');
     expect(body['max_tokens']).toBe(512);
+  });
+});
+
+describe('callLlmProvider explicit reasoning off (D20)', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    process.env['LLM_API_KEY'] = 'test-key';
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.restoreAllMocks();
+  });
+
+  async function sendNone(provider: string, model: string): Promise<Record<string, unknown>> {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(provider === 'anthropic'
+      ? { content: [{ type: 'text', text: 'ok' }], usage: { input_tokens: 1, output_tokens: 1 }, model }
+      : { choices: [{ message: { content: 'ok' } }], usage: { total_tokens: 2 }, model }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    await callLlmProvider(
+      { provider, model, maxTokens: 512, timeoutMs: 1_000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 512, reasoning: resolveReasoningParams('none', model, undefined) },
+    );
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    return JSON.parse(String(init.body)) as Record<string, unknown>;
+  }
+
+  it('sends reasoning enabled false to OpenRouter, so the model default does not turn reasoning on', async () => {
+    expect((await sendNone('openrouter', 'google/gemini-2.5-flash'))['reasoning']).toEqual({ enabled: false });
+    expect((await sendNone('openrouter', 'anthropic/claude-sonnet-4.5'))['reasoning']).toEqual({ enabled: false });
+  });
+
+  it('sends the lowest effort to OpenRouter for a model that cannot turn thinking off', async () => {
+    expect((await sendNone('openrouter', 'anthropic/claude-fable'))['reasoning']).toEqual({ effort: 'minimal' });
+  });
+
+  it('also sends enabled false for the legacy zero token budget on OpenRouter', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }], model: 'm' }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    await callLlmProvider(
+      { provider: 'openrouter', model: 'qwen/qwen3-32b', maxTokens: 512, timeoutMs: 1_000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 512, reasoning: { max_tokens: 0 } },
+    );
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((JSON.parse(String(init.body)) as Record<string, unknown>)['reasoning']).toEqual({ enabled: false });
+  });
+
+  it('leaves reasoning out on OpenRouter when the request sets no reasoning at all', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }], model: 'm' }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    await callLlmProvider(
+      { provider: 'openrouter', model: 'qwen/qwen3-32b', maxTokens: 512, timeoutMs: 1_000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 512 },
+    );
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body)) as Record<string, unknown>).not.toHaveProperty('reasoning');
+  });
+
+  it('sends no reasoning parameter to other OpenAI-compatible providers, which may reject one on a non-reasoning model', async () => {
+    for (const provider of ['openai', 'ollama', 'deepseek']) {
+      const body = await sendNone(provider, 'gpt-4o');
+      expect(body).not.toHaveProperty('reasoning');
+      expect(body).not.toHaveProperty('reasoning_effort');
+    }
+  });
+
+  it('sends no thinking field to Anthropic native, which is its off', async () => {
+    const body = await sendNone('anthropic', 'claude-sonnet-5');
+    expect(body).not.toHaveProperty('thinking');
+    expect(body).not.toHaveProperty('output_config');
+    expect(body['temperature']).toBe(0);
+  });
+
+  it('sends the lowest accepted effort to OpenRouter for a mandatory-reasoning model', async () => {
+    expect((await sendNone('openrouter', 'openai/o3-mini'))['reasoning']).toEqual({ effort: 'low' });
+    expect((await sendNone('openrouter', 'deepseek/deepseek-r1'))['reasoning']).toEqual({ effort: 'low' });
+  });
+
+  it('reports the reasoning actually sent on the response (D23)', async () => {
+    const sentFor = async (provider: string, model: string, reasoning: Parameters<typeof callLlmProvider>[1]['reasoning']) => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(provider === 'anthropic'
+        ? { content: [{ type: 'text', text: 'ok' }], usage: { input_tokens: 1, output_tokens: 1 }, model }
+        : { choices: [{ message: { content: 'ok' } }], model }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+      const result = await callLlmProvider(
+        { provider, model, maxTokens: 512, timeoutMs: 1_000 },
+        { messages: [{ role: 'user', content: 'hello' }], maxTokens: 512, reasoning },
+      );
+      return result.ok ? result.data.reasoningSent : `error: ${result.error.message}`;
+    };
+
+    expect(await sentFor('openrouter', 'google/gemini-2.5-flash', resolveReasoningParams('none', 'google/gemini-2.5-flash', undefined))).toBe('off');
+    expect(await sentFor('openrouter', 'openai/o3-mini', resolveReasoningParams('none', 'openai/o3-mini', undefined))).toBe('low');
+    expect(await sentFor('openrouter', 'anthropic/claude-sonnet-5', { effort: 'medium' })).toBe('medium');
+    expect(await sentFor('openrouter', 'qwen/qwen3-32b', { max_tokens: 4096 })).toBe('max_tokens:4096');
+    expect(await sentFor('openrouter', 'qwen/qwen3-32b', undefined)).toBe('omitted');
+    expect(await sentFor('openai', 'gpt-4o', { enabled: false })).toBe('omitted');
+    expect(await sentFor('anthropic', 'claude-sonnet-5', { enabled: false })).toBe('off');
+    expect(await sentFor('anthropic', 'claude-fable', { effort: 'minimal' })).toBe('low');
+    expect(await sentFor('anthropic', 'claude-opus-4.5', { max_tokens: 2048 })).toBe('max_tokens:2048');
+    expect(await sentFor('anthropic', 'claude-sonnet-5', undefined)).toBe('omitted');
+  });
+
+  function jsonResponse(body: unknown, status = 200): Response {
+    return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  it('retries once without reasoning when OpenRouter says reasoning is mandatory, then omits it for that model', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const rejection = () => new Response('{"error":{"message":"Reasoning is mandatory for this endpoint and cannot be disabled."}}', { status: 400 });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(rejection())
+      .mockResolvedValueOnce(jsonResponse({ choices: [{ message: { content: 'ok' } }], model: 'm' }))
+      .mockResolvedValueOnce(jsonResponse({ choices: [{ message: { content: 'again' } }], model: 'm' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const call = () => callLlmProvider(
+      { provider: 'openrouter', model: 'vendor/always-thinks-retry', maxTokens: 512, timeoutMs: 1_000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 512, reasoning: { enabled: false } },
+    );
+
+    const first = await call();
+    const second = await call();
+
+    expect(first.ok && first.data.content).toBe('ok');
+    expect(first.ok && first.data.reasoningSent).toBe('omitted');
+    expect(second.ok && second.data.content).toBe('again');
+    expect(second.ok && second.data.reasoningSent).toBe('omitted');
+    // The second call skips the rejected off straight away: no second 400 round trip.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const bodies = fetchMock.mock.calls.map(([, init]) => JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>);
+    expect(bodies[0]!['reasoning']).toEqual({ enabled: false });
+    expect(bodies[1]).not.toHaveProperty('reasoning');
+    expect(bodies[1]!['messages']).toEqual(bodies[0]!['messages']);
+    expect(bodies[2]).not.toHaveProperty('reasoning');
+    const rejectionLogs = warn.mock.calls.filter(([message]) => String(message).includes('vendor/always-thinks-retry'));
+    expect(rejectionLogs).toHaveLength(1);
+  });
+
+  it('remembers a rejection per model and per reasoning shape', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response('reasoning is required for this model', { status: 400 }))
+      .mockImplementation(async () => jsonResponse({ choices: [{ message: { content: 'ok' } }], model: 'm' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const call = (model: string, reasoning: { enabled?: boolean; effort?: 'high' }) => callLlmProvider(
+      { provider: 'openrouter', model, maxTokens: 512, timeoutMs: 1_000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 512, reasoning },
+    );
+
+    await call('vendor/remembered-a', { enabled: false });
+    const otherModel = await call('vendor/remembered-b', { enabled: false });
+    const otherShape = await call('vendor/remembered-a', { effort: 'high' });
+
+    const bodies = fetchMock.mock.calls.map(([, init]) => JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>);
+    expect(bodies[2]!['reasoning']).toEqual({ enabled: false });
+    expect(otherModel.ok && otherModel.data.reasoningSent).toBe('off');
+    expect(bodies[3]!['reasoning']).toEqual({ effort: 'high' });
+    expect(otherShape.ok && otherShape.data.reasoningSent).toBe('high');
+  });
+
+  it('returns the retry error when the call without reasoning also fails', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response('reasoning cannot be disabled for this model', { status: 400 }))
+      .mockResolvedValueOnce(new Response('upstream down', { status: 502 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await callLlmProvider(
+      { provider: 'openrouter', model: 'vendor/always-thinks-fail', maxTokens: 512, timeoutMs: 1_000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 512, reasoning: { enabled: false } },
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('provider.http_502');
+      expect(result.error.message).toContain('upstream down');
+    }
+  });
+
+  it('does not retry other 400s, or the same rejection outside OpenRouter', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => new Response('invalid messages: content is required', { status: 400 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await callLlmProvider(
+      { provider: 'openrouter', model: 'vendor/plain', maxTokens: 512, timeoutMs: 1_000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 512, reasoning: { enabled: false } },
+    );
+    expect(result.ok).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    fetchMock.mockImplementation(async () => new Response('reasoning is mandatory', { status: 400 }));
+    await callLlmProvider(
+      { provider: 'openai', model: 'o3', maxTokens: 512, timeoutMs: 1_000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 512, reasoning: { effort: 'low' } },
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('isReasoningMandatoryModel', () => {
+  it('matches the conservative list of models that cannot turn reasoning off', () => {
+    for (const model of ['openai/o1', 'openai/o3', 'openai/o3-mini', 'openai/o4-mini-high', 'o3', 'openai/gpt-5', 'openai/gpt-5-mini', 'openai/gpt-5-nano', 'openai/gpt-5-codex', 'deepseek/deepseek-r1', 'deepseek/deepseek-r1-0528', 'google/gemini-2.5-pro']) {
+      expect(isReasoningMandatoryModel(model), model).toBe(true);
+    }
+  });
+
+  it('matches OpenRouter variant suffixes', () => {
+    for (const model of ['openai/o3:nitro', 'openai/o4-mini:floor', 'openai/gpt-5:nitro', 'openai/gpt-5-mini:free', 'openai/gpt-5-2025-08-07:online', 'deepseek/deepseek-r1:free', 'google/gemini-2.5-pro:nitro']) {
+      expect(isReasoningMandatoryModel(model), model).toBe(true);
+    }
+  });
+
+  it('does not match models that accept an explicit off or are not reasoning models', () => {
+    for (const model of ['openai/gpt-5.1', 'openai/gpt-5.1:nitro', 'openai/gpt-5-chat:free', 'openai/gpt-5-pro:nitro', 'openai/gpt-5-chat', 'openai/gpt-5-pro', 'openai/gpt-4o', 'google/gemini-2.5-flash', 'deepseek/deepseek-chat', 'anthropic/claude-sonnet-5', 'meta/llama-3-o3x', 'qwen/qwen3-32b']) {
+      expect(isReasoningMandatoryModel(model), model).toBe(false);
+    }
+  });
+});
+
+describe('isReasoningMandatoryRejection', () => {
+  it('recognises provider wording for a mandatory reasoning rejection', () => {
+    expect(isReasoningMandatoryRejection('Reasoning is mandatory for this endpoint and cannot be disabled.')).toBe(true);
+    expect(isReasoningMandatoryRejection('reasoning cannot be disabled for this model')).toBe(true);
+    expect(isReasoningMandatoryRejection("Reasoning can't be turned off")).toBe(true);
+  });
+
+  it('ignores unrelated 400 bodies', () => {
+    expect(isReasoningMandatoryRejection('invalid messages: content is required')).toBe(false);
+    expect(isReasoningMandatoryRejection('reasoning.effort must be one of low, medium, high')).toBe(false);
+    expect(isReasoningMandatoryRejection('reasoning_content is required in assistant tool-call message')).toBe(false);
+    expect(isReasoningMandatoryRejection('reasoning tokens were requested. The max_tokens field is mandatory.')).toBe(false);
+  });
+
+  it('recognises reasoning is required', () => {
+    expect(isReasoningMandatoryRejection('Reasoning is required for this model')).toBe(true);
   });
 });
 
@@ -1383,14 +1619,19 @@ describe('resolveReasoningParams', () => {
   const defaultThinkingConfig = { lightBudgetTokens: 2048, deepBudgetTokens: 10240 };
 
   describe('level: none', () => {
-    it('returns { max_tokens: 0 } for legacy (non-Claude) models', () => {
+    it('returns an explicit off for token-budget (non-Claude) models', () => {
       expect(resolveReasoningParams('none', 'gpt-4o', defaultThinkingConfig))
-        .toEqual({ max_tokens: 0 });
+        .toEqual({ enabled: false });
     });
 
-    it('returns { max_tokens: 0 } for effort-based non-adaptive models', () => {
+    it('returns an explicit off for effort-based models that can turn thinking off', () => {
       expect(resolveReasoningParams('none', 'claude-sonnet-5', defaultThinkingConfig))
-        .toEqual({ max_tokens: 0 });
+        .toEqual({ enabled: false });
+    });
+
+    it('returns the lowest accepted effort for mandatory-reasoning models', () => {
+      expect(resolveReasoningParams('none', 'openai/o3', defaultThinkingConfig)).toEqual({ effort: 'low' });
+      expect(resolveReasoningParams('none', 'google/gemini-2.5-pro', defaultThinkingConfig)).toEqual({ effort: 'low' });
     });
 
     it('returns { effort: "minimal" } for adaptive-thinking-only models (Fable 5)', () => {
@@ -1492,14 +1733,12 @@ describe('resolveReasoningParams', () => {
       const medium = resolveReasoningParams('medium', nonClaudeModel, config);
       const high = resolveReasoningParams('high', nonClaudeModel, config);
 
-      expect((none as { max_tokens: number }).max_tokens).toBe(0);
+      expect(none).toEqual({ enabled: false });
       expect((low as { max_tokens: number }).max_tokens).toBe(2048);
       expect((medium as { max_tokens: number }).max_tokens).toBe(6144);
       expect((high as { max_tokens: number }).max_tokens).toBe(10240);
 
       // Monotonicity: each level ≤ next level
-      expect((none as { max_tokens: number }).max_tokens)
-        .toBeLessThanOrEqual((low as { max_tokens: number }).max_tokens);
       expect((low as { max_tokens: number }).max_tokens)
         .toBeLessThanOrEqual((medium as { max_tokens: number }).max_tokens);
       expect((medium as { max_tokens: number }).max_tokens)

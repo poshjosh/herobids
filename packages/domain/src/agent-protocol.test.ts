@@ -1045,6 +1045,25 @@ describe('tick turn events', () => {
       expect(LlmCompletedPayloadSchema.parse({ ...base, lengthRecoveries: 1 }).lengthRecoveries).toBe(1);
       expect(LlmCompletedPayloadSchema.safeParse({ ...base, lengthRecoveries: 0 }).success).toBe(false);
     });
+    it('keeps the effective reasoning level, its reason and the user ceiling so they reach the stored event', () => {
+      const parsed = LlmCompletedPayloadSchema.parse({
+        ...base,
+        reasoningLevel: 'low',
+        reasoningReason: 'open_positions',
+        reasoningCeiling: 'medium',
+        adaptiveReasoning: true,
+      });
+      expect(parsed).toMatchObject({ reasoningLevel: 'low', reasoningReason: 'open_positions', reasoningCeiling: 'medium', adaptiveReasoning: true });
+    });
+    it('keeps the reasoning actually sent next to the level, so a provider fallback is visible', () => {
+      expect(LlmCompletedPayloadSchema.parse({ ...base, reasoningLevel: 'none', reasoningSent: 'omitted' }).reasoningSent).toBe('omitted');
+      expect(LlmCompletedPayloadSchema.parse(base).reasoningSent).toBeUndefined();
+      expect(LlmCompletedPayloadSchema.safeParse({ ...base, reasoningSent: '' }).success).toBe(false);
+    });
+    it('rejects a reasoning level outside none, low, medium and high', () => {
+      expect(LlmCompletedPayloadSchema.safeParse({ ...base, reasoningLevel: 'deep' }).success).toBe(false);
+      expect(LlmCompletedPayloadSchema.safeParse({ ...base, reasoningCeiling: 'xhigh' }).success).toBe(false);
+    });
     it('rejects an unknown finish_run status', () => {
       expect(LlmCompletedPayloadSchema.safeParse({ ...base, finishRunStatus: 'done' }).success).toBe(false);
     });

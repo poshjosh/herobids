@@ -73,7 +73,7 @@ export interface ContinuationCompletionInput {
   toolVisible: boolean;
   nudgesUsed: number;
   finishRun: FinishRunRecord | undefined;
-  /** Calls cut off at the output limit and retried with a lower reasoning level. */
+  /** Calls cut off at the output limit and retried at the same reasoning level with a hint. */
   lengthRecoveries?: number;
 }
 

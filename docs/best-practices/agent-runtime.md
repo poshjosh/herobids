@@ -105,13 +105,13 @@ in production.
 Thinking shares a call's output-token limit. A limit that thinking can fill leaves no room for the answer, and
 the call ends with finish reason `length` (Anthropic: `max_tokens`): an empty reply, or a tool call cut off mid-JSON
 (`provider.invalid_tool_args`). Plan: `docs/features/2026/11/25/001-user-request-follow-through/plan.md`
-(A1, A2, D13).
+(A1, A2, D13, D20, D21).
 
 Output reserve rule (runtime policy):
 - `judgeMaxTokens >= deepThinkingTokens + judgeOutputReserveTokens` and
   `scoutMaxTokens >= round((lightThinkingTokens + deepThinkingTokens) / 2) + scoutOutputReserveTokens`: the
   scout limit is sized for `medium` (the scout's highest level, whose token budget is the midpoint of light and
-  deep), so a token-budget scout at `medium` is not stepped down unless the model's maximum output is lower. The reserves are per-style policy fields
+  deep), so a token-budget scout at `medium` keeps the reserve unless the model's maximum output is lower. The reserves are per-style policy fields
   (defaults 16,384 judge and 4,096 scout) that a user can override within the ceilings. Style defaults and
   ceilings are in [Runtime Policy and Reasoning](../tech/agents/runtime-policy-and-reasoning.md).
 - `resolveAgentRuntimePolicy` raises a resolved limit that breaks the rule (for example an older, lower
@@ -121,10 +121,11 @@ Output reserve rule (runtime policy):
   larger limit. The table is the built-in `DEFAULT_MAX_OUTPUT_TOKENS_BY_MODEL` merged with
   `llm.maxOutputTokensByModel` (an operator key adds a model or replaces the same key); a model not in it
   gets `llm.defaultMaxOutputTokens` (32,000). Add new models to the table when they ship.
-- Reasoning step-down. For a model with a token thinking budget (the `llm.thinking` budgets), the reasoning
-  level steps down (`high` → `medium` → `low` → `none`) while that budget plus the reserve exceeds the clamped limit.
-  Effort-based models size their own thinking and keep the level. The agent logs each distinct adjustment
-  once per process.
+- No reasoning step-down (D21). The platform never lowers the user's reasoning level. When a token thinking
+  budget (the `llm.thinking` budgets) plus the reserve no longer fits the clamped limit, the level is kept and
+  the agent logs `Output-token limit leaves less than the output reserve after the thinking budget; reasoning
+  level kept` (`reserveUnmet: true`) once per distinct case per process; length recovery handles a call that
+  is then cut off. Effort-based models size their own thinking, so the reserve is not checked for them.
 - Scaled timeout. Calls are not streamed, so each call's timeout is
   `max(base, min(limit × llm.timeoutMsPerOutputToken, llm.maxCallTimeoutMs))` (defaults 6 ms per token,
   600,000 ms cap). The base is `LLM_BASE_TIMEOUT_MS`, which the worker sets to the unscaled `llm.timeoutMs`.
@@ -134,8 +135,7 @@ Output reserve rule (runtime policy):
 Length recovery:
 - A judge or scout call that ends with finish reason `length` (Anthropic: `max_tokens`), as cut-off tool
   arguments or an empty reply, is retried at most `llm.lengthRecovery.maxRetries` times per turn (default 1,
-  max 3). Each retry steps the reasoning level one lower, never below `low`, and adds this line to the turn
-  context only:
+  max 3). Each retry keeps the reasoning level (D21) and adds this line to the turn context only:
 
   > Your last response was cut off at the output limit. Think briefly and make smaller tool calls (split long file content across `append_file` calls).
 
@@ -144,9 +144,10 @@ Length recovery:
   it now gets the recoveries. Other failures keep the normal retry. `0` turns recovery off and restores
   today's behaviour for both.
 - An empty `length` reply followed by a recovery is not the end of the run; the empty-reply warning logs
-  `continues: true`. Each recovery logs `Retrying LLM call cut off at the output limit with a lower reasoning
-  level` with the old and new level. `agent.llm.completed` (judge) carries `lengthRecoveries` (absent when
-  none).
+  `continues: true`. Each recovery logs `Retrying LLM call cut off at the output limit with a hint to think
+  briefly` with `cause` and `reasoningLevel` (images before D21 logged `... with a lower reasoning level` with
+  `fromReasoningLevel` and `toReasoningLevel`). `agent.llm.completed` (judge) carries `lengthRecoveries`
+  (absent when none).
 
 Prompt size (Phase 1 text, measured 2026-11-26): the Instructions block gains about 400 characters on every
 judge prompt (about 420 for a child agent) (report back on user requests); `BASE_SKILL.instructions` 8,493 → 8,702 characters (+209);

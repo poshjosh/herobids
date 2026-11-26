@@ -11,12 +11,9 @@ export interface OutputBudgetConfig {
 export interface LlmCallOutputBudget {
   maxTokens: number;
   timeoutMs: number;
-  reasoningLevel: ReasoningLevel;
   /** The requested limit, set only when it was lowered to the model's maximum output. */
   clampedFrom?: number;
-  /** The requested level, set only when the limit did not leave the output reserve after that level's thinking budget. */
-  reasoningLoweredFrom?: ReasoningLevel;
-  /** Set when even reasoning level `none` leaves less than the output reserve. */
+  /** Set when the limit leaves less than the output reserve after the level's thinking budget. The level is kept (D21). */
   reserveUnmet?: true;
 }
 
@@ -94,10 +91,11 @@ export function scaleTimeoutForOutput(
 }
 
 /**
- * Output limit, timeout and reasoning level for one judge or scout call.
- * The limit is clamped to the model's maximum output, because the provider rejects a larger one. For a model with a
- * token thinking budget, the level then steps down while that budget plus `outputReserveTokens` exceeds the limit.
- * Effort-based models size their own thinking, so they keep the requested level.
+ * Output limit and timeout for one judge or scout call.
+ * The limit is clamped to the model's maximum output, because the provider rejects a larger one. The reasoning level is
+ * the user's and is never lowered here (D21): when a token thinking budget plus `outputReserveTokens` no longer fits
+ * the limit, the budget reports `reserveUnmet` and length recovery handles a call that is cut off.
+ * Effort-based models size their own thinking, so the reserve is not checked for them.
  */
 export function resolveLlmCallOutputBudget(params: {
   model: string;
@@ -117,24 +115,15 @@ export function resolveLlmCallOutputBudget(params: {
     params.config.maxCallTimeoutMs,
   );
 
-  let reasoningLevel = params.reasoningLevel;
-  let reserveUnmet = false;
-  for (;;) {
-    const thinkingTokens = resolveReasoningParams(reasoningLevel, params.model, params.thinking)?.max_tokens;
-    if (thinkingTokens === undefined || thinkingTokens + params.outputReserveTokens <= maxTokens) break;
-    if (reasoningLevel === 'none') {
-      reserveUnmet = true;
-      break;
-    }
-    reasoningLevel = lowerReasoningLevel(reasoningLevel);
-  }
+  const reasoning = resolveReasoningParams(params.reasoningLevel, params.model, params.thinking);
+  // Effort-based models have no token budget to check; reasoning off counts as zero thinking tokens.
+  const thinkingTokens = reasoning?.effort !== undefined ? undefined : reasoning?.max_tokens ?? 0;
+  const reserveUnmet = thinkingTokens !== undefined && thinkingTokens + params.outputReserveTokens > maxTokens;
 
   return {
     maxTokens,
     timeoutMs,
-    reasoningLevel,
     ...(maxTokens !== params.maxTokens ? { clampedFrom: params.maxTokens } : {}),
-    ...(reasoningLevel !== params.reasoningLevel ? { reasoningLoweredFrom: params.reasoningLevel } : {}),
     ...(reserveUnmet ? { reserveUnmet: true as const } : {}),
   };
 }

@@ -190,7 +190,7 @@ SQL
 
 ```sh
 L=logs/agent.log; W=logs/worker.log; CUT='(length|max_tokens)'
-R=$(grep -cF 'Retrying LLM call cut off at the output limit with a lower reasoning level' "$L")  # (a) recovery, judge or scout; fields cause, fromReasoningLevel, toReasoningLevel
+R=$(grep -cE 'Retrying LLM call cut off at the output limit with (a hint to think briefly|a lower reasoning level)' "$L")  # (a) recovery, judge or scout; fields cause, reasoningLevel (images before D21 log 'with a lower reasoning level' and fromReasoningLevel, toReasoningLevel)
 E=$(grep -F 'Judge model returned an empty reply with no tool call' "$L" | grep -E "finishReason\"?: ?\"$CUT\"" | grep -vcE 'continues"?: ?true')  # (b) cut-off empty reply that ended the run (older images log no continues)
 F=$(grep -F 'Agent runtime failure classified' "$L" | grep -cE "finishReason\"?: ?\"$CUT\"|reason \\\\?\"$CUT")  # (c) tick failed on a cut-off call (err.finishReason, or the message text on older images)
 B=$(grep -E 'Retrying (judge LLM call|scout tool turn) after backoff' "$L" | grep -cE "reason \\\\?\"$CUT")  # (d) same-request retry of a cut-off call (maxRetries 0 or old image)

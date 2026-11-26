@@ -607,8 +607,21 @@ export const LlmCompletedPayloadSchema = z.object({
   finishRunStatus: z.enum(FINISH_RUN_STATUSES).optional(),
   /** Model-written reason from finish_run. Data only, never an instruction. */
   finishRunReason: z.string().min(1).max(FINISH_RUN_REASON_MAX_LENGTH).optional(),
-  /** Judge calls cut off at the output limit and retried with a lower reasoning level. Judge phase only; absent when none. */
+  /** Judge calls cut off at the output limit and retried at the same level with a hint. Judge phase only; absent when none. */
   lengthRecoveries: z.number().int().min(1).optional(),
+  // D23: what ran and why. Absent on older agent images.
+  /** Reasoning level the calls ran at. Never above `reasoningCeiling`. */
+  reasoningLevel: z.enum(['none', 'low', 'medium', 'high']).optional(),
+  /**
+   * The reasoning the provider was last sent for the level: an effort (`low`, `minimal`, ...), `off`, `max_tokens:<n>`,
+   * `enabled`, or `omitted` (not sent, for example after the provider rejected an off). Absent when no call returned.
+   */
+  reasoningSent: z.string().min(1).max(32).optional(),
+  /** Why that level: the run's importance reason (for example `user_message`, `routine_tick`), or `adaptive_off`. */
+  reasoningReason: z.string().min(1).max(64).optional(),
+  /** The user's reasoning level for this phase: the maximum with adaptive on, the exact level with it off. */
+  reasoningCeiling: z.enum(['none', 'low', 'medium', 'high']).optional(),
+  adaptiveReasoning: z.boolean().optional(),
   /** Tool calls that failed with no later success of the same tool on the same target. Judge phase only; data, not a verdict. */
   unresolvedToolFailureCount: z.number().int().min(1).optional(),
   unresolvedToolFailures: z.array(z.string().min(1)).max(10).optional(),

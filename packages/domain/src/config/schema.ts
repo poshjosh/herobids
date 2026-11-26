@@ -233,7 +233,7 @@ export const LlmOutputBudgetConfigSchema = z.object({
 
 /** Retry of a judge or scout call cut off at the output limit (finish reason `length`). */
 export const LlmLengthRecoveryConfigSchema = z.object({
-  /** Retries per turn, each with one reasoning level lower and a hint to think briefly. 0 = resend the same request as for other failures. */
+  /** Retries per turn, each at the same reasoning level with a hint to think briefly. 0 = resend the same request as for other failures. */
   maxRetries: z.number().int().min(0).max(3).default(1),
 });
 

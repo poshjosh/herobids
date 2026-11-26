@@ -379,7 +379,7 @@ followThrough: z.object({
 16. A wake published but the record update fails: a second wake on the next poll, bounded by `maxWakes`.
 17. "ok" or "thanks": opens and closes in the same run.
 18. An override sets `judgeMaxTokens` below the rule: raised at resolve time and logged.
-19. A model whose maximum output is below the computed limit: clamped to the model maximum; the reserve rule is then met by lowering the reasoning level for that call, and logged.
+19. A model whose maximum output is below the computed limit: the request is clamped to the model maximum and the reasoning level is kept (D21). If the thinking budget plus the reserve no longer fits, this is logged once (`reserveUnmet`) and the settings warning (WP8) tells the user; a cut-off is handled by the hint-only length recovery.
 20. All stored times are UTC ISO strings; the prompt renders `HH:MM` UTC; the status line renders the user's time zone.
 
 ## Test plan (behaviour-named, per `AGENTS.md`)
@@ -523,7 +523,7 @@ Phase 1:
 - [x] DONE WP3 Instructions block, base-skill sentence and `long-running-task` text
 - [x] DONE WP4 Measurement in the `evaluate-*` skills
 - [x] DONE WP5 Phase 1 docs and CHANGELOG; full test, lint and build
-- [ ] PENDING WP7 Reasoning follows the user's choice (D20, D21, D23): adaptive mapping, generic triggers, no step-downs, explicit off, event fields
+- [x] DONE WP7 Reasoning follows the user's choice (D20, D21, D23): adaptive mapping, generic triggers, no step-downs, explicit off, event fields
 - [ ] PENDING WP8 Style reasoning defaults and settings (D21 C, D22): defaults, create screen, settings warning
 - [ ] NOT STARTED (needs a staging deploy and a week of traffic; owner-run) WP6 Staging week, `results.md` and gate decision
 
@@ -588,4 +588,12 @@ Phase 3 (if the gate calls for it):
 ### D19 scout raise (from the code review; its HIGH stale-docs finding and both drift guards were fixed)
 
 - MEDIUM (watch): scout limits rose 2.5 to 6 times from the original values; effort-based Claude scouts may think longer with more room. Tracked in Phase 1 verification step 5.
+
+### WP7 Reasoning (from the last code review, no critical or high)
+
+- Gap (integration test): no automated test that only the first model run of a session is `first_run`, or that a hybrid-failure fallthrough is classified `market_wake`.
+- LOW: the OpenRouter retry without reasoning shares the first call's abort timer.
+- LOW: a successful hybrid evaluation does not use up `first_run`; a scout error on the first run does.
+- LOW: `protection_gap` is not deduplicated, so a lasting unprotected position keeps every tick at the user's level; watch cost in the staging week.
+- Behaviour change: fills alone no longer make a run important.
 

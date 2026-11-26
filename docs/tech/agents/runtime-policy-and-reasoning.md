@@ -137,7 +137,7 @@ still applies to the hybrid evaluator and to an agent that has no resolved polic
 2026-11-17/005 the judge ignored `judgeMaxTokens` and always used the operator value.)
 
 The limit is shared with reasoning. On OpenRouter, reasoning tokens count against it, and at effort
-`high` (the judge's `deep` level) about 80% of it can go to reasoning, so the room left for text and
+`high` about 80% of it can go to reasoning, so the room left for text and
 tool calls is a fraction of the figure shown. A response that spends the whole limit ends with
 `finish_reason: "length"`, and any tool call in it is cut off.
 
@@ -147,9 +147,10 @@ To leave room for an answer, the resolved limits keep an output reserve after th
 (the scout limit is sized for `medium`, its highest reasoning level, whose token budget is the midpoint of
 light and deep, so raising `deepThinkingTokens` also raises the scout minimum). `resolveAgentRuntimePolicy` raises a
 lower value (for example an older override) to that sum, capped at the ceiling, and the worker logs it. Each
-call is then clamped to the model's maximum output, the reasoning level steps down for token-budget models
-when the reserve no longer fits, and the call timeout scales with the limit. A call that is still cut off is
-retried with less thinking (`llm.lengthRecovery`). Details:
+call is then clamped to the model's maximum output and the call timeout scales with the limit. The reasoning
+level is never lowered to fit (D21): when the reserve no longer fits after the clamp the level is kept and
+logged. A call that is still cut off is retried at the same level with a hint to think briefly
+(`llm.lengthRecovery`). Details:
 [Agent Runtime: Output Budget And Length Recovery](../../best-practices/agent-runtime.md#output-budget-and-length-recovery).
 
 ### Note on `scoutMaxTurns` / `judgeMaxTurns` and the operator `llm.*` turn config
@@ -240,143 +241,77 @@ response. Four levels are defined in `ReasoningLevelSchema`:
 The actual token budgets come from the **style default** `lightThinkingTokens`
 (for `low`) and `deepThinkingTokens` (for `high`). Medium averages the two.
 
-### Scout path (adaptive)
+### What runs equals what the user chose (D20)
 
-The scout reasoning level can operate in two modes:
+`scoutReasoning` and `judgeReasoning` are the user's levels. The platform never runs above them, and never
+lowers them for its own reasons (no output-budget or length-recovery step-down, D21). One function,
+`resolveRunReasoning()` in `apps/worker/src/tick-thinking.ts`, maps the user's level `L` for both the scout
+and the judge:
 
-- **Adaptive (default)**: The system may escalate scout reasoning for critical
-  conditions (regime flips, drawdowns, user messages, runtime events). The
-  `scoutReasoning` level acts as a **ceiling** — capping via
-  `applyReasoningCeiling()`.
-- **Fixed (non-adaptive)**: The configured `scoutReasoning` level is used
-  directly as-is — no escalation, no ceiling logic.
+| Run | Adaptive on (`L` is a maximum) | Adaptive off |
+|-----|:------------------------------:|:------------:|
+| Important | `L` | `L` |
+| Lighter | one step below `L` (`high` → `medium` → `low` → `none`) | `L` |
+| Routine | `none` | `L` |
 
-The mode is controlled by `adaptScoutReasoning` (default `true`).
+Adaptive is `adaptScoutReasoning` / `adaptJudgeReasoning` (default `true`). A user who picks `medium` gets
+`medium` on an important run, never `high`.
 
-```
-                    ┌─────────────────────┐
-                    │ classifyTickThinking │
-                    │   (runtime state)    │
-                    │   computed once,     │
-                    │ shared with judge    │
-                    └──────┬──────────────┘
-                           │
-                    system thinking level
-                    (none / light / deep)
-                           │
-                    ┌──────▼──────────────┐
-                    │ adaptScoutReasoning? │
-                    └──┬──────────────┬───┘
-                       │ true         │ false
-                       ▼              ▼
-              applyReasoningCeiling()  direct scoutReasoning
-                       │              │
-                       ▼              ▼
-              toReasoningLevel()     resolveReasoningParams()
-                       │
-                       ▼
-              resolveReasoningParams() → reasoning object for LLM API
-```
+#### Run classification: `classifyTickRun()`
 
-`resolveReasoningParams()` (in `packages/llm/src/llm-provider.ts`) maps the
-level to provider-specific API parameters:
+Computed once per tick (when either adaptive flag is on) and shared by the scout and the judge. The first
+matching condition names the reason:
 
-- **Effort-based models** (GPT-4o, Claude): `{ effort: level }`
-- **Token-budget models** (older): `{ max_tokens: <budget> }`
-- **`none`**: `{ max_tokens: 0 }` (no reasoning), except on
-  adaptive-thinking-only models which get `{ effort: 'minimal' }`
+| Condition | Run | Reason |
+|-----------|:---:|--------|
+| Market regime just flipped | important | `regime_flip` |
+| Drawdown ≤ `drawdownThresholdPct` | important | `drawdown_threshold` |
+| A protective watch triggered, or an open position has no protection or coverage | important | `protection_gap` |
+| The owner sent a message (or one was flagged by the wake poll) | important | `user_message` |
+| A market wake started the tick (watch, scanner or other trading trigger) | important | `market_wake` |
+| A reminder wake fired (work the agent scheduled for itself) | important | `work_wake` |
+| The session's first tick that reaches the scout or judge (gates can skip earlier ticks), or a resumed run that re-evaluates in full | important | `first_run` |
+| A peer message, a child's report, or a creator's message to its child (a user message sent by an agent) | important | `agent_message` |
+| Has open positions | lighter | `open_positions` |
+| None of the above | routine | `routine_tick` |
 
-### Judge path (dynamic)
+The wake poll cannot tell who sent a pending message, so a peer message flagged but not yet read counts as
+`user_message`. Other runtime events (fills, reconciliation notices) do not make a run important on their own.
+`buildTickRunInput()` maps the tick's facts to the classifier input. For the judge, a premium cost profile (`costProfile.defaultThinking === 'deep'`) makes every run
+important (`cost_profile_premium`), still never above `L`. With adaptive off the reason is `adaptive_off`.
 
-The judge path is more complex. Instead of a fixed level, the system first
-determines a **desired thinking level** based on the agent's current state, then
-**caps** it at the user-configured `judgeReasoning` — but only when
-`adaptJudgeReasoning` is `true` (the default).
+#### Provider parameters: `resolveReasoningParams()`
 
-When `adaptJudgeReasoning` is `false`, the `judgeReasoning` level maps directly
-to `TickThinkingLevel`:
+`resolveReasoningParams()` (in `packages/llm/src/llm-provider.ts`) maps the level to the request:
 
-| `judgeReasoning` | Direct mapping |
-|:----------------:|:--------------:|
-| `none` | `none` |
-| `low` | `light` |
-| `medium` | `deep` |
-| `high` | `deep` |
+- **Effort-based models** (Claude Fable 5, Sonnet 5, Opus 4.7+, other Claude): `{ effort: level }`.
+- **Token-budget models** (everything else): `{ max_tokens: <budget> }` with `low` = `lightThinkingTokens`,
+  `medium` = their midpoint, `high` = `deepThinkingTokens` (`resolveReasoningBudgetTokens`; the output
+  budget checks the reserve with the same numbers).
+- **`none`** is an explicit "reasoning off", `{ enabled: false }`:
+  - OpenRouter receives `reasoning: { enabled: false }`. Omitting the parameter would let the model's default
+    apply, which is on for many reasoning models.
+  - Anthropic native receives no `thinking` field, which is its off.
+  - Other OpenAI-compatible providers (OpenAI, DeepSeek, Google, Ollama) receive no reasoning parameter,
+    because no off switch is accepted by every model there (a non-reasoning model rejects `reasoning_effort`).
+    The provider's default applies, so a reasoning model there may still think.
+  - Adaptive-thinking-only models (Claude Fable) cannot turn thinking off: `none` runs at `{ effort: 'minimal' }`.
+  - Mandatory-reasoning models (`isReasoningMandatoryModel`: OpenAI o1/o3/o4, GPT-5 base/mini/nano/codex,
+    DeepSeek R1, Gemini 2.5 Pro) reject an off: `none` runs at their lowest effort, `{ effort: 'low' }`
+    (`minimal` is not valid for the o-series). The list is kept short on purpose.
+  - If OpenRouter still answers 400 because reasoning is mandatory, the call is retried once without the
+    `reasoning` parameter (the model's default applies). The worker remembers the rejected model and reasoning
+    pair for the rest of the process and omits `reasoning` for it from then on (one warning per pair).
+- The **hybrid evaluator** (single-shot trading decisions) sends no reasoning parameter at all, so the
+  provider's default applies.
 
-```
-                    ┌─────────────────────┐
-                    │ classifyTickThinking │
-                    │   (runtime state)    │
-                    └──────┬──────────────┘
-                           │
-                    system thinking level
-                    (none / light / deep)
-                           │
-                           ├── cost profile may force deep
-                           │
-                           ▼
-                    applyReasoningCeiling()
-                           │
-                    capped at user's judgeReasoning
-                           │
-                           ▼
-                    resolveReasoningParams()
-                           │
-                           ▼
-                    LLM API reasoning object
-```
+#### Where to see it (D23)
 
-#### Step 1: `classifyTickThinking()`
-
-Located in `apps/worker/src/tick-thinking.ts`. Selects the system level based on
-runtime conditions (checked in priority order):
-
-| Condition | Selected level | Reason |
-|-----------|:--------------:|--------|
-| Market regime just flipped | `deep` | `regime_flip` |
-| Drawdown ≤ drawdownThresholdPct | `deep` | `drawdown_threshold` |
-| User sent a message | `deep` | `user_message` |
-| Runtime events incoming | `deep` | `new_runtime_event` |
-| Has open positions | `light` | `open_positions` |
-| None of the above (routine tick) | `none` | `routine_tick` |
-
-#### Step 2: Cost profile override
-
-If the judge model is premium (`costProfile.defaultThinking === 'deep'`), the
-system thinking is forced to `deep` regardless of the tick classifier's decision.
-
-#### Step 3: `applyReasoningCeiling()`
-
-Caps the system level at the user's `judgeReasoning`. The user level is a
-**maximum** — the system can reason less, never more.
-
-| System level | user `none` | user `low` | user `medium` | user `high` |
-|:------------:|:-----------:|:----------:|:-------------:|:-----------:|
-| `none` | none | none | none | none |
-| `light` | none | **light** | light | light |
-| `deep` | none | **light** | **deep** | **deep** |
-
-#### Step 4: `resolveReasoningParams()`
-
-Same function as the scout path — maps the final `TickThinkingLevel` to the
-LLM API reasoning object. `light` maps to `low`, `deep` maps to `high`.
-
-### Key invariant
-
-The `judgeReasoning` field acts as a **ceiling, not a fixed level** when
-adaptive reasoning is enabled. An agent
-with `judgeReasoning: 'low'` can still think `deep` during a regime flip or
-drawdown event — it just can't use deep thinking for routine ticks or open
-position management. This ensures critical events always get thorough analysis
-while keeping costs low during normal operation.
-
-When adaptive reasoning is **disabled** (`adaptJudgeReasoning: false`), the
-configured `judgeReasoning` is used directly — giving a clean, deterministic
-4×4 test matrix with zero runtime variance. This is useful for:
-
-- **Cost calibration**: Know exactly what reasoning budget each tick consumes
-- **Deterministic testing**: Reproduce the same behaviour every tick
-- **Debugging**: Eliminate runtime condition variance from reasoning level
+The judge logs `Resolved tick thinking level` once per judge run with `reasoningLevel`, `reasoningReason`,
+`reasoningCeiling` (the user's level) and `adaptiveReasoning`. The scout's `Scout held the tick` and
+`Scout escalated to judge` lines carry the same fields. They are also on every `agent.llm.completed` event,
+scout and judge, together with `reasoningSent`: what the provider was last sent (an effort, `off`,
+`max_tokens:<n>`, `enabled`, or `omitted`), so a mandatory-reasoning fallback is visible next to the level.
 
 ### Settings Page Control
 
