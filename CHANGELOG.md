@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+### Added
+- Length recovery for judge and scout calls. A call cut off at the output limit (finish reason `length` or `max_tokens`) is retried with one reasoning level lower and a hint to think briefly: cut-off tool arguments no longer resend the same request, and an empty cut-off reply no longer ends the run silently. `agent.llm.completed` (judge) gains optional `lengthRecoveries`. See `docs/best-practices/agent-runtime.md` (Output Budget And Length Recovery); plan: `docs/features/2026/11/25/001-user-request-follow-through/plan.md`.
+- Runtime policy fields `judgeOutputReserveTokens` (default 16,384, ceiling 32,768) and `scoutOutputReserveTokens` (default 4,096, ceiling 8,192): the output tokens a call keeps free after thinking.
+- Operator `llm.timeoutMsPerOutputToken` (default 6), `llm.maxCallTimeoutMs` (default 600,000), `llm.defaultMaxOutputTokens` (default 32,000) and `llm.maxOutputTokensByModel` (merged over a built-in per-model table). The worker passes the unscaled timeout to agent containers as `LLM_BASE_TIMEOUT_MS`.
+- Agents are told that an acknowledgement is not an outcome: the Instructions block, the base skill and the `long-running-task` skill now say to tell the user the outcome of a request (or what remains) before ending the run. `long-running-task` turns a user request into units that run first and end with telling the user the outcome.
+- The `evaluate-agent` and `evaluate-job-search-agent` skills measure follow-through on user requests: "No feedback?" events from conversation rows, cut-off and failure log counts, daily token and cost numbers, and a plain-wording and forced-stop scenario.
+### Changed
+- Judge and scout output limits now leave room for an answer after thinking (`judgeMaxTokens >= deepThinkingTokens + judgeOutputReserveTokens`, scout likewise). Style defaults raised: `scoutMaxTokens` careful 6,144, balanced 8,192, bold 12,288 (was 1,024 / 2,048 / 4,096); `judgeMaxTokens` 26,624 / 36,864 / 49,152 (was 4,096 / 8,192 / 16,384). Ceilings raised to 16,384 (scout) and 65,536 (judge). A resolved limit below the rule, including an existing override, is raised to it (capped at the ceiling) and logged.
+- Each judge and scout request is clamped to the model's maximum output. For models with a token thinking budget, the reasoning level steps down when the reserve no longer fits.
+- Judge and scout call timeouts scale with the output limit: `max(llm.timeoutMs, min(limit × llm.timeoutMsPerOutputToken, llm.maxCallTimeoutMs))`, because calls are not streamed. `LLM_TIMEOUT_MS` in agent containers is raised to fit the agent's largest limit for older agent images.
 
 ## v0.11.4 - 2026-11-24
 ### Added

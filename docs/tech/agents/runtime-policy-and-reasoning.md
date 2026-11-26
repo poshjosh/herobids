@@ -36,10 +36,12 @@ Three styles define the baseline. All numeric values are backed by
 | **Escalation policy** | uncovered_or_triggered | always | always |
 | `scoutMaxTurns` | 50 | 50 | 50 |
 | `judgeMaxTurns` | 500 | 500 | 500 |
-| `scoutMaxTokens` | 1 024 | 2 048 | 4 096 |
-| `judgeMaxTokens` | 4 096 | 8 192 | 16 384 |
+| `scoutMaxTokens` | 6 144 | 8 192 | 12 288 |
+| `judgeMaxTokens` | 26 624 | 36 864 | 49 152 |
 | `lightThinkingTokens` | 2 048 | 4 096 | 8 192 |
 | `deepThinkingTokens` | 10 240 | 20 480 | 32 768 ¹ |
+| `scoutOutputReserveTokens` | 4 096 | 4 096 | 4 096 |
+| `judgeOutputReserveTokens` | 16 384 | 16 384 | 16 384 |
 | `scoutReasoning` | medium | medium | medium |
 | `judgeReasoning` | medium | high | high |
 | `adaptScoutReasoning` | true | true | true |
@@ -139,6 +141,15 @@ The limit is shared with reasoning. On OpenRouter, reasoning tokens count agains
 tool calls is a fraction of the figure shown. A response that spends the whole limit ends with
 `finish_reason: "length"`, and any tool call in it is cut off.
 
+To leave room for an answer, the resolved limits keep an output reserve after thinking:
+`judgeMaxTokens >= deepThinkingTokens + judgeOutputReserveTokens` and
+`scoutMaxTokens >= lightThinkingTokens + scoutOutputReserveTokens`. `resolveAgentRuntimePolicy` raises a
+lower value (for example an older override) to that sum, capped at the ceiling, and the worker logs it. Each
+call is then clamped to the model's maximum output, the reasoning level steps down for token-budget models
+when the reserve no longer fits, and the call timeout scales with the limit. A call that is still cut off is
+retried with less thinking (`llm.lengthRecovery`). Details:
+[Agent Runtime: Output Budget And Length Recovery](../../best-practices/agent-runtime.md#output-budget-and-length-recovery).
+
 ### Note on `scoutMaxTurns` / `judgeMaxTurns` and the operator `llm.*` turn config
 
 There is a **second home** for the scout/judge turn caps: the operator config
@@ -196,10 +207,12 @@ No agent can be configured beyond these, regardless of style or overrides.
 |---------|-------|
 | `scoutMaxTurns` | 500 |
 | `judgeMaxTurns` | 10 000 |
-| `scoutMaxTokens` | 4 096 |
-| `judgeMaxTokens` | 16 384 |
+| `scoutMaxTokens` | 16 384 |
+| `judgeMaxTokens` | 65 536 |
 | `lightThinkingTokens` | 8 192 |
 | `deepThinkingTokens` | 32 768 |
+| `scoutOutputReserveTokens` | 8 192 |
+| `judgeOutputReserveTokens` | 32 768 |
 | `scoutReasoningMax` | medium |
 | `judgeReasoningMax` | high |
 | `maxHistoryMessages` | 80 |

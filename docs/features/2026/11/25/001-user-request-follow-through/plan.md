@@ -339,7 +339,7 @@ followThrough: z.object({
 ## Cost and interactions
 
 - **A1 output budget.** Billing is per token produced, so a higher limit costs nothing on calls that do not need it. Calls that would have been cut off now complete, which costs more per call but removes the retries and the wasted run. Watch average output tokens per judge call on staging before and after. Longer non-streamed calls hold a connection longer; the scaled timeout covers it.
-- **A2 length recovery.** At most 1 extra call per cut-off turn, and it replaces today's identical retry, so it adds nothing in the worst case.
+- **A2 length recovery.** For cut-off tool arguments it replaces today's identical retries (1 recovery call instead of 2 retries by default). An empty cut-off reply, which used to end the run, gets up to `maxRetries` (default 1) extra calls per turn.
 - **B.** The reminder line adds about 120 characters to a model call only while an outcome is owed. The report-back check adds at most `reportBack.maxNudges` (1) call per run, only when a run ends after work with no outcome. A well-behaved run pays nothing.
 - **C.** Each watchdog wake is one judge tick. Worst case 3 per owed outcome, plus none when an agent reminder covers it. One Redis read per active agent per coordinator poll, the same order as `agent:reminders:*`.
 - **D.** One API read per open chat; no model cost.
@@ -515,7 +515,7 @@ Phase 1:
 - [x] DONE WP2 Length recovery (A2) and `lengthRecoveries`
 - [x] DONE WP3 Instructions block, base-skill sentence and `long-running-task` text
 - [x] DONE WP4 Measurement in the `evaluate-*` skills
-- [ ] PENDING WP5 Phase 1 docs and CHANGELOG; full test, lint and build
+- [x] DONE WP5 Phase 1 docs and CHANGELOG; full test, lint and build
 - [ ] NOT STARTED (needs a staging deploy and a week of traffic; owner-run) WP6 Staging week, `results.md` and gate decision
 
 Phase 2 (if the gate calls for it):
@@ -555,7 +555,7 @@ Phase 3 (if the gate calls for it):
 
 ### WP3 Text (from the last code review, no critical or high)
 
-- Measured sizes: `BASE_SKILL.instructions` 8,493 → 8,702 characters (+209); `LONG_RUNNING_TASK_SKILL` 6,465 → 7,186 (+721, only for agents with that skill); the Instructions block grows by about 330 characters on every judge prompt.
+- Measured sizes: `BASE_SKILL.instructions` 8,493 → 8,702 characters (+209); `LONG_RUNNING_TASK_SKILL` 6,465 → 7,186 (+721, only for agents with that skill); the Instructions block grows by about 400 characters on every judge prompt (about 420 for a child agent).
 - LOW: "Do not end a run while you owe the user an outcome" sits beside "send another … when you cannot finish this run"; consistent together, but could read "Do not end a run without telling the user the outcome, or what remains."
 - LOW: the runtime paragraph and the base-skill sentence state the same principle twice; revisit if prompt size matters.
 
@@ -565,4 +565,8 @@ Phase 3 (if the gate calls for it):
 - LOW: error messages are capped at 600 characters, so FT2 (d) can miss a cut-off reason; the invalid_tool_args count still includes those lines (noted in the skill).
 - LOW: the FT1 and FT3 SQL was checked on a throwaway Postgres with the same columns, not on a migrated herobids database.
 - LOW (pre-existing): typo "session daa" in the evaluate-agent frontmatter.
+
+### WP5 Docs (from the code review; its HIGH and MEDIUM findings were fixed)
+
+- None outstanding beyond the items above.
 

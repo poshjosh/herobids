@@ -52,7 +52,7 @@ Agent runtime failure is not by itself proof that venue execution failed.
 
 ## Invalid Tool Arguments (`provider.invalid_tool_args`)
 
-When the model sends tool-call arguments that are not a valid JSON object, the tick ends (after the usual LLM retries) and the reason is stored as `errorMessage` on the `agent.llm.completed` event. The message is single-line and built in `packages/llm/src/llm-provider.ts`:
+When the model sends tool-call arguments that are not a valid JSON object, the tick ends (after the usual LLM retries) and the reason is stored as `errorMessage` on the `agent.llm.completed` event. When the arguments were cut off at the output limit (finish reason `length`, or `max_tokens` on Anthropic), the call is instead retried with one reasoning level lower and a hint to think briefly, at most `llm.lengthRecovery.maxRetries` times per turn (see [Output Budget And Length Recovery](../../best-practices/agent-runtime.md#output-budget-and-length-recovery)); the tick ends with this error only once those retries are used up. The message is single-line and built in `packages/llm/src/llm-provider.ts`:
 
 ```
 Invalid tool arguments for "write_file" (call call_1, call 1 of 1): not valid JSON. Expected ',' or '}' after property value in JSON at position 36 (line 1 column 37). The arguments are 5812 characters long. The character at position 36 is "u". The character before it is "\"". The model finished with reason "stop".
