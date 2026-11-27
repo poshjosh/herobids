@@ -1,16 +1,28 @@
 import { z } from 'zod';
+import { createHash, randomUUID } from 'node:crypto';
+import { constants } from 'node:fs';
+import { open, readlink, realpath, stat } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
+import { basename, extname } from 'node:path';
 import { createLogger } from '../logger.js';
 import type { AgentTool, ToolResult, ToolContext, BrowserPoolPort } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { capabilityDeniedResult, nonFaultError } from './tool-errors.js';
 import { isHostPrivate } from './ssrf-guard.js';
+import { getWorkspacePaths, resolveWorkspacePath } from './workspace.js';
 
 const logger = createLogger('tools:browser');
 
 const CDP_COMMAND_TIMEOUT_MS = 10_000;
-// Actions that wait on page-side rendering (select, and later upload) get a longer per-command budget.
+// Actions that wait on page-side rendering (select, and upload) get a longer per-command budget.
 const LONG_CDP_COMMAND_TIMEOUT_MS = 30_000;
 const DEFAULT_SNAPSHOT_MAX_NODES = 200;
+// Upload cap (10 MiB) is separate from the read-tool maxFileBytes default. Chunks are a multiple of 4 base64 characters.
+const UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+const UPLOAD_CHUNK_CHARS = 512 * 1024;
+// Whole upload (read, transfer and attach) must finish within this budget; checked before each chunk.
+const UPLOAD_DEADLINE_MS = 60_000;
+const UPLOAD_READ_STEP_BYTES = 256 * 1024;
 
 // ── CDP client ──────────────────────────────────────────────────────────────
 
@@ -146,12 +158,14 @@ function sessionKey(ctx: ToolContext): string {
 const BrowseInteractiveParamsSchema = z.object({
   action: z.enum([
     'open', 'snapshot', 'click', 'fill', 'screenshot', 'get_text', 'close',
-    'select', 'check', 'uncheck', 'press', 'type',
+    'select', 'check', 'uncheck', 'press', 'type', 'upload',
   ]).describe('Browser action to perform'),
   url: z.string().url().optional()
     .describe('URL to navigate to (required for "open" action)'),
   selector: z.string().optional()
-    .describe('CSS selector targeting an element (required for "click", "fill", "get_text", "select", "check", "uncheck"; optional for "type")'),
+    .describe('CSS selector targeting an element (required for "click", "fill", "get_text", "select", "check", "uncheck", "upload"; optional for "type")'),
+  file: z.string().optional()
+    .describe('Path of the file to upload, relative to the workspace root (required for "upload" action)'),
   value: z.string().optional()
     .describe('Value to fill into the element (required for "fill" action)'),
   waitFor: z.string().optional()
@@ -780,6 +794,223 @@ async function handleType(params: BrowseParams, ctx: ToolContext): Promise<ToolR
   }
 }
 
+const UPLOAD_MIME_TYPES: Record<string, string> = {
+  '.pdf': 'application/pdf',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.txt': 'text/plain',
+  '.rtf': 'application/rtf',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+};
+
+function uploadMimeType(fileName: string): string {
+  return UPLOAD_MIME_TYPES[extname(fileName).toLowerCase()] ?? 'application/octet-stream';
+}
+
+type UploadSource =
+  | { ok: true; realPath: string; bytes: Buffer; sha256: string }
+  | { ok: false; error: string };
+
+/** Read at most limit + 1 bytes from the handle. Returns null when the file holds more than limit bytes. */
+async function readBounded(handle: FileHandle, limit: number): Promise<Buffer | null> {
+  const parts: Buffer[] = [];
+  let total = 0;
+  for (;;) {
+    const want = Math.min(UPLOAD_READ_STEP_BYTES, limit + 1 - total);
+    if (want <= 0) break;
+    const chunk = Buffer.alloc(want);
+    const { bytesRead } = await handle.read(chunk, 0, want, null);
+    if (bytesRead === 0) break;
+    parts.push(chunk.subarray(0, bytesRead));
+    total += bytesRead;
+  }
+  return total > limit ? null : Buffer.concat(parts, total);
+}
+
+/**
+ * Resolve an upload path inside the workspace root and read it, rejecting anything that is not a small regular file.
+ * The bytes come only from the handle opened on the resolved real path, so the file that was checked is the file read.
+ */
+async function readUploadSource(agentId: string, file: string): Promise<UploadSource> {
+  const root = getWorkspacePaths(agentId).root;
+  const resolved = await resolveWorkspacePath(root, file);
+  if (!resolved.ok) return { ok: false, error: resolved.error };
+
+  let handle: FileHandle | undefined;
+  try {
+    const realRoot = await realpath(root);
+    const realFile = await realpath(resolved.absolutePath);
+    if (!realFile.startsWith(realRoot + '/')) {
+      return { ok: false, error: 'path escapes workspace root' };
+    }
+
+    // O_NONBLOCK: opening a FIFO returns at once instead of waiting for a writer. fstat then rejects it.
+    handle = await open(realFile, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const info = await handle.stat();
+    if (info.isDirectory()) return { ok: false, error: `"${file}" is a directory, not a file` };
+    if (!info.isFile()) return { ok: false, error: `"${file}" is not a regular file` };
+    // A second name for the file could be used to change it outside the checks below.
+    if (info.nlink > 1) return { ok: false, error: `"${file}" has more than one hard link` };
+    // Early size check from the handle's stat, so an oversized file is never read into memory.
+    if (info.size > UPLOAD_MAX_BYTES) {
+      return { ok: false, error: `"${file}" is ${info.size} bytes, over the ${UPLOAD_MAX_BYTES / (1024 * 1024)} MiB upload limit` };
+    }
+
+    // Post-open containment check (Linux). /proc/self/fd/N names the path the handle was opened through, so a
+    // parent directory swapped between realpath and open is caught here. Where /proc is missing (macOS, ENOENT),
+    // the check is skipped with a warning. The dev/ino check below cannot see a parent swap (both lookups
+    // follow the same path), so on macOS that swap is a residual limitation, recorded in the plan.
+    let openedPath: string | undefined;
+    try {
+      openedPath = await readlink(`/proc/self/fd/${handle.fd}`);
+    } catch (error: unknown) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      logger.warn({ agentId, sourcePath: realFile }, 'browse_interactive upload: /proc/self/fd unavailable, skipping post-open containment check');
+    }
+    // Linux only: the path the handle was opened through must be the path that passed the checks above.
+    if (openedPath !== undefined && openedPath !== realFile) {
+      return { ok: false, error: 'path escapes workspace root' };
+    }
+
+    // If the path now names a different inode than the one opened, it was swapped after the checks above.
+    const current = await stat(realFile);
+    if (current.dev !== info.dev || current.ino !== info.ino) {
+      return { ok: false, error: `"${file}" changed while it was being opened` };
+    }
+
+    const bytes = await readBounded(handle, UPLOAD_MAX_BYTES);
+    if (bytes === null) {
+      return { ok: false, error: `"${file}" grew past the upload limit while it was read` };
+    }
+    return {
+      ok: true,
+      realPath: realFile,
+      bytes,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+    };
+  } catch {
+    return { ok: false, error: `"${file}" does not exist or cannot be read` };
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+async function handleUpload(params: BrowseParams, ctx: ToolContext): Promise<ToolResult> {
+  if (!params.selector) {
+    return nonFaultError('browse_interactive: "selector" is required for action "upload"');
+  }
+  if (!params.file) {
+    return nonFaultError('browse_interactive: "file" is required for action "upload"');
+  }
+  const sessionOrError = await requireSession(ctx);
+  if (isToolResult(sessionOrError)) return sessionOrError;
+
+  const deadline = Date.now() + UPLOAD_DEADLINE_MS;
+  const deadlineError = 'browse_interactive upload: timed out before the file finished transferring';
+  const source = await readUploadSource(ctx.agentId, params.file);
+  if (!source.ok) return nonFaultError(`browse_interactive upload: ${source.error}`);
+
+  const cdp = sessionOrError.cdp;
+  const selector = JSON.stringify(params.selector);
+  const stagingKey = JSON.stringify(`__herobidsUpload_${randomUUID()}`);
+  const fileName = JSON.stringify(basename(params.file));
+  const mimeType = JSON.stringify(uploadMimeType(params.file));
+  const sizeBytes = source.bytes.byteLength;
+  const timeoutMs = LONG_CDP_COMMAND_TIMEOUT_MS;
+  // Set once page-side staging may exist, so any failure before a confirmed attach clears it.
+  let needsCleanup = false;
+
+  try {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) return nonFaultError(deadlineError);
+    // Set before the call: a prepare that fails after the page ran still needs its staging key cleared.
+    needsCleanup = true;
+    const prepared = await evaluateInPage(cdp, `(() => {
+      const el = document.querySelector(${selector});
+      if (!el) return { ok: false, error: 'Element not found' };
+      if (!(el instanceof HTMLInputElement) || el.type !== 'file') return { ok: false, error: 'Element is not a file input' };
+      window[${stagingKey}] = [];
+      return { ok: true };
+    })()`, Math.min(timeoutMs, remainingMs));
+    if (prepared['ok'] !== true) {
+      return nonFaultError(`browse_interactive upload: ${(prepared['error'] as string | undefined) ?? 'upload failed'}`);
+    }
+
+    const base64 = source.bytes.toString('base64');
+    for (let offset = 0; offset < base64.length; offset += UPLOAD_CHUNK_CHARS) {
+      // Each call gets only the budget that is left, so no single call can outlive the deadline.
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return nonFaultError(deadlineError);
+      const chunk = JSON.stringify(base64.slice(offset, offset + UPLOAD_CHUNK_CHARS));
+      const pushed = await evaluateInPage(cdp, `(() => {
+        const parts = window[${stagingKey}];
+        if (!Array.isArray(parts)) return { ok: false, error: 'Upload staging was lost' };
+        parts.push(${chunk});
+        return { ok: true };
+      })()`, Math.min(timeoutMs, remaining));
+      if (pushed['ok'] !== true) {
+        return nonFaultError(`browse_interactive upload: ${(pushed['error'] as string | undefined) ?? 'chunk transfer failed'}`);
+      }
+    }
+
+    // The finalize script removes the staging buffer before any step that can throw.
+    const remainingForAttach = deadline - Date.now();
+    if (remainingForAttach <= 0) return nonFaultError(deadlineError);
+    const attached = await evaluateInPage(cdp, `(() => {
+      const parts = window[${stagingKey}];
+      delete window[${stagingKey}];
+      if (!Array.isArray(parts)) return { ok: false, error: 'Upload staging was lost' };
+      const el = document.querySelector(${selector});
+      if (!el) return { ok: false, error: 'Element not found' };
+      if (!(el instanceof HTMLInputElement) || el.type !== 'file') return { ok: false, error: 'Element is not a file input' };
+      const binary = atob(parts.join(''));
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      if (bytes.length !== ${sizeBytes}) return { ok: false, error: 'Transferred size does not match the source file' };
+      const file = new File([bytes], ${fileName}, { type: ${mimeType} });
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      el.files = dt.files;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      const count = el.files ? el.files.length : 0;
+      if (count === 0) return { ok: false, error: 'File input reports no files after the upload' };
+      return { ok: true, name: file.name, size: file.size, count, url: location.href };
+    })()`, Math.min(timeoutMs, remainingForAttach));
+    if (attached['ok'] !== true) {
+      return nonFaultError(`browse_interactive upload: ${(attached['error'] as string | undefined) ?? 'upload failed'}`);
+    }
+    if (attached['size'] !== sizeBytes || typeof attached['count'] !== 'number' || attached['count'] < 1) {
+      return nonFaultError('browse_interactive upload: the page did not confirm the attached file');
+    }
+    needsCleanup = false;
+
+    // Audit trail: metadata only, never file content. The URL is logged without its query and fragment.
+    logger.info({
+      agentId: ctx.agentId,
+      sessionId: ctx.sessionId,
+      sourcePath: source.realPath,
+      sizeBytes,
+      sha256: source.sha256,
+      pageUrl: String(attached['url'] ?? '').replace(/[?#][\s\S]*$/, ''),
+    }, 'browse_interactive upload attached file');
+
+    return {
+      success: true,
+      data: { fileName: basename(params.file), sizeBytes, filesCount: attached['count'], selector: params.selector },
+    };
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    return nonFaultError(`browse_interactive upload failed: ${msg}`);
+  } finally {
+    if (needsCleanup) {
+      await evaluateInPage(cdp, `delete window[${stagingKey}]`).catch(() => undefined);
+    }
+  }
+}
+
 async function handleClose(ctx: ToolContext): Promise<ToolResult> {
   const key = sessionKey(ctx);
   const session = activeSessions.get(key);
@@ -826,7 +1057,7 @@ export function createBrowserTools(browserPool: BrowserPoolPort | undefined): Ag
       'Interactive browser automation: open pages, click elements, fill forms, select options, check or uncheck boxes, press keys, type text, take screenshots, and read accessibility trees. ' +
       'Actions: open (navigate to URL), snapshot (get accessibility tree as structured text; optional maxNodes), click (click element by CSS selector), ' +
       'fill (fill form field by CSS selector), select (choose an option in a native select or ARIA combobox by selector and option), ' +
-      'check / uncheck (set a checkbox or radio by selector), press (send a key such as Enter or Tab), ' +
+      'check / uncheck (set a checkbox or radio by selector), upload (attach a workspace file, given as "file", to a file input by selector), press (send a key such as Enter or Tab), ' +
       'type (insert text into the focused element, or the element matched by selector; fields that reformat input, such as phone masks, can report an error even when the text was entered), ' +
       'screenshot (capture page as base64 PNG), get_text (read element text), ' +
       'close (release browser session). Call "open" first to start a session. ' +
@@ -898,6 +1129,9 @@ export function createBrowserTools(browserPool: BrowserPoolPort | undefined): Ag
             break;
           case 'type':
             result = await handleType(parsed, ctx);
+            break;
+          case 'upload':
+            result = await handleUpload(parsed, ctx);
             break;
           case 'close':
             result = await handleClose(ctx);

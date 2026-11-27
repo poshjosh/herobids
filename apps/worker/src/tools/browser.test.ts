@@ -2,6 +2,24 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import type { ToolContext, BrowserPoolPort, BrowserSession, BrowserPoolError } from '@herobids/domain';
 import type { Result } from '@herobids/domain';
 import { ok, err } from '@herobids/domain';
+import { createHash, randomBytes } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { mkdir, mkdtemp, link, open, readlink, realpath, rm, symlink, truncate, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
+
+const { mockLogger } = vi.hoisted(() => ({
+  mockLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+vi.mock('../logger.js', () => ({ createLogger: () => mockLogger }));
+
+// Pass-through wrappers around open and readlink. Upload tests use them to fake a handle's stat or the
+// /proc path that readlink reports, without changing the real file system.
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...actual, open: vi.fn(actual.open), readlink: vi.fn(actual.readlink) };
+});
 
 // Mock DNS (used transitively by ssrf-guard) so no real DNS lookups occur.
 vi.mock('node:dns/promises', () => ({
@@ -1048,6 +1066,308 @@ describe('browse_interactive — form actions', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toBe('browse_interactive uncheck: expected checked=false but the control reports checked=true');
+  });
+
+  describe('upload', () => {
+    const UPLOAD_LIMIT_BYTES = 10 * 1024 * 1024;
+    let workspaceRoot: string;
+    let outsideDir: string;
+    let previousRootEnv: string | undefined;
+
+    beforeEach(async () => {
+      previousRootEnv = process.env['AGENT_WORKSPACE_ROOT'];
+      workspaceRoot = await mkdtemp(join(tmpdir(), 'browser-upload-root-'));
+      outsideDir = await mkdtemp(join(tmpdir(), 'browser-upload-outside-'));
+      process.env['AGENT_WORKSPACE_ROOT'] = workspaceRoot;
+    });
+
+    afterEach(async () => {
+      if (previousRootEnv === undefined) delete process.env['AGENT_WORKSPACE_ROOT'];
+      else process.env['AGENT_WORKSPACE_ROOT'] = previousRootEnv;
+      await rm(workspaceRoot, { recursive: true, force: true });
+      await rm(outsideDir, { recursive: true, force: true });
+    });
+
+    const pageCalls = () => sent.filter((c) => c.method === 'Runtime.evaluate');
+
+    it('upload rejects a path that escapes the workspace with ..', async () => {
+      const { tool, ctx } = await openForm('sess-upload-dotdot');
+
+      const result = await tool.execute({ action: 'upload', selector: '#resume', file: '../secret.txt' }, ctx);
+
+      expect(result.success).toBe(false);
+      expect(result.fault).toBe(false);
+      expect(result.error).toBe('browse_interactive upload: path traversal is not allowed');
+      expect(pageCalls()).toHaveLength(0);
+    });
+
+    it('upload rejects an absolute path outside the workspace root', async () => {
+      const { tool, ctx } = await openForm('sess-upload-absolute');
+      const outsideFile = join(outsideDir, 'secret.txt');
+      await writeFile(outsideFile, 'secret');
+
+      const result = await tool.execute({ action: 'upload', selector: '#resume', file: outsideFile }, ctx);
+
+      expect(result.success).toBe(false);
+      expect(result.fault).toBe(false);
+      expect(result.error).toBe('browse_interactive upload: path must be relative to the workspace root');
+      expect(pageCalls()).toHaveLength(0);
+    });
+
+    it('upload rejects a symlink that resolves outside the workspace root', async () => {
+      const { tool, ctx } = await openForm('sess-upload-symlink');
+      const outsideFile = join(outsideDir, 'secret.txt');
+      await writeFile(outsideFile, 'secret');
+      await symlink(outsideFile, join(workspaceRoot, 'link.txt'));
+
+      const result = await tool.execute({ action: 'upload', selector: '#resume', file: 'link.txt' }, ctx);
+
+      expect(result.success).toBe(false);
+      expect(result.fault).toBe(false);
+      expect(result.error).toBe('browse_interactive upload: path escapes workspace root');
+      expect(pageCalls()).toHaveLength(0);
+    });
+
+    it('upload rejects a file over the 10 MiB limit before reading it', async () => {
+      const { tool, ctx } = await openForm('sess-upload-oversize');
+      const bigFile = join(workspaceRoot, 'big.pdf');
+      await writeFile(bigFile, '');
+      await truncate(bigFile, UPLOAD_LIMIT_BYTES + 1);
+
+      const result = await tool.execute({ action: 'upload', selector: '#resume', file: 'big.pdf' }, ctx);
+
+      expect(result.success).toBe(false);
+      expect(result.fault).toBe(false);
+      expect(result.error).toBe(`browse_interactive upload: "big.pdf" is ${UPLOAD_LIMIT_BYTES + 1} bytes, over the 10 MiB upload limit`);
+      expect(pageCalls()).toHaveLength(0);
+    });
+
+    it('upload rejects a directory', async () => {
+      const { tool, ctx } = await openForm('sess-upload-directory');
+      await mkdir(join(workspaceRoot, 'docs'));
+
+      const result = await tool.execute({ action: 'upload', selector: '#resume', file: 'docs' }, ctx);
+
+      expect(result.success).toBe(false);
+      expect(result.fault).toBe(false);
+      expect(result.error).toBe('browse_interactive upload: "docs" is a directory, not a file');
+      expect(pageCalls()).toHaveLength(0);
+    });
+
+    it('upload attaches a workspace file and reports name, size and file count', async () => {
+      const { tool, ctx } = await openForm('sess-upload-ok');
+      await mkdir(join(workspaceRoot, 'docs'));
+      await writeFile(join(workspaceRoot, 'docs', 'cv.pdf'), 'hello');
+      // Replies in call order: prepare, one chunk ("hello" as base64), then inject and read back.
+      evaluateReplies.push(
+        { ok: true },
+        { ok: true },
+        { ok: true, name: 'cv.pdf', size: 5, count: 1, url: 'https://jobs.example.com/apply' },
+      );
+
+      const result = await tool.execute({ action: 'upload', selector: '#resume', file: 'docs/cv.pdf' }, ctx);
+
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual({ fileName: 'cv.pdf', sizeBytes: 5, filesCount: 1, selector: '#resume' });
+      const expressions = pageCalls().map((c) => String(c.params?.['expression']));
+      expect(expressions).toHaveLength(3);
+      expect(expressions[1]).toContain(JSON.stringify('aGVsbG8='));
+      expect(sent.some((c) => c.method === 'Input.dispatchMouseEvent')).toBe(false);
+    });
+
+    it('upload logs the real source path, the sha256 and size, and a page URL without its query', async () => {
+      const { tool, ctx } = await openForm('sess-upload-audit');
+      const cvPath = join(workspaceRoot, 'cv.pdf');
+      await writeFile(cvPath, 'hello');
+      evaluateReplies.push(
+        { ok: true },
+        { ok: true },
+        { ok: true, name: 'cv.pdf', size: 5, count: 1, url: 'https://jobs.example.com/apply?token=secret#step' },
+      );
+
+      const result = await tool.execute({ action: 'upload', selector: '#resume', file: 'cv.pdf' }, ctx);
+
+      expect(result.success).toBe(true);
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentId: FORM_AGENT_ID,
+          sessionId: 'sess-upload-audit',
+          sourcePath: await realpath(cvPath),
+          sizeBytes: 5,
+          sha256: createHash('sha256').update('hello').digest('hex'),
+          pageUrl: 'https://jobs.example.com/apply',
+        }),
+        'browse_interactive upload attached file',
+      );
+    });
+
+    it('upload clears the page staging key when a chunk transfer fails', async () => {
+      const { tool, ctx } = await openForm('sess-upload-chunk-fail');
+      await writeFile(join(workspaceRoot, 'cv.pdf'), 'hello');
+      evaluateReplies.push({ ok: true }, { ok: false, error: 'chunk transfer failed' }, true);
+
+      const result = await tool.execute({ action: 'upload', selector: '#resume', file: 'cv.pdf' }, ctx);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('browse_interactive upload: chunk transfer failed');
+      const stagingKey = /window\[("__herobidsUpload_[^"]+")\]/.exec(String(pageCalls()[0]!.params?.['expression']))![1];
+      expect(pageCalls()).toHaveLength(3);
+      expect(String(pageCalls()[2]!.params?.['expression'])).toBe(`delete window[${stagingKey}]`);
+    });
+
+    it('upload sends a file over 512 KiB in two chunks that reassemble to the source bytes', async () => {
+      const { tool, ctx } = await openForm('sess-upload-multichunk');
+      const bytes = randomBytes(700 * 1024);
+      await writeFile(join(workspaceRoot, 'big.bin'), bytes);
+      evaluateReplies.push(
+        { ok: true },
+        { ok: true },
+        { ok: true },
+        { ok: true, name: 'big.bin', size: bytes.length, count: 1, url: 'https://jobs.example.com/apply' },
+      );
+
+      const result = await tool.execute({ action: 'upload', selector: '#resume', file: 'big.bin' }, ctx);
+
+      expect(result.success).toBe(true);
+      const chunkExpressions = pageCalls()
+        .map((c) => String(c.params?.['expression']))
+        .filter((e) => e.includes('parts.push('));
+      expect(chunkExpressions).toHaveLength(2);
+      const base64 = chunkExpressions
+        .map((e) => JSON.parse(/parts\.push\((".*?")\)/.exec(e)![1]!) as string)
+        .join('');
+      expect(createHash('sha256').update(Buffer.from(base64, 'base64')).digest('hex'))
+        .toBe(createHash('sha256').update(bytes).digest('hex'));
+    });
+
+    it('upload stops with a non-fault error when the 60 s deadline passes between chunks', async () => {
+      const { tool, ctx } = await openForm('sess-upload-deadline');
+      await writeFile(join(workspaceRoot, 'big.bin'), randomBytes(700 * 1024));
+      // The clock stays put until two page calls have gone out, then jumps past the 60 s budget before the second chunk.
+      const start = Date.now();
+      const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => (pageCalls().length >= 2 ? start + 60_001 : start));
+      evaluateReplies.push({ ok: true }, { ok: true }, true);
+
+      let result;
+      try {
+        result = await tool.execute({ action: 'upload', selector: '#resume', file: 'big.bin' }, ctx);
+      } finally {
+        nowSpy.mockRestore();
+      }
+
+      expect(result.success).toBe(false);
+      expect(result.fault).toBe(false);
+      expect(result.error).toBe('browse_interactive upload: timed out before the file finished transferring');
+      // prepare, one chunk, then the staging cleanup in finally.
+      expect(pageCalls()).toHaveLength(3);
+      expect(String(pageCalls()[2]!.params?.['expression'])).toMatch(/^delete window\[/);
+    });
+
+    it('upload rejects a file that grows past the limit after its size was checked', async () => {
+      const { tool, ctx } = await openForm('sess-upload-grew');
+      const grewPath = join(workspaceRoot, 'grew.pdf');
+      await writeFile(grewPath, '');
+      await truncate(grewPath, UPLOAD_LIMIT_BYTES + 1);
+      // The handle's stat reports a small file, but the bytes read back are over the cap.
+      const actualOpen = (await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).open;
+      vi.mocked(open).mockImplementationOnce(async (path, flags) => {
+        const handle = await actualOpen(path, flags);
+        const real = await handle.stat();
+        handle.stat = async () => Object.assign(Object.create(Object.getPrototypeOf(real)), real, { size: 1 });
+        return handle;
+      });
+
+      const result = await tool.execute({ action: 'upload', selector: '#resume', file: 'grew.pdf' }, ctx);
+
+      expect(result.success).toBe(false);
+      expect(result.fault).toBe(false);
+      expect(result.error).toBe('browse_interactive upload: "grew.pdf" grew past the upload limit while it was read');
+      expect(pageCalls()).toHaveLength(0);
+    });
+
+    it('upload rejects a FIFO without blocking on it', async () => {
+      const { tool, ctx } = await openForm('sess-upload-fifo');
+      await promisify(execFile)('mkfifo', [join(workspaceRoot, 'pipe.fifo')]);
+
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('upload hung on the FIFO')), 5_000);
+      });
+      try {
+        const result = await Promise.race([
+          tool.execute({ action: 'upload', selector: '#resume', file: 'pipe.fifo' }, ctx),
+          timeout,
+        ]);
+
+        expect(result.success).toBe(false);
+        expect(result.fault).toBe(false);
+        expect(result.error).toBe('browse_interactive upload: "pipe.fifo" is not a regular file');
+        expect(pageCalls()).toHaveLength(0);
+      } finally {
+        clearTimeout(timer);
+      }
+    });
+
+    it('upload rejects a file whose opened path resolves outside the workspace root', async () => {
+      const { tool, ctx } = await openForm('sess-upload-fd-escape');
+      await writeFile(join(workspaceRoot, 'cv.pdf'), 'hello');
+      // Stands in for /proc/self/fd/N naming a path outside the root, as after a parent directory swap.
+      vi.mocked(readlink).mockResolvedValueOnce(join(outsideDir, 'cv.pdf'));
+
+      const result = await tool.execute({ action: 'upload', selector: '#resume', file: 'cv.pdf' }, ctx);
+
+      expect(result.success).toBe(false);
+      expect(result.fault).toBe(false);
+      expect(result.error).toBe('browse_interactive upload: path escapes workspace root');
+      expect(pageCalls()).toHaveLength(0);
+    });
+
+    it('upload rejects a handle whose opened path differs from the checked file, even inside the root', async () => {
+      const { tool, ctx } = await openForm('sess-upload-fd-sibling');
+      await writeFile(join(workspaceRoot, 'cv.pdf'), 'hello');
+      await writeFile(join(workspaceRoot, 'other.pdf'), 'world');
+      vi.mocked(readlink).mockResolvedValueOnce(join(workspaceRoot, 'other.pdf'));
+
+      const result = await tool.execute({ action: 'upload', selector: '#resume', file: 'cv.pdf' }, ctx);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('browse_interactive upload: path escapes workspace root');
+      expect(pageCalls()).toHaveLength(0);
+    });
+
+    it('upload rejects a file whose inode changes between open and the identity check', async () => {
+      const { tool, ctx } = await openForm('sess-upload-ino');
+      const cvPath = join(workspaceRoot, 'cv.pdf');
+      await writeFile(cvPath, 'hello');
+      // The handle reports a different inode than stat(realFile) returns, as after a swap.
+      const actualOpen = (await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).open;
+      vi.mocked(open).mockImplementationOnce(async (path, flags) => {
+        const handle = await actualOpen(path, flags);
+        const real = await handle.stat();
+        handle.stat = async () => Object.assign(Object.create(Object.getPrototypeOf(real)), real, { ino: real.ino + 1 });
+        return handle;
+      });
+
+      const result = await tool.execute({ action: 'upload', selector: '#resume', file: 'cv.pdf' }, ctx);
+
+      expect(result.success).toBe(false);
+      expect(result.fault).toBe(false);
+      expect(result.error).toBe('browse_interactive upload: "cv.pdf" changed while it was being opened');
+      expect(pageCalls()).toHaveLength(0);
+    });
+
+    it('upload rejects a file that has a second hard link inside the workspace', async () => {
+      const { tool, ctx } = await openForm('sess-upload-hardlink');
+      await writeFile(join(workspaceRoot, 'cv.pdf'), 'hello');
+      await link(join(workspaceRoot, 'cv.pdf'), join(workspaceRoot, 'cv-copy.pdf'));
+
+      const result = await tool.execute({ action: 'upload', selector: '#resume', file: 'cv.pdf' }, ctx);
+
+      expect(result.success).toBe(false);
+      expect(result.fault).toBe(false);
+      expect(result.error).toBe('browse_interactive upload: "cv.pdf" has more than one hard link');
+      expect(pageCalls()).toHaveLength(0);
+    });
   });
 });
 

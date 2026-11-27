@@ -84,13 +84,13 @@ Timeouts:
 
 ### A2. Upload file access
 
-Status: PENDING
+Status: DONE (review rounds 1–3 resolved; see Outstanding Issues)
 
 - **Roots:** the agent's workspace root only (`/workspace`). User-sent files are
   copied under `/workspace/docs/`, so they are covered. Anything else is rejected.
 - **Path checks:** resolve with `realpath` before checking the root. Reject `..`
   escapes and symlinks that resolve outside a root. Reject directories.
-- **Size limit:** configurable. Proposed default 10 MB.
+- **Size limit:** 10 MiB (10,485,760 bytes), a named constant.
 - **Transfer:** the worker reads the bytes and sends them to the page in chunks,
   to stay under CDP message limits (to be measured).
 - **Injection:** the page builds a `File`, puts it into a `DataTransfer`, assigns
@@ -99,6 +99,22 @@ Status: PENDING
   and does not click the button.
 - **Audit:** each upload is logged with agent id, session id, source path, size,
   SHA-256 and the page URL. File content is not logged.
+- **Implementation note:** cap is 10 MiB (10,485,760 bytes; named constant, not the
+  16 MiB read-tool `maxFileBytes`). The file is opened once by its resolved real path
+  (`O_NOFOLLOW | O_NONBLOCK`), checked by handle stat and inode identity, and read
+  through the handle with a bounded read, so growth after the size check is rejected.
+  `O_NONBLOCK` stops an `open` on a FIFO from blocking; the handle stat then rejects
+  the non-regular file. Hard links are rejected: after fstat, `nlink > 1` is a
+  non-fault error, so a second name for a workspace file cannot be used to read it
+  through a different path. After open, on Linux, `readlink(/proc/self/fd/N)` must
+  name the real file or a path under the real root; otherwise the upload is rejected
+  as an escape. Where `/proc` is missing (macOS, ENOENT), the check is skipped with one
+  warning per upload and only the dev/ino check applies. This is a residual limitation
+  on macOS: a parent directory swapped between realpath and open is not detected there.
+  Base64 chunks are 512 KB per evaluate call, staged on a per-upload `window` key that
+  is cleared on success and on failure. The whole upload has a 60 s deadline. Each chunk
+  and the attach evaluate use `min(timeout, remaining)` as their timeout, and the
+  deadline is checked before each one, so no single call can outlive the deadline.
 
 Rejected alternative: CDP `DOM.setFileInputFiles` with a host path. The pool runs
 on a different host from the agent, so the file would have to exist there too.
@@ -250,7 +266,7 @@ Phase 1 is independent of Part A and can ship first.
 
 ## Decisions Recorded (answers from review)
 
-1. **Upload size limit:** 10 MB.
+1. **Upload size limit:** 10 MiB (10,485,760 bytes).
 2. **Permission for `upload`:** same default grant as `browse_interactive`.
 3. **Who gets `upload`:** all browser-enabled agents.
 4. **traderton CHANGELOG:** reword the herobids mention.
@@ -307,3 +323,15 @@ Recorded by the coordinator after the A1 review (MEDIUM and LOW only).
 - `aria-controls` with several IDs returns "does not resolve". Take the first ID that resolves.
 - Test gap (H-2, deferred to A6): no test runs the page-side JavaScript. The worker has no DOM test environment. A6 covers it with a real browser.
 - Real-browser behaviour of react-select-style comboboxes and masked inputs is unverified until A6.
+
+### A2. Upload file access
+
+- Error mapping: ENOENT and ELOOP from `open`, `realpath` or `stat` fall into the catch-all and are not mapped to the specific messages.
+- The containment check is duplicated between the `realpath` check and the post-open `/proc` check. Consolidate into one helper.
+- `pageUrl` is logged with userinfo and path tokens. Strip them before logging.
+- `workspace.ts:52` uses `normalized.startsWith('..')`, which also rejects a legal name such as `..notes.txt`. Check path segments instead.
+- Root-path message: the message for a path that is the root itself needs review.
+- Windows `O_NOFOLLOW` note: the flag has no effect on Windows, so the symlink guard relies on realpath there. Document this.
+- `mockLogger`, and the queued `mockResolvedValueOnce`/`mockImplementationOnce` values on `open` and `readlink`, are not reset between tests. A test that fails before it consumes its queued value can leak into the next one.
+- Fixed in round 3: the prepare call is bounded by the remaining 60 s deadline, and the post-open `/proc` check now requires the opened path to equal the checked real path (Linux). Covered by a new in-root sibling test.
+- Residual limitation (macOS): no `/proc`, so a parent directory swapped between realpath and open is not detected. The dev/ino check cannot see it either. A6 should exercise the macOS path.
