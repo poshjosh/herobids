@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import type { ToolContext, BrowserPoolPort, BrowserSession, BrowserPoolError } from '@herobids/domain';
 import type { Result } from '@herobids/domain';
 import { ok, err } from '@herobids/domain';
@@ -675,3 +675,379 @@ describe('cleanupBrowserSessions', () => {
     expect(snapResult.error).toContain('no active session');
   });
 });
+
+// ── Form actions ────────────────────────────────────────────────────────────
+
+describe('browse_interactive — form actions', () => {
+  const FORM_AGENT_ID = 'agent-form-actions';
+
+  // Scripted CDP socket: Runtime.evaluate replies come from evaluateReplies in order, every other command gets {}.
+  // silentEvaluate makes Runtime.evaluate never answer, to exercise CDP timeouts.
+  let sent: Array<{ method: string; params?: Record<string, unknown> }>;
+  let evaluateReplies: unknown[];
+  let silentEvaluate: boolean;
+
+  class ScriptedWebSocket {
+    static readonly OPEN = 1;
+    readyState = 1;
+    private listeners = new Map<string, Array<(event: unknown) => void>>();
+
+    constructor() {
+      queueMicrotask(() => {
+        for (const h of this.listeners.get('open') ?? []) h({});
+      });
+    }
+
+    addEventListener(event: string, handler: (event: unknown) => void): void {
+      if (!this.listeners.has(event)) this.listeners.set(event, []);
+      this.listeners.get(event)!.push(handler);
+    }
+
+    send(data: string): void {
+      const parsed = JSON.parse(data) as { id: number; method: string; params?: Record<string, unknown> };
+      sent.push({ method: parsed.method, params: parsed.params });
+      if (parsed.method === 'Runtime.evaluate' && silentEvaluate) return;
+      const result = parsed.method === 'Runtime.evaluate'
+        ? { result: { type: 'object', value: evaluateReplies.shift() } }
+        : {};
+      queueMicrotask(() => {
+        const response = JSON.stringify({ id: parsed.id, result });
+        for (const h of this.listeners.get('message') ?? []) h({ data: response });
+      });
+    }
+
+    close(): void {
+      this.readyState = 3;
+      for (const h of this.listeners.get('close') ?? []) h({});
+    }
+  }
+
+  beforeEach(() => {
+    sent = [];
+    evaluateReplies = [];
+    silentEvaluate = false;
+    vi.stubGlobal('WebSocket', ScriptedWebSocket);
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    try {
+      await cleanupBrowserSessions(FORM_AGENT_ID);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    // A leftover reply means the code under test made fewer page calls than the test scripted.
+    expect(evaluateReplies).toEqual([]);
+  });
+
+  async function openForm(sessionId: string) {
+    const tool = createBrowserTools(makeBrowserPool())[0]!;
+    const ctx = makeContext({ agentId: FORM_AGENT_ID, sessionId });
+    const opened = await tool.execute({ action: 'open', url: 'https://example.com' }, ctx);
+    expect(opened.success).toBe(true);
+    sent = [];
+    return { tool, ctx };
+  }
+
+  const keyEvents = () => sent.filter((c) => c.method === 'Input.dispatchKeyEvent');
+
+  it('select returns an error when the read-back does not match the requested option', async () => {
+    const { tool, ctx } = await openForm('sess-select');
+
+    // Native select: the page-side write reports success, but the control reads back as Canada.
+    evaluateReplies.push({ ok: true, native: true }, { ok: true, label: 'Canada', value: 'ca' });
+
+    const result = await tool.execute({ action: 'select', selector: '#country', option: 'Germany' }, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('browse_interactive select: expected "Germany" but the control shows "Canada"');
+    expect(result.fault).toBe(false);
+  });
+
+  it('check does not click when the checkbox is already checked', async () => {
+    const { tool, ctx } = await openForm('sess-check');
+    evaluateReplies.push({ ok: true, checked: true });
+
+    const result = await tool.execute({ action: 'check', selector: '#agree' }, ctx);
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ checked: true, selector: '#agree' });
+    // Only the state read runs; a click would have been a second Runtime.evaluate.
+    expect(sent.filter((c) => c.method === 'Runtime.evaluate')).toHaveLength(1);
+  });
+
+  it('select combobox succeeds when the displayed selection matches the chosen option', async () => {
+    const { tool, ctx } = await openForm('sess-combo-ok');
+    evaluateReplies.push(
+      { ok: true, native: false },
+      { clicked: true, text: 'Germany' },
+      { ok: true, expanded: 'false', selected: 'Germany' },
+    );
+
+    const result = await tool.execute({ action: 'select', selector: '#country', option: 'Germany' }, ctx);
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ selected: 'Germany', selector: '#country' });
+    expect(sent.filter((c) => c.method === 'Input.insertText')).toHaveLength(1);
+  });
+
+  it('select combobox returns the available options and never presses Enter when no option matches', async () => {
+    const { tool, ctx } = await openForm('sess-combo-nomatch');
+    evaluateReplies.push(
+      { ok: true, native: false },
+      { clicked: false, options: ['Canada', 'France'] },
+    );
+
+    const result = await tool.execute({ action: 'select', selector: '#country', option: 'Germany' }, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.fault).toBe(false);
+    expect(result.error).toBe(
+      'browse_interactive select: no option matches "Germany". Available options: Canada, France',
+    );
+    expect(keyEvents()).toHaveLength(0);
+  });
+
+  it('select combobox reports that no options are visible when the list is empty', async () => {
+    const { tool, ctx } = await openForm('sess-combo-empty');
+    evaluateReplies.push({ ok: true, native: false }, { clicked: false, options: [] });
+
+    const result = await tool.execute({ action: 'select', selector: '#country', option: 'Germany' }, ctx);
+
+    expect(result.error).toBe(
+      'browse_interactive select: no option matches "Germany". No options are visible',
+    );
+    expect(keyEvents()).toHaveLength(0);
+  });
+
+  it('select combobox errors when typed text is the only thing the field shows', async () => {
+    const { tool, ctx } = await openForm('sess-combo-typed');
+    // The option was clicked, but the field only holds the typed search text and no selection is displayed.
+    evaluateReplies.push(
+      { ok: true, native: false },
+      { clicked: true, text: 'Germany' },
+      { ok: true, expanded: 'false', selected: null },
+    );
+
+    const result = await tool.execute({ action: 'select', selector: '#country', option: 'Germany' }, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('browse_interactive select: expected "Germany" but no selection is shown');
+  });
+
+  it('select combobox errors when a different option is displayed after the click', async () => {
+    const { tool, ctx } = await openForm('sess-combo-wrong');
+    evaluateReplies.push(
+      { ok: true, native: false },
+      { clicked: true, text: 'Germany' },
+      { ok: true, expanded: 'false', selected: 'Canada' },
+    );
+
+    const result = await tool.execute({ action: 'select', selector: '#country', option: 'Germany' }, ctx);
+
+    expect(result.error).toBe('browse_interactive select: expected "Germany" but the control shows "Canada"');
+  });
+
+  it('select combobox errors when the control is still expanded after the choice', async () => {
+    const { tool, ctx } = await openForm('sess-combo-open');
+    evaluateReplies.push(
+      { ok: true, native: false },
+      { clicked: true, text: 'Germany' },
+      { ok: true, expanded: 'true', selected: 'Germany' },
+    );
+
+    const result = await tool.execute({ action: 'select', selector: '#country', option: 'Germany' }, ctx);
+
+    expect(result.error).toBe('browse_interactive select: control is still expanded after choosing "Germany"');
+  });
+
+  it('select combobox errors without a linked listbox and sends no key events', async () => {
+    const { tool, ctx } = await openForm('sess-combo-nolist');
+    evaluateReplies.push({ ok: true, native: false }, { clicked: false, noListbox: true });
+
+    const result = await tool.execute({ action: 'select', selector: '#country', option: 'Germany' }, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.fault).toBe(false);
+    expect(result.error).toBe(
+      'browse_interactive select: combobox has no linked listbox (aria-controls is missing or does not resolve); use a native <select> or a combobox that sets aria-controls',
+    );
+    expect(keyEvents()).toHaveLength(0);
+  });
+
+  it('select combobox reads options and selection only through the linked listbox', async () => {
+    const { tool, ctx } = await openForm('sess-combo-scope');
+    evaluateReplies.push(
+      { ok: true, native: false },
+      { clicked: true, text: 'Germany' },
+      { ok: true, expanded: 'false', selected: 'Germany' },
+    );
+
+    await tool.execute({ action: 'select', selector: '#country', option: 'Germany' }, ctx);
+
+    const [, optionLookup, selectionRead] = sent
+      .filter((c) => c.method === 'Runtime.evaluate')
+      .map((c) => String(c.params?.['expression']));
+    expect(optionLookup).toContain("getAttribute('aria-controls')");
+    expect(optionLookup).not.toContain('document.querySelectorAll');
+    expect(selectionRead).toContain("getAttribute('aria-controls')");
+    expect(selectionRead).not.toContain('document.querySelectorAll');
+  });
+
+  it('select combobox does not insert text when the control cannot take focus', async () => {
+    const { tool, ctx } = await openForm('sess-combo-focus');
+    evaluateReplies.push({ ok: false, error: 'Element could not take focus' });
+
+    const result = await tool.execute({ action: 'select', selector: '#country', option: 'Germany' }, ctx);
+
+    expect(result.error).toBe('browse_interactive select: Element could not take focus');
+    expect(sent.some((c) => c.method === 'Input.insertText')).toBe(false);
+  });
+
+  it('select uses the 30 second timeout for page evaluation', async () => {
+    const { tool, ctx } = await openForm('sess-select-timeout');
+    silentEvaluate = true;
+    vi.useFakeTimers();
+
+    let settled = false;
+    const pending = tool.execute({ action: 'select', selector: '#country', option: 'Germany' }, ctx)
+      .then((r) => {
+        settled = true;
+        return r;
+      });
+
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+
+    const result = await pending;
+    expect(result.error).toBe(
+      "browse_interactive select failed: CDP command 'Runtime.evaluate' timed out after 30000ms",
+    );
+  });
+
+  it('type inserts text and reports the new value', async () => {
+    const { tool, ctx } = await openForm('sess-type-ok');
+    evaluateReplies.push({ ok: true, before: '' }, { ok: true, value: 'hello' });
+
+    const result = await tool.execute({ action: 'type', selector: '#q', text: 'hello' }, ctx);
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ value: 'hello', selector: '#q' });
+    const insert = sent.find((c) => c.method === 'Input.insertText');
+    expect(insert?.params).toEqual({ text: 'hello' });
+  });
+
+  it('type errors when the control value does not change', async () => {
+    const { tool, ctx } = await openForm('sess-type-fail');
+    evaluateReplies.push({ ok: true, before: 'hello', start: 5 }, { ok: true, value: 'hello' });
+
+    const result = await tool.execute({ action: 'type', selector: '#q', text: 'hello' }, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe(
+      'browse_interactive type: expected "hello" to be inserted but the control shows "hello". ' +
+        'If the field reformats input (for example a phone mask), the text may have been entered; check the value before retrying',
+    );
+  });
+
+  it('type reports the reformatted value when a masked field changes the inserted text', async () => {
+    const { tool, ctx } = await openForm('sess-type-mask');
+    evaluateReplies.push({ ok: true, before: '', start: 0 }, { ok: true, value: '(555) 1' });
+
+    const result = await tool.execute({ action: 'type', selector: '#q', text: '5551234' }, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('the control shows "(555) 1"');
+  });
+
+  it('type accepts identical text retyped over a selection', async () => {
+    const { tool, ctx } = await openForm('sess-type-retype');
+    // The field holds "hello" with all of it selected, so typing "hello" leaves the value unchanged.
+    evaluateReplies.push({ ok: true, before: 'hello', start: 0 }, { ok: true, value: 'hello' });
+
+    const result = await tool.execute({ action: 'type', selector: '#q', text: 'hello' }, ctx);
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ value: 'hello', selector: '#q' });
+  });
+
+  it('type without a selector rejects when nothing is focused', async () => {
+    const { tool, ctx } = await openForm('sess-type-nofocus');
+    evaluateReplies.push({
+      ok: false,
+      error: 'No focused element to type into; pass "selector" to choose one',
+    });
+
+    const result = await tool.execute({ action: 'type', text: 'hello' }, ctx);
+
+    expect(result.error).toBe(
+      'browse_interactive type: No focused element to type into; pass "selector" to choose one',
+    );
+    expect(sent.some((c) => c.method === 'Input.insertText')).toBe(false);
+  });
+
+  it('type does not insert text when the element cannot take focus', async () => {
+    const { tool, ctx } = await openForm('sess-type-focus');
+    evaluateReplies.push({ ok: false, error: 'Element could not take focus' });
+
+    const result = await tool.execute({ action: 'type', selector: '#q', text: 'hello' }, ctx);
+
+    expect(result.error).toBe('browse_interactive type: Element could not take focus');
+    expect(sent.some((c) => c.method === 'Input.insertText')).toBe(false);
+  });
+
+  it('press sends key down and key up for a supported key', async () => {
+    const { tool, ctx } = await openForm('sess-press-ok');
+
+    const result = await tool.execute({ action: 'press', key: 'Escape' }, ctx);
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ pressed: 'Escape' });
+    const events = keyEvents().map((c) => c.params);
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({ type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    expect(events[1]).toMatchObject({ type: 'keyUp', key: 'Escape', code: 'Escape' });
+  });
+
+  it('press rejects an unknown key without sending any key event', async () => {
+    const { tool, ctx } = await openForm('sess-press-bad');
+
+    const result = await tool.execute({ action: 'press', key: 'NotAKey' }, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('browse_interactive: unsupported key "NotAKey"');
+    expect(keyEvents()).toHaveLength(0);
+  });
+
+  it('uncheck clicks a checked control and reports the new state', async () => {
+    const { tool, ctx } = await openForm('sess-uncheck-ok');
+    evaluateReplies.push({ ok: true, checked: true }, {}, { ok: true, checked: false });
+
+    const result = await tool.execute({ action: 'uncheck', selector: '#agree' }, ctx);
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ checked: false, selector: '#agree' });
+  });
+
+  it('check errors when the control does not change state after the click', async () => {
+    const { tool, ctx } = await openForm('sess-check-mismatch');
+    evaluateReplies.push({ ok: true, checked: false }, {}, { ok: true, checked: false });
+
+    const result = await tool.execute({ action: 'check', selector: '#agree' }, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('browse_interactive check: expected checked=true but the control reports checked=false');
+  });
+
+  it('uncheck errors when the control does not change state after the click', async () => {
+    const { tool, ctx } = await openForm('sess-uncheck-mismatch');
+    evaluateReplies.push({ ok: true, checked: true }, {}, { ok: true, checked: true });
+
+    const result = await tool.execute({ action: 'uncheck', selector: '#agree' }, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('browse_interactive uncheck: expected checked=false but the control reports checked=true');
+  });
+});
+
