@@ -451,10 +451,11 @@ Actions: open, snapshot, click, fill, select, check, uncheck, press, type, uploa
 Single session per agent. Structured JSON responses.
 
 Form actions:
+- fill: set the value of a text input. Fast, but React-controlled and masked fields can ignore it. If the value does not stick, use type. \`browse_interactive({ action: 'fill', selector: '#first_name', value: 'Helen' })\`
+- type: insert text at the caret without key events. Use when fill is ignored by the field, e.g. masked phone inputs. Masked fields can reformat the value, so check the read-back. If type reports that the text may have been entered, take a snapshot before retrying so you do not enter it twice. \`browse_interactive({ action: 'type', selector: '#phone', text: '+49 151 0000000' })\`
 - select: choose a dropdown option by label or value. Works on native selects and comboboxes. \`browse_interactive({ action: 'select', selector: '#country', option: 'Germany' })\`
 - check / uncheck: set a checkbox. Does nothing if it is already in that state. \`browse_interactive({ action: 'check', selector: '#consent' })\`
 - press: send a key to the focused element, e.g. Enter, Tab, ArrowDown. \`browse_interactive({ action: 'press', key: 'Tab' })\`
-- type: insert text at the caret without key events. Use when fill is ignored by the field, e.g. masked phone inputs. Masked fields can reformat the value, so check the read-back. If type reports that the text may have been entered, take a snapshot before retrying so you do not enter it twice. \`browse_interactive({ action: 'type', selector: '#phone', text: '+49 151 0000000' })\`
 - upload: attach a file to a file input. \`browse_interactive({ action: 'upload', selector: 'input[type=file]', file: 'docs/original/cv.pdf' })\`
   - \`file\` is a path relative to the workspace root. Maximum size is 10 MiB. Absolute paths are rejected.
   - Upload only files the user has approved for this task (a rule for you; the tool does not check approval). Do not click the visible button; upload targets the file input directly.
