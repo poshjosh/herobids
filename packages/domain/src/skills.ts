@@ -447,8 +447,20 @@ export const BROWSER_SKILL: SkillDefinition = {
 
 **browse_interactive**
 
-Actions: open, snapshot, click, fill, screenshot, get_text, close.
+Actions: open, snapshot, click, fill, select, check, uncheck, press, type, upload, screenshot, get_text, close.
 Single session per agent. Structured JSON responses.
+
+Form actions:
+- select: choose a dropdown option by label or value. Works on native selects and comboboxes. \`browse_interactive({ action: 'select', selector: '#country', option: 'Germany' })\`
+- check / uncheck: set a checkbox. Does nothing if it is already in that state. \`browse_interactive({ action: 'check', selector: '#consent' })\`
+- press: send a key to the focused element, e.g. Enter, Tab, ArrowDown. \`browse_interactive({ action: 'press', key: 'Tab' })\`
+- type: insert text at the caret without key events. Use when fill is ignored by the field, e.g. masked phone inputs. Masked fields can reformat the value, so check the read-back. If type reports that the text may have been entered, take a snapshot before retrying so you do not enter it twice. \`browse_interactive({ action: 'type', selector: '#phone', text: '+49 151 0000000' })\`
+- upload: attach a file to a file input. \`browse_interactive({ action: 'upload', selector: 'input[type=file]', file: 'docs/original/cv.pdf' })\`
+  - \`file\` is a path relative to the workspace root. Maximum size is 10 MiB. Absolute paths are rejected.
+  - Upload only files the user has approved for this task (a rule for you; the tool does not check approval). Do not click the visible button; upload targets the file input directly.
+
+Results: select returns the selected option, check and uncheck return the new state, and upload returns the file name, size and file count. Read the result before moving on.
+Never submit a form unless the user has confirmed the answers.
 
 Strengths:
 - Native tool — no shell needed

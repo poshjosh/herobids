@@ -63,6 +63,23 @@ graph LR
 | End-to-end `browse_interactive` from an agent after the restart | **Not verified** |
 | Agent-2 host key confirmed against the server console | **Not done.** Accepted on first use by operator decision (staging only). |
 
+## Form actions and verification (local docker stack, 2026-11-27)
+
+`browse_interactive` gained `select`, `check`, `uncheck`, `press`, `type` and `upload`. See [browser-automation.md](../agents/tools/browser-automation.md) for parameters.
+
+| Check | Result |
+|---|---|
+| Unit tests (`apps/worker/src/tools/browser.test.ts`) | 76/76 pass |
+| Live run against the local `browser-pool` container (`docker-compose.dev.yaml`, port 3001) using the real `BrowserlessAdapter` | Pass. `fill`, `select` (native and combobox), `check`, `type`, `press`, and `upload` of a workspace file all read back correctly. `upload` of a path outside the workspace is rejected. The submit button was never clicked. |
+| Live fixture | Plain HTML and JavaScript that imitates a combobox with `aria-controls`. It is not React. Real React-select widgets are not verified. |
+| Linux `/proc` containment check | Not exercised. The live run used a macOS host, which skips the check. |
+
+Known limits of the form actions:
+
+- Masked inputs (phone formatting that rewrites the value on input) can make `type` report a false failure. The error shows the observed value.
+- `upload` is limited to 10 MiB and to files inside the agent workspace root. That includes user-sent documents materialized under `docs/`. Documents from an earlier session that were not staged again may be absent.
+- Attaching the file uses `DataTransfer` and dispatches `input` and `change`. Forms that read the file only on a click handler will not see it.
+
 ## Operations
 
 - **Deploy the job:** `nomad job plan` first, then `nomad job run -check-index <n>`. `push.sh` also re-submits the job on every deploy (`timeout 180`).

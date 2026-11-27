@@ -121,15 +121,12 @@ on a different host from the agent, so the file would have to exist there too.
 
 ### A3. Permissions
 
-Status: PENDING
-
-`browse_interactive` keeps its default grant. Uploads read workspace files and
-send them to third-party sites, so whether `upload` needs a higher permission
-level is an open question (see Open Questions).
+Status: DONE. `browse_interactive` keeps its default grant, and no new permission level was added. This is Decision 2. Uploads read workspace files and
+send them to third-party sites; the decision was to keep the default grant.
 
 ### A4. Skill text (internal)
 
-Status: PENDING
+Status: DONE. `BROWSER_SKILL` lists the new actions with one example each, and `browser-pool.md` and `browser-automation.md` are updated. `browser-pool-feature.test.ts` passes (68/68).
 
 Update `BROWSER_SKILL` in [skills.ts](/Users/chinomso.ikwuagwu/dev_ai/herobids/packages/domain/src/skills.ts)
 to list the new actions with one example each. This is a herobids system skill,
@@ -140,25 +137,35 @@ with the new actions and the verification result.
 
 ### A5. Unit tests
 
-Status: PENDING
+Status: DONE. Coverage is in `browser.test.ts` (76/76 pass):
 
-Focused cases only, in [browser.test.ts](/Users/chinomso.ikwuagwu/dev_ai/herobids/apps/worker/src/tools/browser.test.ts):
-
-- `upload` rejects a path outside both roots, a `..` escape, and a symlink that
-  resolves outside.
-- `upload` rejects a file over the size limit.
-- `upload` accepts a workspace file and a user-sent file.
-- `select` returns an error when the read-back does not match the requested option.
-- `check` does not click when the state already matches.
+- Outside the root: `..` escape, absolute path, symlink resolving outside, and an
+  opened path outside the root.
+- Size limit: rejected over 10 MiB before the read, and a file that grows past the limit.
+- Accepted: a workspace file, and a user-sent document under `docs/original/`.
+- Select read-back mismatch returns an error. Check does not click when already checked.
 
 ### A6. Verification in the local docker stack
 
-Status: PENDING
+Status: DONE, with residuals. Run on 2026-11-27 against the local `browser-pool`
+container (`docker-compose.dev.yaml`, port 3001). A temporary test used the real
+`BrowserlessAdapter`. It mocked only the SSRF guard so the fixture host could be
+reached. The fixture was plain HTML served from the host at
+`host.docker.internal:8787`. The temporary test, the fixture, and the container
+were removed afterwards.
+
+Results: `open`, `fill`, `select` (native and combobox), `check`, `type`, `press`,
+and `upload` of `docs/cv.txt` all succeeded. Read-backs matched. The uploaded
+content reached the page: `get_text` returned the file text. `upload` of
+`../a6-outside.txt` was rejected with "path traversal is not allowed". The
+submit handler never fired (`not submitted`).
+
+Residuals from A6 are in Outstanding Issues.
 
 Prerequisite: `docker-compose.dev.yaml` runs a `browser-pool` service
 (`ghcr.io/browserless/chromium`, host port 3001). `config/default.yaml` points the
-worker at `http://browser-pool:3000`. That is confirmed in config; a live end-to-end
-run is still unverified.
+worker at `http://browser-pool:3000`. The live run used the real adapter at
+`http://localhost:3001` (the container's port 3000 is mapped there).
 
 Fixture page, served by the local stack, containing:
 
@@ -334,4 +341,13 @@ Recorded by the coordinator after the A1 review (MEDIUM and LOW only).
 - Windows `O_NOFOLLOW` note: the flag has no effect on Windows, so the symlink guard relies on realpath there. Document this.
 - `mockLogger`, and the queued `mockResolvedValueOnce`/`mockImplementationOnce` values on `open` and `readlink`, are not reset between tests. A test that fails before it consumes its queued value can leak into the next one.
 - Fixed in round 3: the prepare call is bounded by the remaining 60 s deadline, and the post-open `/proc` check now requires the opened path to equal the checked real path (Linux). Covered by a new in-root sibling test.
-- Residual limitation (macOS): no `/proc`, so a parent directory swapped between realpath and open is not detected. The dev/ino check cannot see it either. A6 should exercise the macOS path.
+- Residual limitation (macOS): no `/proc`, so a parent directory swapped between realpath and open is not detected. The dev/ino check cannot see it either. A6 did not exercise a parent swap. Residual.
+
+### A3–A6 (verification, 2026-11-27)
+
+- The live run used the macOS host, so the Linux `/proc/self/fd` containment check was skipped (logged as a warning). It is still unexercised. Run the upload tests inside a Linux container.
+- The A6 fixture is plain HTML and JavaScript, not React. Real React-select and masked-input behaviour is still unverified.
+- Masked inputs: `type` on a field that reformats its value can false-fail. Not reproduced live.
+- The scenario was run at tool level through the real adapter, not by an agent end to end. An agent run with the Greenhouse-style form is still needed.
+- User-sent files: the live run used `docs/cv.txt`. Documents not re-staged from an earlier session may be absent (known gap from the materialiser).
+- An absolute path is rejected wherever it points. The `file` description says so.

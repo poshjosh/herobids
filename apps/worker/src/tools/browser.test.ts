@@ -1175,6 +1175,22 @@ describe('browse_interactive — form actions', () => {
       expect(sent.some((c) => c.method === 'Input.dispatchMouseEvent')).toBe(false);
     });
 
+    it('upload accepts a file under docs/original in the workspace root', async () => {
+      const { tool, ctx } = await openForm('sess-upload-user-doc');
+      await mkdir(join(workspaceRoot, 'docs', 'original'), { recursive: true });
+      await writeFile(join(workspaceRoot, 'docs', 'original', 'Helen_CV.pdf'), 'hello');
+      evaluateReplies.push(
+        { ok: true },
+        { ok: true },
+        { ok: true, name: 'Helen_CV.pdf', size: 5, count: 1, url: 'https://jobs.example.com/apply' },
+      );
+
+      const result = await tool.execute({ action: 'upload', selector: '#resume', file: 'docs/original/Helen_CV.pdf' }, ctx);
+
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual({ fileName: 'Helen_CV.pdf', sizeBytes: 5, filesCount: 1, selector: '#resume' });
+    });
+
     it('upload logs the real source path, the sha256 and size, and a page URL without its query', async () => {
       const { tool, ctx } = await openForm('sess-upload-audit');
       const cvPath = join(workspaceRoot, 'cv.pdf');

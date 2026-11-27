@@ -165,7 +165,7 @@ const BrowseInteractiveParamsSchema = z.object({
   selector: z.string().optional()
     .describe('CSS selector targeting an element (required for "click", "fill", "get_text", "select", "check", "uncheck", "upload"; optional for "type")'),
   file: z.string().optional()
-    .describe('Path of the file to upload, relative to the workspace root (required for "upload" action)'),
+    .describe('Relative path of the file to upload, from the workspace root (required for "upload" action). Absolute paths are rejected.'),
   value: z.string().optional()
     .describe('Value to fill into the element (required for "fill" action)'),
   waitFor: z.string().optional()

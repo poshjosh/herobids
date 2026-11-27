@@ -33,6 +33,12 @@ A platform-native tool that provides structured browser automation via CDP. Gate
 | `snapshot` | — | Accessibility tree (AX nodes) or fallback body text |
 | `click` | `selector` | Clicks element by CSS selector |
 | `fill` | `selector`, `value` | Fills form field by CSS selector |
+| `select` | `selector`, `option` | Chooses a native select option or a combobox option by label or value; reads back the selection |
+| `check` | `selector` | Ticks a checkbox; no click if already checked |
+| `uncheck` | `selector` | Unticks a checkbox; no click if already unchecked |
+| `press` | `key` | Sends a key (e.g. `Enter`, `Tab`, `ArrowDown`, or one character) to the focused element |
+| `type` | `text`, optional `selector` | Inserts text at the caret without key events; for fields that ignore `fill`. Reads back the value and reports a mismatch (e.g. masked inputs). |
+| `upload` | `selector`, `file` | Attaches a workspace file to a file input (max 10 MiB; path relative to workspace root) |
 | `screenshot` | — | Page screenshot as base64 PNG |
 | `get_text` | `selector` | Element text content (truncated to 50 KB) |
 | `close` | — | Releases browser session, records billing |
@@ -41,10 +47,14 @@ A platform-native tool that provides structured browser automation via CDP. Gate
 
 ```typescript
 {
-  action: 'open' | 'snapshot' | 'click' | 'fill' | 'screenshot' | 'get_text' | 'close';
+  action: 'open' | 'snapshot' | 'click' | 'fill' | 'select' | 'check' | 'uncheck' | 'press' | 'type' | 'upload' | 'screenshot' | 'get_text' | 'close';
   url?: string;       // required for 'open'
-  selector?: string;  // CSS selector for 'click', 'fill', 'get_text'
+  selector?: string;  // CSS selector for 'click', 'fill', 'select', 'check', 'uncheck', 'upload', 'get_text'; optional for 'type'
   value?: string;     // required for 'fill'
+  option?: string;    // required for 'select'
+  key?: string;       // required for 'press'
+  text?: string;      // required for 'type'
+  file?: string;      // required for 'upload'; workspace-relative path
   waitFor?: string;   // optional CSS selector to wait for after navigation/click
 }
 ```
