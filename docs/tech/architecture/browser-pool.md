@@ -65,11 +65,12 @@ graph LR
 
 ## Form actions and verification (local docker stack, 2026-11-27)
 
-`browse_interactive` gained `select`, `check`, `uncheck`, `press`, `type` and `upload`. See [browser-automation.md](../agents/tools/browser-automation.md) for parameters.
+`browse_interactive` gained `select`, `check`, `uncheck`, `press`, `type` and `upload`, plus element refs from `snapshot`. See [browser-automation.md](../agents/tools/browser-automation.md) for parameters.
 
 | Check | Result |
 |---|---|
-| Unit tests (`apps/worker/src/tools/browser.test.ts`) | 76/76 pass |
+| Unit tests (`apps/worker/src/tools/browser.test.ts`) | 80/80 pass |
+| Element refs live run (local `browser-pool`, a local form page with every control type, not kept in the repo) | Pass. Refs work for fill, type, select, check, uncheck, click, upload and get_text. A ref from an earlier snapshot is rejected with "unknown ref". Ref plus selector and ref on press are rejected. |
 | Live run against the local `browser-pool` container (`docker-compose.dev.yaml`, port 3001) using the real `BrowserlessAdapter` | Pass. `fill`, `select` (native and combobox), `check`, `type`, `press`, and `upload` of a workspace file all read back correctly. `upload` of a path outside the workspace is rejected. The submit button was never clicked. |
 | Live fixture | Plain HTML and JavaScript that imitates a combobox with `aria-controls`. It is not React. Real React-select widgets are not verified. |
 | Linux `/proc` containment check | Not exercised. The live run used a macOS host, which skips the check. |

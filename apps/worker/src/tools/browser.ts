@@ -144,6 +144,10 @@ interface ActiveSession {
   browserSessionId: string;
   browserPool: BrowserPoolPort;
   startedAt: number;
+  // "@eN" ref -> CDP backendNodeId, from the most recent snapshot
+  refs: Map<string, number>;
+  // Next unused ref number. Never reset, so a ref from an earlier snapshot cannot match a new node.
+  nextRefId: number;
 }
 
 // Key: `${agentId}:${sessionId}`
@@ -176,11 +180,31 @@ const BrowseInteractiveParamsSchema = z.object({
     .describe('Key to press, e.g. "Enter", "Tab", "ArrowDown", or a single character (required for "press" action)'),
   text: z.string().optional()
     .describe('Text to type (required for "type" action)'),
+  ref: z.string().optional()
+    .describe('Element ref from the latest snapshot, e.g. "@e3". Use instead of "selector" for click, fill, get_text, select, check, uncheck, upload, and type.'),
   maxNodes: z.number().int().min(1).max(1000).optional()
     .describe(`Maximum accessibility nodes to include (optional for "snapshot" action, default ${DEFAULT_SNAPSHOT_MAX_NODES})`),
 });
 
 type BrowseParams = z.infer<typeof BrowseInteractiveParamsSchema>;
+
+const REF_ACTIONS = new Set<BrowseParams['action']>([
+  'click', 'fill', 'get_text', 'select', 'check', 'uncheck', 'upload', 'type',
+]);
+
+// Returns a unique CSS path for the element (or the parent element of a text node).
+const CSS_PATH_FOR_NODE_FUNCTION = `function () {
+  let el = this.nodeType === 1 ? this : this.parentElement;
+  if (!el || !document.documentElement.contains(el)) return null;
+  const parts = [];
+  while (el !== document.documentElement) {
+    const parent = el.parentElement;
+    const index = Array.from(parent.children).filter((c) => c.tagName === el.tagName).indexOf(el) + 1;
+    parts.unshift(el.tagName.toLowerCase() + ':nth-of-type(' + index + ')');
+    el = parent;
+  }
+  return ['html', ...parts].join(' > ');
+}`;
 
 // ── Action handlers ─────────────────────────────────────────────────────────
 
@@ -240,6 +264,7 @@ async function handleOpen(
     await cdp.connect(sessionResult.data.cdpEndpoint);
     await cdp.send('Page.enable');
     await cdp.send('Runtime.enable');
+    await cdp.send('DOM.enable');
     await cdp.send('Page.navigate', { url: params.url });
     await waitForLoad(cdp, params.waitFor);
 
@@ -248,6 +273,8 @@ async function handleOpen(
       browserSessionId: sessionResult.data.sessionId,
       browserPool,
       startedAt: Date.now(),
+      refs: new Map(),
+      nextRefId: 1,
     });
 
     return { success: true, data: { message: `Opened ${params.url}`, sessionActive: true } };
@@ -298,12 +325,16 @@ async function handleSnapshot(ctx: ToolContext, maxNodes?: number): Promise<Tool
   const sessionOrError = await requireSession(ctx);
   if (isToolResult(sessionOrError)) return sessionOrError;
 
+  // Refs from earlier snapshots are invalid once a new snapshot starts
+  sessionOrError.refs = new Map();
   try {
     // Try accessibility tree first
     const result = await sessionOrError.cdp.send('Accessibility.getFullAXTree');
     const nodes = result['nodes'] as Array<Record<string, unknown>> | undefined;
     if (nodes && nodes.length > 0) {
-      const text = formatAccessibilityTree(nodes, maxNodes);
+      const { text, refs, nextRefId } = formatAccessibilityTree(nodes, maxNodes, sessionOrError.nextRefId);
+      sessionOrError.refs = refs;
+      sessionOrError.nextRefId = nextRefId;
       return { success: true, data: { snapshot: text, nodeCount: nodes.length } };
     }
 
@@ -323,8 +354,11 @@ async function handleSnapshot(ctx: ToolContext, maxNodes?: number): Promise<Tool
 function formatAccessibilityTree(
   nodes: Array<Record<string, unknown>>,
   maxNodes: number = DEFAULT_SNAPSHOT_MAX_NODES,
-): string {
+  firstRefId: number = 1,
+): { text: string; refs: Map<string, number>; nextRefId: number } {
   const lines: string[] = [];
+  const refs = new Map<string, number>();
+  let nextRefId = firstRefId;
   let count = 0;
   for (const node of nodes) {
     if (count >= maxNodes) {
@@ -336,10 +370,68 @@ function formatAccessibilityTree(
     const desc = (node['description'] as Record<string, unknown> | undefined)?.['value'] ?? '';
     const nameStr = name ? ` "${name}"` : '';
     const descStr = desc ? ` (${desc})` : '';
-    lines.push(`[${role}]${nameStr}${descStr}`);
+    const backendNodeId = node['backendDOMNodeId'];
+    let refPrefix = '';
+    if (typeof backendNodeId === 'number') {
+      const ref = `@e${nextRefId++}`;
+      refs.set(ref, backendNodeId);
+      refPrefix = `${ref} `;
+    }
+    lines.push(`${refPrefix}[${role}]${nameStr}${descStr}`);
     count++;
   }
-  return lines.join('\n');
+  return { text: lines.join('\n'), refs, nextRefId };
+}
+
+// Turns a snapshot ref into a CSS path that the action handlers can use as a selector.
+async function resolveRef(session: ActiveSession, rawRef: string): Promise<string | ToolResult> {
+  const ref = rawRef.startsWith('@') ? rawRef : `@${rawRef}`;
+  const backendNodeId = session.refs.get(ref);
+  if (backendNodeId === undefined) {
+    return nonFaultError(`browse_interactive: unknown ref "${ref}". Take a new snapshot and use a ref from it.`);
+  }
+
+  let objectId: string | undefined;
+  try {
+    const resolved = await session.cdp.send('DOM.resolveNode', { backendNodeId });
+    objectId = (resolved['object'] as { objectId?: string } | undefined)?.objectId;
+    if (!objectId) {
+      return nonFaultError(`browse_interactive: ref "${ref}" is no longer on the page. Take a new snapshot.`);
+    }
+    const called = await session.cdp.send('Runtime.callFunctionOn', {
+      objectId,
+      functionDeclaration: CSS_PATH_FOR_NODE_FUNCTION,
+      returnByValue: true,
+    });
+    const path = (called['result'] as { value?: unknown } | undefined)?.value;
+    if (typeof path !== 'string') {
+      return nonFaultError(`browse_interactive: ref "${ref}" is no longer on the page. Take a new snapshot.`);
+    }
+    return path;
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    return nonFaultError(`browse_interactive: could not resolve ref "${ref}" (it may be stale; take a new snapshot): ${msg}`);
+  } finally {
+    if (objectId) {
+      await session.cdp.send('Runtime.releaseObject', { objectId }).catch(() => undefined);
+    }
+  }
+}
+
+async function applyRef(params: BrowseParams, ctx: ToolContext): Promise<ToolResult | undefined> {
+  if (params.selector !== undefined) {
+    return nonFaultError('browse_interactive: provide either "selector" or "ref", not both');
+  }
+  if (!REF_ACTIONS.has(params.action)) {
+    return nonFaultError(`browse_interactive: "ref" is not supported for action "${params.action}"`);
+  }
+  const sessionOrError = await requireSession(ctx);
+  if (isToolResult(sessionOrError)) return sessionOrError;
+
+  const resolved = await resolveRef(sessionOrError, params.ref ?? '');
+  if (typeof resolved !== 'string') return resolved;
+  params.selector = resolved;
+  return undefined;
 }
 
 async function handleClick(params: BrowseParams, ctx: ToolContext): Promise<ToolResult> {
@@ -557,6 +649,8 @@ async function handleSelect(params: BrowseParams, ctx: ToolContext): Promise<Too
         el.focus();
         if (document.activeElement !== el) return { ok: false, error: 'Element could not take focus' };
         if (typeof el.select === 'function') el.select();
+        // Keep the node itself: typing makes react-select insert sibling nodes, so a CSS path would then point elsewhere.
+        window.__browseSelectTarget = el;
         return { ok: true, native: false };
       }
       return { ok: false, error: 'Element is not a <select> or ARIA combobox' };
@@ -591,7 +685,7 @@ async function handleSelect(params: BrowseParams, ctx: ToolContext): Promise<Too
     const chosen = await evaluateInPage(cdp, `(async () => {
       const want = ${option};
       const optionsInLinkedListbox = () => {
-        const listId = document.querySelector(${selector})?.getAttribute('aria-controls');
+        const listId = window.__browseSelectTarget?.getAttribute('aria-controls');
         const listbox = listId ? document.getElementById(listId) : null;
         return listbox ? [...listbox.querySelectorAll('[role="option"]')] : null;
       };
@@ -627,32 +721,37 @@ async function handleSelect(params: BrowseParams, ctx: ToolContext): Promise<Too
     // Read the displayed selection, not the text field's own value: after typing, that value is the search text.
     // Only the control's own container and its linked listbox are searched, never the whole page.
     const observed = await evaluateInPage(cdp, `(() => {
-      const el = document.querySelector(${selector});
+      const el = window.__browseSelectTarget;
       if (!el) return { ok: false, error: 'Element not found' };
       const listId = el.getAttribute('aria-controls');
       const listbox = listId ? document.getElementById(listId) : null;
-      let shown = null;
-      for (let node = el.parentElement, depth = 0; !shown && node && depth < 4; node = node.parentElement, depth++) {
+      const values = [];
+      for (let node = el.parentElement, depth = 0; values.length === 0 && node && depth < 4; node = node.parentElement, depth++) {
         // An ancestor that holds another combobox belongs to a different field, so stop before reading it.
         if (node.querySelectorAll('[role="combobox"]').length > 1) break;
-        shown = node.querySelector('[class*="singleValue"], [class*="single-value"]');
+        // Multi-select controls render one chip per value, so collect all of them.
+        node.querySelectorAll('[class*="singleValue"], [class*="single-value"], [class*="multi-value__label"], [class*="MultiValueLabel"]')
+          .forEach((n) => values.push((n.textContent ?? '').trim()));
       }
-      if (!shown && listbox) shown = listbox.querySelector('[role="option"][aria-selected="true"]');
-      if (!shown && !('value' in el)) shown = el;
+      if (values.length === 0 && listbox) {
+        const picked = listbox.querySelector('[role="option"][aria-selected="true"]');
+        if (picked) values.push((picked.textContent ?? '').trim());
+      }
+      if (values.length === 0 && !('value' in el)) values.push((el.textContent ?? '').trim());
       return {
         ok: true,
         expanded: el.getAttribute('aria-expanded'),
-        selected: shown ? (shown.textContent ?? '').trim() : null,
+        selected: values,
       };
     })()`, timeoutMs);
     if (observed['ok'] !== true) {
       return nonFaultError(`browse_interactive select: ${(observed['error'] as string | undefined) ?? 'element not found'}`);
     }
-    const selected = typeof observed['selected'] === 'string' ? observed['selected'] : null;
-    if (selected !== matchedText) {
-      return nonFaultError(selected === null
+    const selected = Array.isArray(observed['selected']) ? (observed['selected'] as string[]) : [];
+    if (!selected.includes(matchedText)) {
+      return nonFaultError(selected.length === 0
         ? `browse_interactive select: expected "${params.option}" but no selection is shown`
-        : `browse_interactive select: expected "${params.option}" but the control shows "${selected}"`);
+        : `browse_interactive select: expected "${params.option}" but the control shows "${selected.join('", "')}"`);
     }
     const expanded = observed['expanded'];
     if (typeof expanded === 'string' && expanded !== 'false') {
@@ -1055,6 +1154,7 @@ export function createBrowserTools(browserPool: BrowserPoolPort | undefined): Ag
     name: 'browse_interactive',
     description:
       'Interactive browser automation: open pages, click elements, fill forms, select options, check or uncheck boxes, press keys, type text, take screenshots, and read accessibility trees. ' +
+      'Each element in a snapshot has a ref such as @e3; pass it as "ref" instead of "selector" to click, fill, get_text, select, check, uncheck, upload, or type. Refs are valid until the next snapshot. ' +
       'Actions: open (navigate to URL), snapshot (get accessibility tree as structured text; optional maxNodes), click (click element by CSS selector), ' +
       'fill (fill form field by CSS selector), select (choose an option in a native select or ARIA combobox by selector and option), ' +
       'check / uncheck (set a checkbox or radio by selector), upload (attach a workspace file, given as "file", to a file input by selector), press (send a key such as Enter or Tab), ' +
@@ -1094,6 +1194,10 @@ export function createBrowserTools(browserPool: BrowserPoolPort | undefined): Ag
         }
 
         const parsed = BrowseInteractiveParamsSchema.parse(params);
+        if (parsed.ref !== undefined) {
+          const refError = await applyRef(parsed, ctx);
+          if (refError) return refError;
+        }
 
         let result: ToolResult;
         switch (parsed.action) {

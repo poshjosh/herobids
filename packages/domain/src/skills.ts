@@ -450,6 +450,8 @@ export const BROWSER_SKILL: SkillDefinition = {
 Actions: open, snapshot, click, fill, select, check, uncheck, press, type, upload, screenshot, get_text, close.
 Single session per agent. Structured JSON responses.
 
+Refs: each element in a snapshot is labelled with a ref such as \`@e3\`. Pass the ref as \`ref\` instead of \`selector\` to click, fill, get_text, select, check, uncheck, upload or type. Refs are valid until the next snapshot; after a page change, take a new snapshot. \`browse_interactive({ action: 'click', ref: '@e3' })\`
+
 Form actions:
 - fill: set the value of a text input. Fast, but React-controlled and masked fields can ignore it. If the value does not stick, use type. \`browse_interactive({ action: 'fill', selector: '#first_name', value: 'Helen' })\`
 - type: insert text at the caret without key events. Use when fill is ignored by the field, e.g. masked phone inputs. Masked fields can reformat the value, so check the read-back. If type reports that the text may have been entered, take a snapshot before retrying so you do not enter it twice. \`browse_interactive({ action: 'type', selector: '#phone', text: '+49 151 0000000' })\`

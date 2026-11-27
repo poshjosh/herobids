@@ -704,6 +704,9 @@ describe('browse_interactive — form actions', () => {
   let sent: Array<{ method: string; params?: Record<string, unknown> }>;
   let evaluateReplies: unknown[];
   let silentEvaluate: boolean;
+  // Fixed results for other CDP methods (for example Accessibility.getFullAXTree), and methods that fail.
+  let methodReplies: Record<string, Record<string, unknown>>;
+  let failingMethods: Set<string>;
 
   class ScriptedWebSocket {
     static readonly OPEN = 1;
@@ -727,10 +730,13 @@ describe('browse_interactive — form actions', () => {
       if (parsed.method === 'Runtime.evaluate' && silentEvaluate) return;
       const result = parsed.method === 'Runtime.evaluate'
         ? { result: { type: 'object', value: evaluateReplies.shift() } }
-        : {};
+        : (methodReplies[parsed.method] ?? {});
+      const response = failingMethods.has(parsed.method)
+        ? { id: parsed.id, error: { code: -32000, message: 'No node with given id found' } }
+        : { id: parsed.id, result };
       queueMicrotask(() => {
-        const response = JSON.stringify({ id: parsed.id, result });
-        for (const h of this.listeners.get('message') ?? []) h({ data: response });
+        const payload = JSON.stringify(response);
+        for (const h of this.listeners.get('message') ?? []) h({ data: payload });
       });
     }
 
@@ -744,6 +750,8 @@ describe('browse_interactive — form actions', () => {
     sent = [];
     evaluateReplies = [];
     silentEvaluate = false;
+    methodReplies = {};
+    failingMethods = new Set();
     vi.stubGlobal('WebSocket', ScriptedWebSocket);
   });
 
@@ -768,6 +776,88 @@ describe('browse_interactive — form actions', () => {
   }
 
   const keyEvents = () => sent.filter((c) => c.method === 'Input.dispatchKeyEvent');
+
+  describe('element refs', () => {
+    const SUBMIT_PATH = 'html > body:nth-of-type(1) > button:nth-of-type(1)';
+
+    it('snapshot labels nodes with backend ids as refs, and a ref resolves to a CSS path for the action', async () => {
+      const { tool, ctx } = await openForm('sess-ref-ok');
+      methodReplies['Accessibility.getFullAXTree'] = {
+        nodes: [
+          { role: { value: 'button' }, name: { value: 'Submit' }, backendDOMNodeId: 42 },
+          { role: { value: 'heading' }, name: { value: 'Title' } },
+        ],
+      };
+      methodReplies['DOM.resolveNode'] = { object: { type: 'object', objectId: 'obj-1' } };
+      methodReplies['Runtime.callFunctionOn'] = { result: { type: 'string', value: SUBMIT_PATH } };
+      evaluateReplies.push({ ok: true });
+
+      const snapshot = await tool.execute({ action: 'snapshot' }, ctx);
+      expect(snapshot.success).toBe(true);
+      expect(snapshot.data).toMatchObject({
+        snapshot: '@e1 [button] "Submit"\n[heading] "Title"',
+      });
+
+      const clicked = await tool.execute({ action: 'click', ref: '@e1' }, ctx);
+      expect(clicked.success).toBe(true);
+
+      expect(sent.find((c) => c.method === 'DOM.resolveNode')?.params).toEqual({ backendNodeId: 42 });
+      expect(sent.find((c) => c.method === 'Runtime.callFunctionOn')?.params).toMatchObject({ objectId: 'obj-1' });
+      const clickCall = sent.filter((c) => c.method === 'Runtime.evaluate').at(-1);
+      expect(clickCall?.params?.['expression']).toContain(JSON.stringify(SUBMIT_PATH));
+      expect(sent.find((c) => c.method === 'Runtime.releaseObject')?.params).toEqual({ objectId: 'obj-1' });
+    });
+
+    it('refs from an earlier snapshot are rejected after a new snapshot, even when the page has a node in the same place', async () => {
+      const { tool, ctx } = await openForm('sess-ref-reset');
+      methodReplies['Accessibility.getFullAXTree'] = {
+        nodes: [{ role: { value: 'button' }, name: { value: 'Submit' }, backendDOMNodeId: 42 }],
+      };
+      await tool.execute({ action: 'snapshot' }, ctx);
+
+      methodReplies['Accessibility.getFullAXTree'] = {
+        nodes: [{ role: { value: 'button' }, name: { value: 'Submit' }, backendDOMNodeId: 43 }],
+      };
+      const second = await tool.execute({ action: 'snapshot' }, ctx);
+      expect(second.data).toMatchObject({ snapshot: '@e2 [button] "Submit"' });
+      sent = [];
+
+      const result = await tool.execute({ action: 'click', ref: '@e1' }, ctx);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('unknown ref "@e1"');
+      expect(sent.some((c) => c.method === 'DOM.resolveNode')).toBe(false);
+    });
+
+    it('a ref whose node has gone reports a stale ref and does not act on the page', async () => {
+      const { tool, ctx } = await openForm('sess-ref-stale');
+      methodReplies['Accessibility.getFullAXTree'] = {
+        nodes: [{ role: { value: 'button' }, name: { value: 'Submit' }, backendDOMNodeId: 42 }],
+      };
+      await tool.execute({ action: 'snapshot' }, ctx);
+      failingMethods.add('DOM.resolveNode');
+      sent = [];
+
+      const result = await tool.execute({ action: 'click', ref: '@e1' }, ctx);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('could not resolve ref "@e1"');
+      expect(result.error).toContain('take a new snapshot');
+      expect(sent.some((c) => c.method === 'Runtime.evaluate')).toBe(false);
+    });
+
+    it('rejects a ref together with a selector, and a ref on an action that takes no element', async () => {
+      const { tool, ctx } = await openForm('sess-ref-invalid');
+
+      const both = await tool.execute({ action: 'click', ref: '@e1', selector: '#go' }, ctx);
+      expect(both.success).toBe(false);
+      expect(both.error).toBe('browse_interactive: provide either "selector" or "ref", not both');
+
+      const press = await tool.execute({ action: 'press', ref: '@e1', key: 'Enter' }, ctx);
+      expect(press.success).toBe(false);
+      expect(press.error).toBe('browse_interactive: "ref" is not supported for action "press"');
+      expect(sent).toEqual([]);
+    });
+  });
+
 
   it('select returns an error when the read-back does not match the requested option', async () => {
     const { tool, ctx } = await openForm('sess-select');
@@ -799,7 +889,7 @@ describe('browse_interactive — form actions', () => {
     evaluateReplies.push(
       { ok: true, native: false },
       { clicked: true, text: 'Germany' },
-      { ok: true, expanded: 'false', selected: 'Germany' },
+      { ok: true, expanded: 'false', selected: ['Germany'] },
     );
 
     const result = await tool.execute({ action: 'select', selector: '#country', option: 'Germany' }, ctx);
@@ -807,6 +897,20 @@ describe('browse_interactive — form actions', () => {
     expect(result.success).toBe(true);
     expect(result.data).toEqual({ selected: 'Germany', selector: '#country' });
     expect(sent.filter((c) => c.method === 'Input.insertText')).toHaveLength(1);
+  });
+
+  it('select combobox succeeds on a multi-select when the chosen option is one of the chips', async () => {
+    const { tool, ctx } = await openForm('sess-combo-multi');
+    evaluateReplies.push(
+      { ok: true, native: false },
+      { clicked: true, text: 'Maths' },
+      { ok: true, expanded: 'false', selected: ['Sports', 'Maths'] },
+    );
+
+    const result = await tool.execute({ action: 'select', selector: '#subjects', option: 'Maths' }, ctx);
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ selected: 'Maths', selector: '#subjects' });
   });
 
   it('select combobox returns the available options and never presses Enter when no option matches', async () => {
@@ -844,7 +948,7 @@ describe('browse_interactive — form actions', () => {
     evaluateReplies.push(
       { ok: true, native: false },
       { clicked: true, text: 'Germany' },
-      { ok: true, expanded: 'false', selected: null },
+      { ok: true, expanded: 'false', selected: [] },
     );
 
     const result = await tool.execute({ action: 'select', selector: '#country', option: 'Germany' }, ctx);
@@ -858,7 +962,7 @@ describe('browse_interactive — form actions', () => {
     evaluateReplies.push(
       { ok: true, native: false },
       { clicked: true, text: 'Germany' },
-      { ok: true, expanded: 'false', selected: 'Canada' },
+      { ok: true, expanded: 'false', selected: ['Canada'] },
     );
 
     const result = await tool.execute({ action: 'select', selector: '#country', option: 'Germany' }, ctx);
@@ -871,7 +975,7 @@ describe('browse_interactive — form actions', () => {
     evaluateReplies.push(
       { ok: true, native: false },
       { clicked: true, text: 'Germany' },
-      { ok: true, expanded: 'true', selected: 'Germany' },
+      { ok: true, expanded: 'true', selected: ['Germany'] },
     );
 
     const result = await tool.execute({ action: 'select', selector: '#country', option: 'Germany' }, ctx);
@@ -898,7 +1002,7 @@ describe('browse_interactive — form actions', () => {
     evaluateReplies.push(
       { ok: true, native: false },
       { clicked: true, text: 'Germany' },
-      { ok: true, expanded: 'false', selected: 'Germany' },
+      { ok: true, expanded: 'false', selected: ['Germany'] },
     );
 
     await tool.execute({ action: 'select', selector: '#country', option: 'Germany' }, ctx);

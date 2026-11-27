@@ -30,18 +30,27 @@ A platform-native tool that provides structured browser automation via CDP. Gate
 | Action | Required params | Returns |
 |---|---|---|
 | `open` | `url` | Navigates to URL, acquires CDP session |
-| `snapshot` | — | Accessibility tree (AX nodes) or fallback body text |
-| `click` | `selector` | Clicks element by CSS selector |
-| `fill` | `selector`, `value` | Fills form field by CSS selector |
-| `select` | `selector`, `option` | Chooses a native select option or a combobox option by label or value; reads back the selection |
-| `check` | `selector` | Ticks a checkbox; no click if already checked |
-| `uncheck` | `selector` | Unticks a checkbox; no click if already unchecked |
+| `snapshot` | — | Accessibility tree (AX nodes), each element labelled with a ref such as `@e3`; or fallback body text |
+| `click` | `selector` or `ref` | Clicks element by CSS selector or snapshot ref |
+| `fill` | `selector` or `ref`, `value` | Fills form field by CSS selector or snapshot ref |
+| `select` | `selector` or `ref`, `option` | Chooses a native select option or a combobox option by label or value; reads back the selection |
+| `check` | `selector` or `ref` | Ticks a checkbox; no click if already checked |
+| `uncheck` | `selector` or `ref` | Unticks a checkbox; no click if already unchecked |
 | `press` | `key` | Sends a key (e.g. `Enter`, `Tab`, `ArrowDown`, or one character) to the focused element |
-| `type` | `text`, optional `selector` | Inserts text at the caret without key events; for fields that ignore `fill`. Reads back the value and reports a mismatch (e.g. masked inputs). |
-| `upload` | `selector`, `file` | Attaches a workspace file to a file input (max 10 MiB; path relative to workspace root) |
+| `type` | `text`, optional `selector` or `ref` | Inserts text at the caret without key events; for fields that ignore `fill`. Reads back the value and reports a mismatch (e.g. masked inputs). |
+| `upload` | `selector` or `ref`, `file` | Attaches a workspace file to a file input (max 10 MiB; path relative to workspace root) |
 | `screenshot` | — | Page screenshot as base64 PNG |
-| `get_text` | `selector` | Element text content (truncated to 50 KB) |
+| `get_text` | `selector` or `ref` | Element text content (truncated to 50 KB) |
 | `close` | — | Releases browser session, records billing |
+
+### Refs
+
+`snapshot` labels each accessibility node that maps to a DOM node with a ref (`@e1`, `@e2`, …). Pass a ref as `ref` instead of `selector` to the element actions in the table above. The ref is resolved to a CSS path on the current page, so the same checks apply as for a selector.
+
+- Refs come from the latest snapshot only. A new snapshot replaces them, and a failed snapshot clears them.
+- An unknown ref, or one whose node has left the page, returns an error that asks for a new snapshot.
+- Refs cannot be combined with `selector`, and `press`, `open`, `screenshot` and `close` do not accept them.
+- Refs resolve only in the main document. Elements inside iframes or shadow DOM are not reachable by ref.
 
 ### Parameters
 
@@ -50,6 +59,7 @@ A platform-native tool that provides structured browser automation via CDP. Gate
   action: 'open' | 'snapshot' | 'click' | 'fill' | 'select' | 'check' | 'uncheck' | 'press' | 'type' | 'upload' | 'screenshot' | 'get_text' | 'close';
   url?: string;       // required for 'open'
   selector?: string;  // CSS selector for 'click', 'fill', 'select', 'check', 'uncheck', 'upload', 'get_text'; optional for 'type'
+  ref?: string;       // snapshot ref such as '@e3', an alternative to 'selector'
   value?: string;     // required for 'fill'
   option?: string;    // required for 'select'
   key?: string;       // required for 'press'
