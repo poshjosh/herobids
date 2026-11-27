@@ -20,7 +20,8 @@ infra/hetzner/scripts/push.sh --env staging
 
 When infra/autoscaler/control-plane config or .env changed
 ```sh
-infra/hetzner/deploy.sh --env staging <staging-ip> --env-file infra/hetzner/.env.staging  
+infra/hetzner/deploy.sh --env staging 138.199.172.202 --env-file infra/hetzner/.env.staging  
+infra/hetzner/deploy.sh --env production 167.233.213.107 --env-file infra/hetzner/.env.production
 ```
 
 Agent images are not automatically updated. You have to: 
